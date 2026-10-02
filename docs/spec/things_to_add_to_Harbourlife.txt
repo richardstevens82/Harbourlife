@@ -1,0 +1,2397 @@
+For Harbourlife, the ferry shouldn't just be a job where you drive around in circles. It should connect the town to other destinations, giving the town a reason to have a proper harbour.
+
+I would make the ferry system a transport network, with destinations that can eventually expand.
+
+Main ferry route
+             NORTH ISLAND
+                  🏝️
+                   │
+                   │
+              FERRY ROUTE
+                   │
+                   │
+HARBOUR ───────────┼─────────── HARBOUR
+ TOWN               │          EAST PORT
+                   │
+                   │
+             SOUTH ISLAND
+                  🏝️
+
+But these don't have to be survival islands. They are simply separate locations connected to the town.
+
+1. Main Town Harbour → Island Village
+
+This would be the first route I'd build.
+
+The island has:
+
+Small village
+Houses
+Café
+General store
+Fishing pier
+Small marina
+Beach
+Walking paths
+Tourist attractions
+
+Players can:
+
+Take the ferry as passengers
+Work as ferry crew
+Drive the ferry
+Deliver supplies
+Visit shops
+Go fishing
+Take tourists
+Return to town
+2. Town Harbour → Industrial Port
+
+This gives you a completely different type of ferry route.
+
+The industrial port could contain:
+
+Warehouses
+Cargo docks
+Fuel depot
+Construction suppliers
+Truck depot
+Shipping company
+Crane operations
+Loading areas
+
+This creates a supply chain:
+
+INDUSTRIAL PORT
+      ↓
+FERRY / CARGO
+      ↓
+TOWN HARBOUR
+      ↓
+WAREHOUSE
+      ↓
+BUSINESSES
+      ↓
+CUSTOMERS
+
+Now your ferry isn't just transportation — it's part of the town economy.
+
+3. Town Harbour → Tourist Island
+
+This could be your tourism destination.
+
+It could contain:
+
+Beach
+Hotel
+Restaurants
+Arcade
+Boardwalk
+Shops
+Boat rentals
+Fishing
+Diving
+Photography locations
+Events
+
+This gives players somewhere to go when they're not working.
+
+4. Town Harbour → Small Fishing Island
+
+This would connect nicely with your fishing jobs.
+
+The island could have:
+
+Fishing village
+Fish market
+Fishing docks
+Boat repair
+Seafood restaurant
+Fishing competitions
+Fish processing
+
+Then:
+
+FISHING ISLAND
+       ↓
+   FISH MARKET
+       ↓
+     FERRY
+       ↓
+ TOWN HARBOUR
+       ↓
+ RESTAURANTS
+5. Eventually: Ferry Network
+
+Once the game is larger, I'd make the harbour map look something like:
+
+                 ┌──────────────────┐
+                 │ TOURIST ISLAND   │
+                 │ Beach / Hotel    │
+                 └────────┬─────────┘
+                          │
+                          │
+                    Ferry Route
+                          │
+                          ▼
+┌─────────────────┐   ┌───────────────┐   ┌──────────────────┐
+│ FISHING ISLAND  │───│ TOWN HARBOUR  │───│ INDUSTRIAL PORT  │
+│ Fishing Village │   │ Main Town     │   │ Cargo/Warehouses │
+└─────────────────┘   └───────┬───────┘   └──────────────────┘
+                              │
+                              │
+                        Ferry Route
+                              │
+                              ▼
+                       ┌──────────────┐
+                       │ ISLAND       │
+                       │ VILLAGE      │
+                       └──────────────┘
+And importantly:
+
+Players don't need to own a boat to use any of this.
+
+They can:
+
+Walk to the ferry terminal
+Buy a ticket with normal in-game money
+Board
+Travel
+Get off
+Explore
+Return later
+
+And another player can actually work as the ferry captain.
+
+That gives you a really nice job loop:
+
+Ferry Captain
+
+Start Shift
+↓
+Collect Ferry
+↓
+Depart Harbour
+↓
+Follow Route
+↓
+Dock
+↓
+Unload Passengers
+↓
+Load Passengers
+↓
+Depart
+↓
+Return
+↓
+Complete Shift
+↓
+Get Paid + XP
+
+I'd also make ferry tickets part of the normal town economy, rather than making ferry travel a Robux feature. Premium monetisation can be layered onto the destinations through things like hotel rooms, cosmetics, boats, clothing and property instead.
+
+And because you are modelling the vehicles yourself, you'd only need a few ferry assets initially:
+
+Small passenger ferry
+Large passenger ferry
+Cargo ferry
+Vehicle ferry
+Harbour workboat
+
+The vehicle ferry is particularly useful: players could drive their car onto it, travel to another island, then drive off. That makes the ferry network feel like a genuine part of the town rather than a teleport system.
+
+create a single prompt the same structure as before with the new addons and also could we add a tunnel that goes underwater to one of the islands for cars to drive through
+
+Yes. The underwater road tunnel is a very good addition because it gives the town a genuine transport connection to an island without requiring a ferry every time. It can also become part of the road network, driving jobs, emergency services, deliveries, tourism and exploration.
+
+I’ve based the new prompt on the current edited Harbourlife master instructions you have, rather than starting from scratch.
+
+Below is the single master prompt you can give Claude. It incorporates the new island network, ferry system, vehicle ferry concept, underwater road tunnel, expanded transport network, and the previous monetisation direction.
+
+HARBOURLIFE — TOWN SIMULATOR
+MASTER DEVELOPMENT INSTRUCTIONS — EXPANDED WORLD & TRANSPORT EDITION
+# HARBOURLIFE
+## TOWN SIMULATOR
+
+### MASTER DEVELOPMENT INSTRUCTIONS FOR CLAUDE AI
+
+---
+
+# 1. GAME IDENTITY
+
+Game Title:
+
+**Harbourlife: Town Simulator**
+
+Harbourlife is a large-scale Roblox town and life simulation game.
+
+The objective is to create a living, interconnected world where players can build an entire virtual life.
+
+Players can:
+
+- Work jobs
+- Own businesses
+- Buy and sell goods
+- Cook
+- Deliver products
+- Drive vehicles
+- Operate boats
+- Use public transport
+- Repair vehicles
+- Fish
+- Build
+- Clean
+- Maintain the town
+- Run shops
+- Serve customers
+- Rescue people
+- Participate in activities
+- Explore
+- Own property
+- Upgrade skills
+- Earn money
+- Spend money
+- Socialise
+- Participate in town events
+- Travel between islands
+- Operate ferries
+- Drive through an underwater road tunnel
+- Develop careers
+- Become business owners
+- Build reputation
+- Develop a long-term life in the town
+
+The world should feel like a functioning community.
+
+---
+
+# 2. IMPORTANT GAME SCOPE
+
+THIS IS A TOWN/LIFE SIMULATION.
+
+This is NOT:
+
+- A survival game
+- A survival island game
+- A crafting survival game
+- A lost-city game
+- An underwater-city game
+- A hunger/thirst survival game
+- An ancient civilisation game
+- A survival crafting game
+
+DO NOT CREATE:
+
+- Hunger meters
+- Thirst meters
+- Temperature survival
+- Survival shelters
+- Survival resource loops
+- Lost civilisations
+- Ancient underwater cities
+- Underwater dome cities
+- Survival crafting
+
+Water and islands are part of the normal town/world transportation and recreation systems.
+
+---
+
+# 3. WORLD STRUCTURE
+
+Harbourlife should eventually contain a connected regional world.
+
+The main world should include:
+
+1. Main Town
+2. Main Town Harbour
+3. Island Village
+4. Tourist Island
+5. Fishing Island
+6. Industrial Port
+7. Coastal areas
+8. Beaches
+9. Marinas
+10. Roads
+11. Bridges where appropriate
+12. Ferry terminals
+13. Underwater road tunnel
+14. Rural/coastal roads
+15. Industrial transport routes
+
+The islands must feel like genuine locations rather than decorative teleport destinations.
+
+Each location should have its own purpose.
+
+---
+
+# 4. MAIN TOWN
+
+The Main Town is the primary population centre.
+
+It should contain:
+
+- Residential areas
+- Shops
+- Restaurants
+- Cafés
+- Businesses
+- Garage
+- Police station
+- Fire station
+- Hospital
+- Bank
+- Hotel
+- Construction businesses
+- Job centre
+- Town hall
+- Schools/training locations where appropriate
+- Parks
+- Sports facilities
+- Cinema
+- Bowling
+- Arcade
+- Harbour
+- Marina
+- Transport stations
+
+The town should connect naturally to the wider world.
+
+---
+
+# 5. ISLAND VILLAGE
+
+Create an island settlement connected to the Main Town.
+
+Island Village should contain:
+
+- Houses
+- Small shops
+- Café
+- General store
+- Fishing pier
+- Marina
+- Small harbour
+- Beach
+- Walking paths
+- Roads
+- Parking
+- Local services
+- Small businesses
+- Residential properties
+
+The island should have its own NPC population.
+
+NPCs should live and work there.
+
+Players should be able to:
+
+- Visit
+- Work
+- Shop
+- Buy property
+- Deliver goods
+- Take taxis
+- Drive vehicles
+- Use public transport
+- Fish
+- Socialise
+- Explore
+
+---
+
+# 6. TOURIST ISLAND
+
+Create a dedicated tourist destination.
+
+Include:
+
+- Beach
+- Hotel
+- Restaurants
+- Cafés
+- Boardwalk
+- Shops
+- Arcade
+- Tourist attractions
+- Boat rentals
+- Fishing
+- Diving
+- Photography locations
+- Events
+- Parking
+- Tourist transport
+
+Tourist Island should generate:
+
+- Hotel jobs
+- Restaurant jobs
+- Taxi jobs
+- Boat jobs
+- Delivery jobs
+- Cleaning jobs
+- Maintenance jobs
+- Lifeguard jobs
+- Tourism activities
+- Photography activities
+- Entertainment jobs
+
+NPC tourists should travel there.
+
+---
+
+# 7. FISHING ISLAND
+
+Create a smaller fishing-focused island.
+
+Include:
+
+- Fishing village
+- Fishing harbour
+- Fish market
+- Boat repair
+- Fishing equipment shop
+- Seafood restaurant
+- Fishing docks
+- Fish storage
+- Small businesses
+- Residential properties
+
+Create a supply chain:
+
+```text
+FISHING BOAT
+↓
+FISH LANDING
+↓
+FISH MARKET
+↓
+TRANSPORT
+↓
+MAIN TOWN
+↓
+RESTAURANTS
+↓
+CUSTOMERS
+
+Players can participate at every stage.
+
+8. INDUSTRIAL PORT
+
+Create a functioning industrial port.
+
+Include:
+
+Warehouses
+Cargo docks
+Container areas
+Fuel depot
+Construction suppliers
+Truck depot
+Shipping company
+Loading areas
+Cranes
+Forklifts
+Storage yards
+Industrial roads
+Worker facilities
+
+Supply chain:
+
+INDUSTRIAL PORT
+↓
+CARGO
+↓
+TRUCK / FERRY / BARGE
+↓
+MAIN TOWN
+↓
+WAREHOUSE
+↓
+BUSINESS
+↓
+CUSTOMER
+
+Create actual cargo jobs.
+
+9. WORLD TRANSPORT NETWORK
+
+The world must not consist of isolated locations.
+
+Create multiple transportation methods.
+
+Players can travel by:
+
+Car
+Bus
+Taxi
+Bicycle
+Motorbike
+Delivery vehicle
+Truck
+Ferry
+Boat taxi
+Passenger boat
+Vehicle ferry
+Underwater road tunnel
+
+Different routes should have different advantages.
+
+10. FERRY NETWORK
+
+Create a complete ferry transportation system.
+
+Ferries are real transport services.
+
+They are NOT teleporters.
+
+A ferry journey should involve:
+
+ARRIVE TERMINAL
+↓
+BUY / USE TICKET
+↓
+ENTER FERRY
+↓
+BOARD
+↓
+DEPART
+↓
+TRAVEL
+↓
+ARRIVE
+↓
+DISEMBARK
+↓
+CONTINUE JOURNEY
+
+Create ferry terminals with:
+
+Ticket areas
+Passenger waiting areas
+Vehicle lanes where appropriate
+Boarding ramps
+Docking systems
+Ferry schedules
+Signs
+Destination displays
+NPC passengers
+Vehicle queues
+Parking
+11. FERRY DESTINATIONS
+
+Create routes such as:
+
+ROUTE A
+
+Main Town Harbour
+↓
+Island Village
+
+ROUTE B
+
+Main Town Harbour
+↓
+Tourist Island
+
+ROUTE C
+
+Main Town Harbour
+↓
+Fishing Island
+
+ROUTE D
+
+Main Town Harbour
+↓
+Industrial Port
+
+Additional routes may be added later.
+
+Do not make every route identical.
+
+Different ferry routes should have different:
+
+Travel times
+Passenger volumes
+Cargo requirements
+Vehicle capacities
+Schedules
+Ticket prices
+12. FERRY OPERATOR JOB
+
+Create Ferry Operator as a complete job.
+
+Workflow:
+
+START SHIFT
+↓
+COLLECT ASSIGNED FERRY
+↓
+CHECK VEHICLE
+↓
+ARRIVE TERMINAL
+↓
+BOARD PASSENGERS
+↓
+BOARD VEHICLES
+↓
+DEPART
+↓
+FOLLOW ROUTE
+↓
+ARRIVE DESTINATION
+↓
+DOCK
+↓
+UNLOAD PASSENGERS
+↓
+UNLOAD VEHICLES
+↓
+RETURN / NEXT ROUTE
+↓
+COMPLETE SHIFT
+↓
+PAYMENT
+↓
+XP
+↓
+REPUTATION
+
+Include:
+
+Ferry controls
+Navigation
+Docking
+Passenger management
+Vehicle loading
+Vehicle unloading
+Schedule management
+Safety checks
+Fuel
+Maintenance
+Earnings
+13. VEHICLE FERRY
+
+Create a vehicle ferry.
+
+Players should be able to:
+
+DRIVE CAR TO TERMINAL
+↓
+QUEUE
+↓
+BOARD FERRY
+↓
+PARK VEHICLE
+↓
+FERRY TRAVELS
+↓
+FERRY ARRIVES
+↓
+DRIVE OFF
+↓
+CONTINUE JOURNEY
+
+The vehicle remains associated with the player.
+
+Do not teleport the player directly between islands.
+
+The ferry should physically transport the vehicle.
+
+Support appropriate vehicles such as:
+
+Cars
+SUVs
+Vans
+Small trucks
+Motorbikes
+
+Large commercial vehicles may require larger ferries.
+
+14. UNDERWATER ROAD TUNNEL
+
+CREATE A MAJOR UNDERWATER ROAD TUNNEL.
+
+This is a core world transportation feature.
+
+The tunnel should physically connect the Main Town/coastal mainland to one of the major islands.
+
+Recommended connection:
+
+MAIN TOWN
+↓
+COASTAL ROAD
+↓
+TUNNEL ENTRANCE
+↓
+UNDERWATER ROAD TUNNEL
+↓
+UNDERWATER SECTION
+↓
+ISLAND TUNNEL EXIT
+↓
+ISLAND ROAD NETWORK
+
+The tunnel is NOT a teleport.
+
+Cars physically drive through it.
+
+15. UNDERWATER TUNNEL DESIGN
+
+The tunnel should look like a believable modern road tunnel.
+
+Include:
+
+Two-way road or divided carriageway
+Tunnel walls
+Ceiling
+Road markings
+Lane markings
+Emergency lighting
+Normal lighting
+Reflective markers
+Emergency phones
+Emergency exits where appropriate
+Maintenance areas
+Ventilation
+Drainage
+Safety signs
+Speed limit signs
+CCTV
+Service access
+Emergency bays where appropriate
+
+Outside the tunnel:
+
+The player should be able to see water around/above the underwater section where visually appropriate.
+
+Use suitable Roblox environmental techniques to create the underwater illusion.
+
+16. UNDERWATER TUNNEL GAMEPLAY
+
+The tunnel is part of the normal road network.
+
+Players can use it for:
+
+Normal driving
+Taxi
+Bus
+Deliveries
+Police
+Ambulance
+Fire service
+Construction
+Moving company
+Trucking
+Tourism
+Personal travel
+
+The tunnel should reduce travel time between connected locations.
+
+17. UNDERWATER TUNNEL JOBS
+
+Create jobs and events connected to the tunnel.
+
+Examples:
+
+TUNNEL MAINTENANCE
+Inspect lights
+Repair equipment
+Clean areas
+Repair barriers
+Inspect ventilation
+TUNNEL EMERGENCY
+Vehicle breakdown
+Traffic incident
+Road obstruction
+Medical emergency
+Vehicle recovery
+
+Relevant jobs can respond:
+
+Police
+Ambulance
+Firefighter
+Tow truck
+Road maintenance
+Mechanic
+
+These should use the existing emergency/job framework.
+
+18. TUNNEL TRAFFIC SYSTEM
+
+The tunnel must work with NPC traffic.
+
+NPC vehicles should:
+
+Enter
+Follow lanes
+Maintain speed
+Stop when required
+React to traffic
+Exit
+Continue to destinations
+
+Do not spawn unlimited vehicles inside the tunnel.
+
+Use controlled traffic spawning.
+
+19. TUNNEL PERFORMANCE
+
+The tunnel must be performance-conscious.
+
+Do not use unnecessary physics or scripts.
+
+Use:
+
+Controlled traffic
+Distance-based activation
+Efficient lighting
+Optimised geometry
+Streaming
+LOD where appropriate
+Event-driven systems
+
+The tunnel must not create a permanent heavy server load.
+
+20. UNDERWATER VISUAL EFFECT
+
+The tunnel should visually communicate that it passes underwater.
+
+Possible visual elements:
+
+Water visible outside tunnel
+Underwater environment
+Fish
+Marine vegetation
+Rocks
+Submerged structures
+Light rays
+Water distortion outside the tunnel
+Bubbles where appropriate
+
+These are visual/environmental features.
+
+DO NOT turn this into an underwater survival game.
+
+21. TUNNEL EXPLORATION
+
+The tunnel can contain optional discoverable areas.
+
+Examples:
+
+Maintenance corridors
+Emergency rooms
+Service tunnels
+Observation areas
+Hidden maintenance rooms
+Collectibles
+
+These should remain grounded in realistic town infrastructure.
+
+22. BRIDGES AND ALTERNATIVE ROUTES
+
+Where appropriate, create bridges or alternate routes.
+
+Not every island must have only one connection.
+
+Possible transport choices:
+
+CAR
+↓
+UNDERWATER TUNNEL
+
+or
+
+CAR
+↓
+FERRY
+↓
+ISLAND
+
+or
+
+BUS
+↓
+FERRY
+↓
+ISLAND
+
+or
+
+BOAT
+↓
+MARINA
+↓
+ISLAND
+
+This creates genuine transportation choices.
+
+23. TRANSPORT ECONOMY
+
+Transportation must connect to the economy.
+
+Examples:
+
+INDUSTRIAL PORT
+↓
+TRUCK
+↓
+MAIN TOWN
+↓
+WAREHOUSE
+↓
+BUSINESS
+FISHING ISLAND
+↓
+FERRY
+↓
+MAIN TOWN
+↓
+FISH MARKET
+↓
+RESTAURANT
+TOURIST ISLAND
+↓
+HOTEL
+↓
+TOURISTS
+↓
+TAXI
+↓
+RESTAURANTS
+↓
+SHOPS
+ISLAND VILLAGE
+↓
+DELIVERY
+↓
+UNDERWATER TUNNEL
+↓
+MAIN TOWN
+24. VEHICLE SYSTEM EXPANSION
+
+Create the following vehicle categories.
+
+PERSONAL
+Bicycle
+Scooter
+Motorbike
+Hatchback
+Sedan
+Estate
+SUV
+Pickup
+DELIVERY
+Delivery bicycle
+Scooter
+Delivery car
+Small van
+Large van
+Box van
+COMMERCIAL
+Box truck
+Flatbed truck
+Tipper truck
+Refrigerated truck
+Fuel tanker
+Car transporter
+Moving truck
+PUBLIC SERVICE
+Police car
+Police van
+Fire engine
+Ambulance
+Rescue 4x4
+Coastguard vehicle
+Maintenance vehicle
+Utility van
+Road sweeper
+Bin lorry
+GARAGE / RECOVERY
+Tow truck
+Recovery vehicle
+Mobile mechanic vehicle
+CONSTRUCTION
+Excavator
+Cement mixer
+Flatbed
+Crane vehicle
+Forklift
+BOATS
+Fishing dinghy
+Fishing boat
+Harbour workboat
+Harbour patrol boat
+Boat taxi
+Small passenger ferry
+Large passenger ferry
+Vehicle ferry
+Dive boat
+Rescue boat
+Coastguard boat
+Salvage boat
+Cargo barge
+
+Use modular configurations and liveries where possible.
+
+Do not create unnecessary separate vehicle systems.
+
+25. VEHICLE OWNERSHIP
+
+Vehicles should support:
+
+Ownership
+Purchase
+Storage
+Spawn points
+Fuel
+Maintenance
+Repairs
+Insurance where appropriate
+Customisation
+Upgrades
+Job restrictions
+Cargo
+Passenger capacity
+Vehicle condition
+26. TRANSPORT JOB EXPANSION
+
+Deeply implement:
+
+Taxi Driver
+Bus Driver
+Delivery Driver
+Parcel Courier
+Food Delivery Driver
+Truck Driver
+Moving Worker
+Tow Truck Driver
+Garage Recovery Driver
+Boat Taxi Driver
+Ferry Operator
+Airport Transfer Driver
+Harbour Transport Worker
+Cargo Transport Worker
+
+Jobs should interact with the physical world.
+
+27. TRANSPORT HUBS
+
+Create functional:
+
+Bus station
+Taxi rank
+Ferry terminal
+Marina
+Truck depot
+Delivery depot
+Industrial transport yard
+Parking areas
+Vehicle loading areas
+
+NPCs should use these systems.
+
+28. NPC TRANSPORT
+
+NPCs should be capable of choosing transport.
+
+Examples:
+
+HOME
+↓
+WALK
+↓
+BUS
+↓
+WORK
+HOME
+↓
+CAR
+↓
+UNDERWATER TUNNEL
+↓
+WORK ON ISLAND
+HOTEL
+↓
+TAXI
+↓
+FERRY
+↓
+TOURIST ISLAND
+FISHING ISLAND
+↓
+FERRY
+↓
+MAIN TOWN
+↓
+SHOP
+
+NPC transport choices should help make the world feel connected.
+
+29. TRAVEL TICKETING
+
+Create a universal transport ticket system where appropriate.
+
+Tickets can support:
+
+Bus
+Ferry
+Passenger transport
+
+Tickets should use normal in-game money.
+
+Do NOT require Robux for essential transportation.
+
+30. NO PAY-TO-WIN TRANSPORT
+
+Players must be able to access important transport systems without spending Robux.
+
+Robux should not be required for:
+
+Essential roads
+Ferry routes
+Underwater tunnel
+Essential jobs
+Basic vehicles
+Core progression
+
+Paid items should focus on optional cosmetics and lifestyle features.
+
+31. OPTIONAL ROBUX MONETISATION
+
+Use the principle:
+
+ROBUX = LIFESTYLE, NOT POWER
+
+Possible purchases:
+
+VEHICLE COSMETICS
+Paint
+Wheels
+Interiors
+Lights
+Horns
+Number plate styles
+Decals
+Cosmetic liveries
+PREMIUM VEHICLE COSMETICS
+Luxury cars
+Luxury boats
+Premium-looking vans
+Special cosmetic variants
+
+These must not provide unfair economic advantages.
+
+PROPERTY COSMETICS
+Furniture packs
+Interior themes
+Garden themes
+Garage themes
+Lighting packs
+Decorations
+CLOTHING
+Fashion
+Work uniforms
+Casual clothing
+Seasonal outfits
+BUSINESS COSMETICS
+Signs
+Branding
+Interior themes
+Decorative equipment
+Staff uniforms
+BOAT COSMETICS
+Paint schemes
+Interior decoration
+Lighting
+Flags
+Cosmetic accessories
+EMOTES
+PET COSMETICS
+PHOTO MODE COSMETICS
+PRIVATE SERVERS
+OPTIONAL VIP SOCIAL FEATURES
+SEASONAL COSMETIC PASSES
+
+Free players must still have meaningful access to the game.
+
+Do not sell:
+
+Best jobs
+Essential areas
+Required resources
+Huge money multipliers
+Dominant vehicles
+Essential licences
+Core progression
+32. PIZZA BUSINESS GOLD STANDARD
+
+The Pizza Business remains the reference implementation.
+
+It must be fully interconnected with:
+
+Suppliers
+Ingredients
+Cooking
+Customers
+Orders
+Packaging
+Till
+Delivery
+Vehicles
+Fuel
+Skills
+XP
+Reputation
+Employees
+Business ownership
+
+If another system cannot match the depth of the Pizza Business, improve that system before calling it complete.
+
+33. WORLD ECONOMY
+
+All locations should connect to the economy.
+
+Examples:
+
+INDUSTRIAL PORT
+↓
+SUPPLIES
+↓
+WAREHOUSE
+↓
+BUSINESSES
+↓
+CUSTOMERS
+FISHING ISLAND
+↓
+FISH
+↓
+FISH MARKET
+↓
+RESTAURANTS
+TOURIST ISLAND
+↓
+TOURISTS
+↓
+HOTELS
+↓
+RESTAURANTS
+↓
+SHOPS
+↓
+TAXIS
+↓
+ACTIVITIES
+ISLAND VILLAGE
+↓
+RESIDENTS
+↓
+SHOPS
+↓
+DELIVERIES
+↓
+MAIN TOWN SUPPLIERS
+34. PROPERTY EXPANSION
+
+Properties should exist on:
+
+Main Town
+Island Village
+Tourist Island where appropriate
+Fishing Island where appropriate
+
+Players can eventually:
+
+Rent
+Buy
+Furnish
+Upgrade
+Maintain
+Sell
+
+Properties should have different values based on location.
+
+35. EXPLORATION
+
+Add optional grounded exploration:
+
+Caves
+Coastal paths
+Lighthouse
+Shipwrecks
+Hidden rooms
+Maintenance tunnels
+Old buildings
+Hidden objects
+Collectibles
+Tunnel service areas
+Coastal viewpoints
+
+Do not introduce supernatural or lost-city mechanics unless explicitly requested later.
+
+36. MAP
+
+The world map must show:
+
+Main Town
+Islands
+Roads
+Ferry routes
+Ferry terminals
+Underwater tunnel
+Bus routes
+Businesses
+Jobs
+Properties
+Shops
+Activities
+Marinas
+Ports
+Industrial areas
+Events
+
+Players should understand how the world is connected.
+
+37. MAP TRANSPORT DISPLAY
+
+Show major transport connections visually.
+
+Example:
+
+              TOURIST ISLAND
+                    │
+                  FERRY
+                    │
+FISHING ISLAND ─── MAIN HARBOUR ─── INDUSTRIAL PORT
+                    │
+                  FERRY
+                    │
+              ISLAND VILLAGE
+                    │
+             UNDERWATER TUNNEL
+                    │
+                MAIN TOWN
+
+The exact geography can be adapted to the supplied world.
+
+38. DEVELOPMENT ARCHITECTURE
+
+Use modular systems.
+
+Recommended:
+
+ReplicatedStorage:
+
+Shared
+├── Config
+├── ItemDefinitions
+├── RecipeDefinitions
+├── JobDefinitions
+├── SkillDefinitions
+├── VehicleDefinitions
+├── BoatDefinitions
+├── BusinessDefinitions
+├── PropertyDefinitions
+├── NPCDefinitions
+├── TransportDefinitions
+├── FerryDefinitions
+├── TunnelDefinitions
+└── EventDefinitions
+
+Modules
+├── InventorySystem
+├── EconomySystem
+├── JobSystem
+├── BusinessSystem
+├── ShopSystem
+├── OrderSystem
+├── DeliverySystem
+├── CookingSystem
+├── VehicleSystem
+├── BoatSystem
+├── TransportSystem
+├── FerrySystem
+├── TunnelSystem
+├── NPCSystem
+├── CustomerSystem
+├── PropertySystem
+├── SkillSystem
+├── ProgressionSystem
+├── ReputationSystem
+├── EventSystem
+├── InteractionSystem
+├── NotificationSystem
+├── SaveSystem
+└── TownSimulationSystem
+
+Use the existing architecture if it already contains equivalent systems.
+
+Do not duplicate systems.
+
+39. SERVER AUTHORITY
+
+The server controls:
+
+Money
+Inventory
+Jobs
+Rewards
+Purchases
+Sales
+Businesses
+Vehicles
+Boats
+Ferry operations
+Tickets
+XP
+Skills
+Property
+Progression
+Transport payments
+
+Never trust client-provided economic values.
+
+40. PERFORMANCE
+
+The world may contain:
+
+Large towns
+Multiple islands
+Many buildings
+NPCs
+Cars
+Boats
+Ferries
+Traffic
+Businesses
+Interactive objects
+
+Use:
+
+Streaming
+LOD
+Distance-based simulation
+NPC simulation levels
+Object pooling
+Event-driven systems
+Central services
+Efficient pathfinding
+Controlled traffic spawning
+Efficient boat simulation
+
+Avoid:
+
+One heavy script per object
+Constant Heartbeat loops
+Constant pathfinding
+Excessive remote events
+Unnecessary physics
+Unlimited NPCs
+Unlimited vehicles
+41. DEVELOPMENT PHASES
+
+Do NOT build everything simultaneously.
+
+Use this order.
+
+PHASE 0 — PROJECT AUDIT
+
+Inspect:
+
+Workspace
+Town
+Roads
+Buildings
+Terrain
+Existing vehicles
+Boats
+NPCs
+Scripts
+UI
+Systems
+Assets
+Spawn points
+
+Create:
+
+HarbourlifeProjectAudit.md
+
+Do not destroy existing work.
+
+PHASE 1 — CORE FRAMEWORK
+
+Build:
+
+Player data
+Money
+Bank
+Inventory
+Items
+Jobs
+Skills
+Progression
+Interaction
+UI
+Notifications
+Save system
+
+Test completely.
+
+PHASE 2 — PIZZA BUSINESS
+
+Build the complete Pizza Business.
+
+Do not continue until it is playable.
+
+PHASE 3 — BASIC VEHICLE SYSTEM
+
+Build:
+
+Vehicle ownership
+Vehicle spawning
+Garage
+Fuel
+Repairs
+Maintenance
+Basic vehicles
+Vehicle storage
+PHASE 4 — RETAIL
+
+Build:
+
+Grocery
+General store
+Clothing
+Electronics
+Hardware
+Fishing shop
+Furniture
+PHASE 5 — FOOD
+
+Build:
+
+Café
+Bakery
+Restaurant
+Fast food
+Cooking
+Customers
+Orders
+PHASE 6 — DELIVERY
+
+Build:
+
+Pizza delivery
+Parcel delivery
+Grocery delivery
+Food delivery
+Courier
+Truck delivery
+Moving company
+PHASE 7 — PUBLIC SERVICES
+
+Build:
+
+Police
+Fire
+Ambulance
+Rescue
+Lifeguard
+Coastguard
+Security
+Animal rescue
+PHASE 8 — TOWN MAINTENANCE
+
+Build:
+
+Gardening
+Road maintenance
+Cleaning
+Waste
+Recycling
+Construction
+Plumbing
+Electrical
+Roofing
+PHASE 9 — BUSINESS / OFFICE
+
+Build:
+
+Bank
+Accountant
+Insurance
+Estate agent
+Job centre
+Hotel
+Office courier
+PHASE 10 — PROPERTY
+
+Build:
+
+Rentals
+Property purchases
+Homes
+Furniture
+Garages
+Maintenance
+Property upgrades
+PHASE 11 — MAIN HARBOUR
+
+Build:
+
+Harbour
+Marina
+Fishing
+Fish market
+Boat rental
+Boat mechanic
+Dock workers
+Harbour master
+Diving
+Salvage
+PHASE 12 — ISLAND WORLD
+
+Build:
+
+Island Village
+Tourist Island
+Fishing Island
+Industrial Port
+
+Populate each location with:
+
+Buildings
+Roads
+NPCs
+Businesses
+Jobs
+Activities
+Transport
+Economy
+PHASE 13 — FERRY NETWORK
+
+Build:
+
+Ferry terminals
+Passenger ferries
+Vehicle ferry
+Ticket system
+Boarding
+Docking
+Passenger system
+Vehicle loading
+Vehicle unloading
+Ferry schedules
+Ferry operator job
+Ferry maintenance
+
+Test multiplayer.
+
+PHASE 14 — UNDERWATER ROAD TUNNEL
+
+Build:
+
+Mainland entrance
+Tunnel road
+Underwater section
+Lighting
+Safety systems
+Emergency areas
+Service areas
+Island exit
+Traffic
+NPC vehicles
+Tunnel maintenance
+Emergency events
+
+Test:
+
+Car
+Taxi
+Bus
+Delivery van
+Truck
+Police
+Ambulance
+Fire engine
+Tow truck
+
+Test multiplayer.
+
+Test vehicles entering and leaving correctly.
+
+PHASE 15 — TRANSPORT NETWORK
+
+Connect:
+
+Roads
+Bus routes
+Taxi
+Ferry
+Vehicle ferry
+Boats
+Underwater tunnel
+Industrial transport
+Delivery routes
+
+NPCs should use these systems.
+
+PHASE 16 — ACTIVITIES
+
+Build:
+
+Arcade
+Bowling
+Cinema
+Gym
+Football
+Basketball
+Swimming
+Cycling
+Skateboarding
+Beach
+Photography
+Boating
+Diving
+Fishing
+PHASE 17 — EXPLORATION
+
+Build:
+
+Treasure hunts
+Lost items
+Hidden objects
+Caves
+Lighthouse
+Abandoned buildings
+Coastal exploration
+Collectibles
+Tunnel maintenance exploration
+
+No survival mechanics.
+
+PHASE 18 — BUSINESS OWNERSHIP
+
+Allow players to own selected businesses.
+
+Implement:
+
+Purchasing
+Employees
+Stock
+Pricing
+Revenue
+Expenses
+Reputation
+Upgrades
+Business progression
+PHASE 19 — NPC LIFE
+
+Implement:
+
+Homes
+Jobs
+Schedules
+Shopping
+Restaurants
+Transport
+Ferries
+Cars
+Recreation
+Social behaviour
+
+NPCs should travel naturally around the connected world.
+
+PHASE 20 — TOWN EVENTS
+
+Implement:
+
+Markets
+Festivals
+Sports days
+Fishing competitions
+Storms
+Construction projects
+Community events
+Delivery surges
+Transport disruptions
+Tunnel maintenance events
+Ferry events
+PHASE 21 — FINAL ECONOMY
+
+Connect all major systems.
+
+Example:
+
+INDUSTRIAL PORT
+↓
+SUPPLIER
+↓
+WAREHOUSE
+↓
+BUSINESS
+↓
+CUSTOMER
+↓
+DELIVERY
+↓
+TRANSPORT
+↓
+PAYMENT
+↓
+PLAYER
+PHASE 22 — FINAL POLISH
+
+Improve:
+
+Lighting
+Weather
+Sounds
+Traffic
+NPC activity
+Water
+Harbour
+Ferry terminals
+Tunnel
+Decorations
+UI
+Animations
+Map
+Tutorials
+Performance
+Job discovery
+42. ONE-SYSTEM-AT-A-TIME RULE
+
+ABSOLUTE RULE.
+
+Never create dozens of incomplete systems.
+
+Always:
+
+BUILD
+↓
+TEST
+↓
+FIX
+↓
+TEST AGAIN
+↓
+DOCUMENT
+↓
+MARK COMPLETE
+↓
+NEXT SYSTEM
+43. TESTING REQUIREMENT
+
+Every system must be tested for:
+
+Normal use
+Multiplayer
+Player leaving
+Player rejoining
+Missing items
+Insufficient money
+Full inventory
+Vehicle destroyed
+Vehicle abandoned
+Failed job
+Cancelled job
+Duplicate interaction
+Duplicate reward
+NPC failure
+Server restart
+Save/load
+Exploit attempts
+
+Transport additionally requires:
+
+Entering vehicle
+Exiting vehicle
+Vehicle ferry boarding
+Vehicle ferry unloading
+Ferry docking
+Ferry departure
+Tunnel entry
+Tunnel exit
+Traffic
+Emergency vehicles
+NPC transport
+Multiplayer transport
+44. PROGRESS TRACKING
+
+Maintain:
+
+HarbourlifeBuildProgress.md
+
+Never mark a system complete because scripts merely exist.
+
+It must actually work in Play Mode.
+
+45. ASSET REQUIREMENT TRACKER
+
+Maintain:
+
+HarbourlifeAssetRequirements.md
+
+Track:
+
+Buildings
+Vehicles
+Boats
+Ferry terminals
+Tunnel assets
+Road assets
+Harbour assets
+Island assets
+NPC assets
+UI assets
+
+If an asset does not yet exist, use an appropriate temporary placeholder so development can continue where possible.
+
+Replace placeholders later.
+
+46. KNOWN ISSUES
+
+Maintain:
+
+HarbourlifeKnownIssues.md
+
+Every discovered bug must be recorded.
+
+47. NO FAKE FUNCTIONALITY
+
+Never claim a system is complete unless it works.
+
+A:
+
+Ferry must actually transport players.
+Vehicle ferry must actually transport vehicles.
+Tunnel must actually allow vehicles through.
+Shop must actually sell goods.
+Till must actually process transactions.
+Pizza oven must actually cook.
+Delivery must actually track orders.
+Vehicle must actually drive.
+Job must actually pay.
+NPC must actually behave.
+Business must actually operate.
+Property must actually save.
+Economy must actually connect.
+48. FINAL WORLD VISION
+
+The final game should allow a player to experience a complete virtual life.
+
+Example:
+
+WAKE UP
+↓
+LEAVE HOUSE
+↓
+GET IN CAR
+↓
+DRIVE THROUGH TOWN
+↓
+ENTER UNDERWATER TUNNEL
+↓
+ARRIVE ON ISLAND
+↓
+WORK AT FISH MARKET
+↓
+LOAD FISH
+↓
+TAKE FERRY
+↓
+ARRIVE MAIN TOWN
+↓
+DELIVER FISH TO RESTAURANT
+↓
+GET PAID
+↓
+VISIT GARAGE
+↓
+REPAIR CAR
+↓
+GO HOME
+↓
+COOK DINNER
+↓
+MEET FRIENDS
+↓
+GO BOWLING
+↓
+ACCEPT EVENING PIZZA DELIVERY
+↓
+DRIVE THROUGH TUNNEL
+↓
+DELIVER PIZZA
+↓
+RETURN HOME
+↓
+SLEEP
+
+Another player could:
+
+OWN A PIZZA SHOP
+↓
+HIRE STAFF
+↓
+ORDER INGREDIENTS
+↓
+RECEIVE DELIVERY
+↓
+SERVE CUSTOMERS
+↓
+MANAGE EMPLOYEES
+↓
+BUY SECOND PROPERTY
+↓
+BUY DELIVERY VEHICLES
+↓
+EXPAND BUSINESS
+
+Another player could:
+
+BECOME FERRY OPERATOR
+↓
+EARN FERRY LICENCE
+↓
+OPERATE PASSENGER FERRY
+↓
+TRANSPORT VEHICLES
+↓
+LEVEL UP
+↓
+OPERATE LARGER FERRY
+
+Another could:
+
+BECOME MECHANIC
+↓
+OPEN GARAGE
+↓
+REPAIR NPC VEHICLES
+↓
+REPAIR PLAYER VEHICLES
+↓
+HIRE MECHANICS
+↓
+EXPAND BUSINESS
+
+The important principle is:
+
+EVERYTHING SHOULD CONNECT.
+
+49. FINAL DEVELOPMENT PRINCIPLE
+
+Harbourlife is not about having the biggest list of jobs.
+
+It is about making the world:
+
+Deep
+Connected
+Interactive
+Persistent
+Replayable
+Multiplayer
+Economically interconnected
+Fun to explore
+
+A ferry should connect islands.
+
+A tunnel should connect roads.
+
+Roads should connect businesses.
+
+Businesses should connect customers.
+
+Customers should create demand.
+
+Demand should create jobs.
+
+Jobs should create income.
+
+Income should allow progression.
+
+Progression should unlock new opportunities.
+
+The player should always have something meaningful to do.
+
+50. START NOW
+
+BEGIN WITH:
+
+PHASE 0 — PROJECT AUDIT
+
+DO NOT BUILD THE GAME YET.
+
+First inspect the complete Roblox Studio project.
+
+Report:
+
+Existing town layout
+Existing roads
+Existing buildings
+Existing terrain
+Existing water
+Existing harbour
+Existing islands
+Existing bridges
+Existing vehicles
+Existing boats
+Existing NPCs
+Existing scripts
+Existing systems
+Existing UI
+Existing assets
+Existing transport routes
+Existing potential ferry locations
+Potential underwater tunnel location
+Missing buildings
+Missing vehicles
+Missing boats
+Missing systems
+Potential conflicts
+Performance concerns
+Recommended development order
+
+Create:
+
+HarbourlifeProjectAudit.md
+
+Also create:
+
+HarbourlifeBuildProgress.md
+
+HarbourlifeAssetRequirements.md
+
+HarbourlifeKnownIssues.md
+
+DO NOT destroy existing work.
+
+DO NOT redesign existing roads unless specifically instructed.
+
+DO NOT start building all systems at once.
+
+After the audit, wait for developer approval before beginning Phase 1.
+
+The final objective is:
+
+A fully functioning Roblox town simulation with a connected mainland, islands, ferry network, vehicle transportation, industrial economy, living NPC population, businesses, jobs, properties, activities and a physically drivable underwater road tunnel connecting the mainland to an island.
+
+
+### One important change I would make to your existing master prompt
+
+Your current version says **you will provide the physical town environment and major buildings**, while Claude builds the functionality. 
+
+Since you've now said you want Claude to **build/assemble the town environment as well**, I would change that responsibility. Claude should be instructed to:
+
+- Build/assemble the town using available assets.
+- Create placeholder buildings where your custom models aren't ready.
+- Build the islands.
+- Build the harbour.
+- Build the ferry terminals.
+- Build the underwater tunnel.
+- Lay out supporting roads **where the new world requires them**, while preserving any road layout you've already specifically designed.
+- Populate the world.
+- Then implement the simulation.
+
+That would make this much more of a **"Claude builds the game from the specification"** project rather than you having to construct half the world first.
+
+Cloudflare
+
+Need AI at the edge?
+
+Run AI inference near users. No GPU setup required.
+
+Ad
+More options
+would it be a good idea to add a prison on one of the islands
+
+Yes — a prison island could fit Harbourlife very well, especially because you've already got a ferry network and an underwater road tunnel. I would make it a fully functioning prison facility, rather than just a decorative building.
+
+🏝️ A dedicated Prison Island
+
+I'd place it on a separate, restricted island with only controlled access.
+
+Something like:
+
+                 MAIN TOWN
+                    │
+              FERRY TERMINAL
+                    │
+             ┌──────┴──────┐
+             │             │
+          FERRY        UNDERWATER
+             │           TUNNEL
+             │             │
+      OTHER ISLANDS     MAIN ISLAND
+             │
+       PRISON ISLAND
+             │
+       SECURE FERRY
+             │
+        PRISON COMPLEX
+What makes it interesting
+
+The prison could become another major part of the town economy.
+
+Prison facility:
+
+Main prison building
+Cell blocks
+Reception/intake
+Visitor centre
+Prison offices
+Medical centre
+Kitchen
+Laundry
+Workshop
+Exercise yard
+Security gates
+Control room
+Staff facilities
+Vehicle garage
+Secure loading area
+Perimeter fencing
+Watchtowers
+Secure harbour
+Prison staff housing
+Jobs
+
+This could add several proper careers:
+
+Prison Officer
+Prison Transport Officer
+Prison Medic
+Prison Cook
+Prison Cleaner
+Prison Maintenance Worker
+Prison Administrator
+Security Officer
+Prison Workshop Supervisor
+Prison Transport Driver
+Prison Ferry Operator
+
+And they should work like the other jobs — actual tasks, equipment, schedules, NPCs, pay, XP and progression, not just clicking a button.
+
+Prisoner system
+
+I'd also add NPC prisoners with daily routines:
+
+WAKE
+ ↓
+BREAKFAST
+ ↓
+WORK / EDUCATION
+ ↓
+EXERCISE
+ ↓
+LUNCH
+ ↓
+WORK / RECREATION
+ ↓
+DINNER
+ ↓
+CELL
+
+This would give you another NPC population that behaves differently from ordinary town residents.
+
+🚢 Prison transport
+
+This is where your transport network gets even more interesting.
+
+Have a secure prison ferry transporting:
+
+Prison staff
+Supplies
+Prison visitors
+Prisoners
+Maintenance workers
+
+And a secure prison transport van for moving prisoners between the prison and mainland facilities.
+
+The prison could therefore become another reason for the ferry network to exist.
+
+🚓 Police connection
+
+It could connect directly to your police system:
+
+POLICE
+   ↓
+ARREST
+   ↓
+POLICE STATION
+   ↓
+COURT / PROCESSING
+   ↓
+PRISON TRANSPORT
+   ↓
+FERRY
+   ↓
+PRISON ISLAND
+
+You could have police, prison and emergency services operating as interconnected systems, rather than three unrelated jobs.
+
+One thing I'd avoid
+
+I wouldn't make the prison a place where normal players can simply go around committing crimes to get themselves imprisoned. That could turn the whole game into a crime simulator.
+
+Instead, make the criminal justice system primarily NPC-driven, while players can work legitimate roles such as police, prison staff, transport, medical, maintenance, etc.
+
+You could still have occasional fictional emergency events such as:
+
+Prison medical emergency
+Prison fire
+Security lockdown
+Transport breakdown
+Riot response event
+Supply delivery
+Search operation
+
+Those would create cooperative jobs for multiple players.
+
+I think it also gives the map a stronger structure
+
+You could eventually have something like:
+
+                     TOURIST ISLAND
+                           │
+                         FERRY
+                           │
+FISHING ISLAND ───── MAIN HARBOUR ───── INDUSTRIAL PORT
+                           │
+                         FERRY
+                           │
+                    ISLAND VILLAGE
+                           │
+                    VEHICLE FERRY
+                           │
+                    OTHER ISLAND
+                           
+MAIN TOWN
+    │
+    │ UNDERWATER ROAD TUNNEL
+    │
+    └────────────────── ISLAND
+                           │
+                      PRISON ISLAND
+
+Prison Island would therefore be more than another location — it gives you another complete economic, transport, NPC and job ecosystem.
+
+I'd add it to the master plan as a major island/location, alongside the Tourist Island, Fishing Island, Island Village and Industrial Port.
+
+
+pet store with pets and clothes.
+gun shop with clothes
+sewer system with drains in roads and ladders to get in and out.
+cctv system in town to detect criminals.
+car show room with cars on display.
+airport with planes jumbo jets helicopters ect.
+add mobile phones with apps to use in game and call taxi call police ect.
+giant squid to randomly attack boats.
+build own house options and use it or sell it for profit.
+
+
