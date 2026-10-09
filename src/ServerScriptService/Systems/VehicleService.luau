@@ -30,6 +30,44 @@ local function weld(a, b)
 	local w = Instance.new("WeldConstraint"); w.Part0 = a; w.Part1 = b; w.Parent = a
 end
 
+-- Articulated excavator: Body -(swing)- Cab -(boom)- Boom -(stick)- Stick -(bucket)- Bucket.
+-- Every hinge is a servo; at TargetAngle 0 the arm is in its rest pose. The driver's client sets targets.
+local function hinge(name, a, b, frameCF, limits, speed)
+	local h = Instance.new("HingeConstraint")
+	h.Name = name
+	local a0, a1 = Instance.new("Attachment"), Instance.new("Attachment")
+	a0.CFrame = a.CFrame:ToObjectSpace(frameCF); a0.Parent = a
+	a1.CFrame = b.CFrame:ToObjectSpace(frameCF); a1.Parent = b
+	h.Attachment0 = a0; h.Attachment1 = a1
+	h.ActuatorType = Enum.ActuatorType.Servo
+	h.AngularSpeed = speed; h.ServoMaxTorque = 5e6; h.TargetAngle = 0
+	if limits then h.LimitsEnabled = true; h.LowerAngle = limits[1]; h.UpperAngle = limits[2] end
+	h.Parent = a
+	return h
+end
+
+local function buildExcavator(model, body, cf, s, def)
+	local top = s.Y / 2
+	local amber = Color3.fromRGB(200, 150, 20)
+	local cab = part(model, "Cab", Vector3.new(7, 4, 8), cf * CFrame.new(0, top + 2, 0), def.color, false)
+	local P1 = CFrame.new(0, top + 3.5, -2.5)
+	local boomFrame = P1 * CFrame.Angles(math.rad(30), 0, 0)
+	local boom = part(model, "Boom", Vector3.new(1.6, 1.6, 10), cf * boomFrame * CFrame.new(0, 0, -5), amber, false)
+	local E1 = boomFrame * CFrame.new(0, 0, -10)
+	local stickFrame = CFrame.new(E1.Position) * CFrame.Angles(math.rad(-40), 0, 0)
+	local stick = part(model, "Stick", Vector3.new(1.2, 1.2, 8), cf * stickFrame * CFrame.new(0, 0, -4), amber, false)
+	local E2 = stickFrame * CFrame.new(0, 0, -8)
+	local bucketFrame = CFrame.new(E2.Position) * CFrame.Angles(math.rad(-85), 0, 0)
+	local bucket = part(model, "Bucket", Vector3.new(4, 3, 3), cf * bucketFrame * CFrame.new(0, 0, -1.5), Color3.fromRGB(90, 90, 90), false)
+	local tip = Instance.new("Attachment"); tip.Name = "Tip"; tip.CFrame = CFrame.new(0, 0, -1.5); tip.Parent = bucket
+
+	hinge("SwingHinge", body, cab, cf * CFrame.new(0, top, 0) * CFrame.Angles(0, 0, math.rad(90)), nil, 1.0)
+	hinge("BoomHinge", cab, boom, cf * CFrame.new(P1.Position), { -40, 30 }, 0.6)
+	hinge("StickHinge", boom, stick, cf * CFrame.new(E1.Position), { -60, 50 }, 0.8)
+	hinge("BucketHinge", stick, bucket, cf * CFrame.new(E2.Position), { -70, 60 }, 1.0)
+	return cab
+end
+
 local function build(id, def, cf, player, fuel, condition)
 	local model = Instance.new("Model"); model.Name = player.Name .. "_" .. id
 	local s = def.size
@@ -40,21 +78,22 @@ local function build(id, def, cf, player, fuel, condition)
 	local seat = Instance.new("VehicleSeat")
 	seat.Name = "Seat"; seat.Size = Vector3.new(2, 1, 2); seat.MaxSpeed = 0; seat.Torque = 0
 	seat.CFrame = cf * CFrame.new(0, s.Y / 2 + 0.5, s.Z * 0.1)
-	seat.Parent = model; weld(body, seat)
+	seat.Parent = model
+	if def.construction then
+		local cab = buildExcavator(model, body, cf, s, def)
+		seat.CFrame = cf * CFrame.new(0, s.Y / 2 + 4.5, 1.5)
+		weld(cab, seat)
+	else
+		weld(body, seat)
+	end
 
 	local wheelSize = Vector3.new(1.5, 2.2, 2.2)
-	for _, x in { -s.X / 2, s.X / 2 } do
+	for _, x in (def.construction and {} or { -s.X / 2, s.X / 2 }) do
 		for _, z in { -s.Z / 2 + 2, s.Z / 2 - 2 } do
 			local w = part(model, "Wheel", wheelSize, cf * CFrame.new(x, -s.Y / 2 + 0.2, z) * CFrame.Angles(0, 0, math.pi / 2), Color3.fromRGB(25, 25, 25), false)
 			w.Shape = Enum.PartType.Cylinder; weld(body, w)
 		end
 	end
-	if def.construction then -- excavator: cab, boom and bucket
-		weld(body, part(model, "Cab", Vector3.new(5, 4, 5), cf * CFrame.new(0, s.Y / 2 + 2, s.Z * 0.2), def.color, false))
-		weld(body, part(model, "Boom", Vector3.new(1.5, 1.5, 11), cf * CFrame.new(0, s.Y / 2 + 3, -s.Z / 2 - 2) * CFrame.Angles(math.rad(25), 0, 0), Color3.fromRGB(200, 150, 20), false))
-		weld(body, part(model, "Bucket", Vector3.new(4, 2, 3), cf * CFrame.new(0, s.Y / 2 - 1, -s.Z / 2 - 8), Color3.fromRGB(90, 90, 90), false))
-	end
-
 	local att = Instance.new("Attachment"); att.Parent = body
 	local drive = Instance.new("LinearVelocity")
 	drive.Name = "Drive"; drive.Attachment0 = att; drive.RelativeTo = Enum.ActuatorRelativeTo.World
@@ -78,6 +117,8 @@ local function build(id, def, cf, player, fuel, condition)
 	seat:SetAttribute("FuelCapacity", def.fuelCapacity)
 	seat:SetAttribute("Condition", condition)
 	seat:SetAttribute("Disabled", fuel <= 0)
+	seat:SetAttribute("Construction", def.construction == true)
+	seat:SetAttribute("Load", 0)
 
 	-- only the owner may drive
 	seat:GetPropertyChangedSignal("Occupant"):Connect(function()
@@ -120,6 +161,10 @@ function V.Spawn(player: Player, id: string): boolean
 	active[player] = { id = id, model = model, body = body, seat = seat, fuel = rec.fuel, condition = rec.condition }
 	Notify.Send(player, def.name .. " ready", "success")
 	return true
+end
+
+function V.GetActive(player: Player)
+	return active[player]
 end
 
 function V.Buy(player: Player, id: string): boolean

@@ -2,7 +2,7 @@
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local NAMES = { "DataChanged", "Notify" }
+local NAMES = { "DataChanged", "Notify", "ExcavatorAction" }
 local Remotes = {}
 
 local folder

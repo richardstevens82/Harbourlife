@@ -5,3 +5,4 @@ require(Systems.TestWorld).Start() -- before the systems below so Parts exist
 require(Systems.JobCentre).Start()
 require(Systems.PizzaService).Start()
 require(Systems.VehicleService).Start()
+require(Systems.ExcavatorService).Start()

@@ -4,4 +4,5 @@ return {
 	seamanship = { name = "Seamanship" },
 	repair = { name = "Repair" },
 	fishing = { name = "Fishing" },
+	construction = { name = "Construction" },
 }

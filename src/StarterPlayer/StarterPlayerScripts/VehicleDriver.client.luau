@@ -2,7 +2,40 @@
 -- (Drive / Turn); the driver's client owns the physics so steering feels instant.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
 local player = Players.LocalPlayer
+
+-- Excavator controls (hold): Q/E swing, R/F boom, T/G stick, Y/H bucket. Tap: X dig, Z dump.
+local JOINTS = {
+	{ name = "SwingHinge", up = Enum.KeyCode.Q, down = Enum.KeyCode.E, rate = 50 },
+	{ name = "BoomHinge", up = Enum.KeyCode.R, down = Enum.KeyCode.F, rate = 30, min = -40, max = 30 },
+	{ name = "StickHinge", up = Enum.KeyCode.T, down = Enum.KeyCode.G, rate = 35, min = -60, max = 50 },
+	{ name = "BucketHinge", up = Enum.KeyCode.Y, down = Enum.KeyCode.H, rate = 50, min = -70, max = 60 },
+}
+local function driveArm(seat, dt)
+	if UIS:GetFocusedTextBox() then return end
+	local model = seat.Parent
+	for _, j in JOINTS do
+		local h = model:FindFirstChild(j.name, true)
+		if h then
+			local dir = (UIS:IsKeyDown(j.up) and 1 or 0) - (UIS:IsKeyDown(j.down) and 1 or 0)
+			if dir ~= 0 then
+				local t = h.TargetAngle + dir * j.rate * dt
+				if j.min then t = math.clamp(t, j.min, j.max) end
+				h.TargetAngle = t
+			end
+		end
+	end
+end
+UIS.InputBegan:Connect(function(input, processed)
+	if processed then return end
+	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	local seat = hum and hum.SeatPart
+	if not (seat and seat:GetAttribute("Construction")) then return end
+	if input.KeyCode == Enum.KeyCode.X then Remotes.ExcavatorAction:FireServer("dig")
+	elseif input.KeyCode == Enum.KeyCode.Z then Remotes.ExcavatorAction:FireServer("dump") end
+end)
 
 RunService.RenderStepped:Connect(function(dt)
 	local char = player.Character
@@ -15,6 +48,7 @@ RunService.RenderStepped:Connect(function(dt)
 	local turn = body and body:FindFirstChild("Turn")
 	if not (drive and turn) then return end
 
+	if seat:GetAttribute("Construction") then driveArm(seat, dt) end
 	local maxSpeed = seat:GetAttribute("MaxSpeed") or 0
 	local condition = seat:GetAttribute("Condition") or 100
 	if seat:GetAttribute("Disabled") then maxSpeed = 0 end

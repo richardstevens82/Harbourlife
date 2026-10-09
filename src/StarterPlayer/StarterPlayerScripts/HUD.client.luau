@@ -58,7 +58,7 @@ end)
 
 -- Vehicle gauge (reads attributes the server keeps on the seat)
 local gauge = Instance.new("TextLabel")
-gauge.Size = UDim2.fromOffset(220, 30); gauge.Position = UDim2.new(1, -230, 0, 48)
+gauge.Size = UDim2.fromOffset(330, 54); gauge.Position = UDim2.new(1, -340, 0, 48)
 gauge.BackgroundTransparency = 0.4; gauge.BackgroundColor3 = Color3.new(0, 0, 0)
 gauge.TextColor3 = Color3.new(1, 1, 1); gauge.Font = Enum.Font.GothamBold; gauge.TextSize = 15
 gauge.Visible = false; gauge.Parent = gui
@@ -67,7 +67,11 @@ game:GetService("RunService").Heartbeat:Connect(function()
 	local seat = hum and hum.SeatPart
 	if seat and seat:IsA("VehicleSeat") and seat:GetAttribute("VehicleId") then
 		gauge.Visible = true
-		gauge.Text = string.format("Fuel %d/%d | Condition %d%%", seat:GetAttribute("Fuel") or 0, seat:GetAttribute("FuelCapacity") or 0, seat:GetAttribute("Condition") or 0)
+		local txt = string.format("Fuel %d/%d | Condition %d%%", seat:GetAttribute("Fuel") or 0, seat:GetAttribute("FuelCapacity") or 0, seat:GetAttribute("Condition") or 0)
+		if seat:GetAttribute("Construction") then
+			txt ..= string.format(" | Load %d\nQE swing  RF boom  TG stick  YH bucket  X dig  Z dump", seat:GetAttribute("Load") or 0)
+		end
+		gauge.Text = txt
 	else
 		gauge.Visible = false
 	end
