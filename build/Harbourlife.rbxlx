@@ -1,0 +1,1122 @@
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4"><Item class="Workspace" referent="RBX2"><Properties><string name="Name">Workspace</string></Properties><Item class="SpawnLocation" referent="RBX1"><Properties><string name="Name">SpawnLocation</string><bool name="Anchored">true</bool><CoordinateFrame name="CFrame"><X>0</X><Y>1</Y><Z>20</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame><Vector3 name="size"><X>6</X><Y>1</Y><Z>6</Z></Vector3></Properties></Item></Item><Item class="ReplicatedStorage" referent="RBX12"><Properties><string name="Name">ReplicatedStorage</string></Properties><Item class="Folder" referent="RBX11"><Properties><string name="Name">Shared</string></Properties><Item class="ModuleScript" referent="RBX3"><Properties><string name="Name">BusinessDefinitions</string><ProtectedString name="Source"><![CDATA[return {
+	pizza_shop = {
+		name = "Harbour Pizza",
+		maxOpenOrders = 5,
+		orderIntervalSeconds = 20,
+		orderLifetimeSeconds = 120,
+		counterMultiplier = 1.5, -- sale price = item price * multiplier
+		deliveryMultiplier = 2.0,
+		reputationOnServe = 1,
+		reputationOnExpire = -2,
+		minCookSeconds = 4,
+	},
+}
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX4"><Properties><string name="Name">Config</string><ProtectedString name="Source"><![CDATA[return {
+	DataStoreName = "HarbourlifePlayerData_v1",
+	AutosaveSeconds = 120,
+	StartingCash = 250,
+	StartingBank = 0,
+	InventorySlots = 30,
+	MaxStack = 99,
+	-- XP needed to reach level n+1 is XpBase * n^XpExponent
+	XpBase = 100,
+	XpExponent = 1.5,
+	MaxLevel = 50,
+	SkillXpBase = 50,
+	MaxSkillLevel = 20,
+	InteractCooldown = 0.5,
+	FuelPricePerUnit = 1,
+	RepairPricePerPoint = 0.5,
+	VehicleServiceRange = 40, -- vehicle must be this close to a fuel station
+	ExcavatorCooldown = 1.2,
+	ExcavatorMaxReach = 40,
+	DigRadius = 3,
+	BucketCapacity = 5,
+}
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX5"><Properties><string name="Name">ItemDefinitions</string><ProtectedString name="Source"><![CDATA[-- Server and client read this; only the server may change inventories.
+return {
+	pizza_dough = { name = "Pizza Dough", price = 2, stack = 99 },
+	tomato_sauce = { name = "Tomato Sauce", price = 3, stack = 99 },
+	cheese = { name = "Cheese", price = 4, stack = 99 },
+	pizza = { name = "Pizza", price = 12, stack = 10 },
+	fuel_can = { name = "Fuel Can", price = 15, stack = 5 },
+}
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX6"><Properties><string name="Name">JobDefinitions</string><ProtectedString name="Source"><![CDATA[-- pay = cash per completed task; xp = XP per task; skill = skill trained; minLevel = player level required
+return {
+	unemployed = { name = "Unemployed", pay = 0, xp = 0, minLevel = 1 },
+	pizza_cook = { name = "Pizza Cook", pay = 8, xp = 10, skill = "cooking", minLevel = 1 },
+	delivery_driver = { name = "Delivery Driver", pay = 14, xp = 14, skill = "driving", minLevel = 1 },
+	ferry_operator = { name = "Ferry Operator", pay = 40, xp = 30, skill = "seamanship", minLevel = 5 },
+	mechanic = { name = "Mechanic", pay = 18, xp = 16, skill = "repair", minLevel = 3 },
+}
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX7"><Properties><string name="Name">RecipeDefinitions</string><ProtectedString name="Source"><![CDATA[return {
+	pizza = {
+		output = "pizza",
+		inputs = { pizza_dough = 1, tomato_sauce = 1, cheese = 1 },
+		cookSeconds = 10, -- reduced by cooking skill, see PizzaService
+	},
+}
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX8"><Properties><string name="Name">Remotes</string><ProtectedString name="Source"><![CDATA[-- Creates (server) or waits for (client) the shared RemoteEvents.
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local NAMES = { "DataChanged", "Notify", "ExcavatorAction" }
+local Remotes = {}
+
+local folder
+if RunService:IsServer() then
+	folder = Instance.new("Folder")
+	folder.Name = "Remotes"
+	folder.Parent = ReplicatedStorage
+	for _, name in NAMES do
+		local r = Instance.new("RemoteEvent")
+		r.Name = name
+		r.Parent = folder
+	end
+else
+	folder = ReplicatedStorage:WaitForChild("Remotes")
+end
+for _, name in NAMES do
+	Remotes[name] = folder:WaitForChild(name)
+end
+return Remotes
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX9"><Properties><string name="Name">SkillDefinitions</string><ProtectedString name="Source"><![CDATA[return {
+	cooking = { name = "Cooking" },
+	driving = { name = "Driving" },
+	seamanship = { name = "Seamanship" },
+	repair = { name = "Repair" },
+	fishing = { name = "Fishing" },
+	construction = { name = "Construction" },
+}
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX10"><Properties><string name="Name">VehicleDefinitions</string><ProtectedString name="Source"><![CDATA[-- price 0 = starter vehicle. size is (width, height, length); the vehicle faces -Z.
+return {
+	sedan = { name = "Sedan", price = 0, size = Vector3.new(7, 2, 14), color = Color3.fromRGB(60, 100, 200),
+		fuelCapacity = 60, fuelPerSecond = 0.15, wearPerSecond = 0.01, maxSpeed = 60, turnRate = 1.6 },
+	pickup = { name = "Pickup", price = 1500, size = Vector3.new(8, 3, 16), color = Color3.fromRGB(180, 60, 50),
+		fuelCapacity = 80, fuelPerSecond = 0.2, wearPerSecond = 0.012, maxSpeed = 55, turnRate = 1.5 },
+	delivery_van = { name = "Delivery Van", price = 2500, size = Vector3.new(8, 4.5, 17), color = Color3.fromRGB(240, 240, 240),
+		fuelCapacity = 90, fuelPerSecond = 0.22, wearPerSecond = 0.012, maxSpeed = 50, turnRate = 1.4 },
+	excavator = { name = "Excavator", price = 8000, size = Vector3.new(10, 3, 12), color = Color3.fromRGB(240, 190, 30),
+		fuelCapacity = 120, fuelPerSecond = 0.3, wearPerSecond = 0.02, maxSpeed = 18, turnRate = 1.0, construction = true },
+}
+]]></ProtectedString></Properties></Item></Item></Item><Item class="ServerScriptService" referent="RBX27"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Folder" referent="RBX25"><Properties><string name="Name">Systems</string></Properties><Item class="ModuleScript" referent="RBX13"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[local DataStoreService = game:GetService("DataStoreService")
+local Players = game:GetService("Players")
+local Config = require(game.ReplicatedStorage.Shared.Config)
+local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
+
+local DataService = {}
+local store = DataStoreService:GetDataStore(Config.DataStoreName)
+local profiles: { [Player]: any } = {}
+local loadFailed: { [Player]: boolean } = {}
+
+local function defaultData()
+	return { cash = Config.StartingCash, bank = Config.StartingBank, inventory = {}, xp = 0, level = 1, skills = {}, job = "unemployed", reputation = 0, vehicles = { sedan = { fuel = 60, condition = 100 } }, version = 1 }
+end
+
+local function reconcile(data)
+	for k, v in defaultData() do
+		if data[k] == nil then data[k] = v end
+	end
+	return data
+end
+
+local function tryAsync(fn, tries)
+	for i = 1, tries do
+		local ok, res = pcall(fn)
+		if ok then return true, res end
+		task.wait(2 ^ i)
+	end
+	return false
+end
+
+function DataService.Get(player: Player)
+	return profiles[player]
+end
+
+function DataService.Push(player: Player)
+	local d = profiles[player]
+	if d then Remotes.DataChanged:FireClient(player, { cash = d.cash, bank = d.bank, inventory = d.inventory, xp = d.xp, level = d.level, job = d.job, skills = d.skills, reputation = d.reputation }) end
+end
+
+function DataService.Save(player: Player)
+	local d = profiles[player]
+	if not d or loadFailed[player] then return end -- never overwrite real data after a failed load
+	tryAsync(function() store:SetAsync("p_" .. player.UserId, d) end, 3)
+end
+
+local function onJoin(player: Player)
+	local ok, data = tryAsync(function() return store:GetAsync("p_" .. player.UserId) end, 3)
+	if not player.Parent then return end
+	if not ok then
+		loadFailed[player] = true
+		player:Kick("Could not load your data. Rejoin to protect your progress.")
+		return
+	end
+	profiles[player] = reconcile(data or {})
+	DataService.Push(player)
+end
+
+function DataService.Start()
+	Players.PlayerAdded:Connect(onJoin)
+	for _, p in Players:GetPlayers() do task.spawn(onJoin, p) end
+	Players.PlayerRemoving:Connect(function(p)
+		DataService.Save(p)
+		profiles[p] = nil
+		loadFailed[p] = nil
+	end)
+	game:BindToClose(function()
+		for _, p in Players:GetPlayers() do task.spawn(DataService.Save, p) end
+		task.wait(3)
+	end)
+	task.spawn(function()
+		while true do
+			task.wait(Config.AutosaveSeconds)
+			for _, p in Players:GetPlayers() do task.spawn(DataService.Save, p) end
+		end
+	end)
+end
+
+return DataService
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX14"><Properties><string name="Name">EconomyService</string><ProtectedString name="Source"><![CDATA[local DataService = require(script.Parent.DataService)
+
+local Economy = {}
+
+local function valid(n) return type(n) == "number" and n == n and n > 0 and n < 1e9 and n % 1 == 0 end
+
+function Economy.AddCash(player: Player, amount: number): boolean
+	local d = DataService.Get(player)
+	if not d or not valid(amount) then return false end
+	d.cash += amount
+	DataService.Push(player)
+	return true
+end
+
+function Economy.SpendCash(player: Player, amount: number): boolean
+	local d = DataService.Get(player)
+	if not d or not valid(amount) or d.cash < amount then return false end
+	d.cash -= amount
+	DataService.Push(player)
+	return true
+end
+
+function Economy.Deposit(player: Player, amount: number): boolean
+	local d = DataService.Get(player)
+	if not d or not valid(amount) or d.cash < amount then return false end
+	d.cash -= amount; d.bank += amount
+	DataService.Push(player)
+	return true
+end
+
+function Economy.Withdraw(player: Player, amount: number): boolean
+	local d = DataService.Get(player)
+	if not d or not valid(amount) or d.bank < amount then return false end
+	d.bank -= amount; d.cash += amount
+	DataService.Push(player)
+	return true
+end
+
+return Economy
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX15"><Properties><string name="Name">ExcavatorService</string><ProtectedString name="Source"><![CDATA[-- Server-validated digging. The client only asks ("dig" / "dump"); the server checks the
+-- driver, cooldown, reach and the real bucket position before editing terrain.
+local Config = require(game.ReplicatedStorage.Shared.Config)
+local Defs = require(game.ReplicatedStorage.Shared.VehicleDefinitions)
+local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
+local Vehicle = require(script.Parent.VehicleService)
+local Progression = require(script.Parent.ProgressionService)
+local Notify = require(script.Parent.NotificationService)
+
+local E = {}
+local terrain = workspace.Terrain
+local lastAction: { [Player]: number } = {}
+
+local function hasTerrain(pos: Vector3): boolean
+	local region = Region3.new(pos - Vector3.new(4, 4, 4), pos + Vector3.new(4, 4, 4)):ExpandToGrid(4)
+	local mats = terrain:ReadVoxels(region, 4)
+	for _, plane in mats do
+		for _, row in plane do
+			for _, m in row do
+				if m ~= Enum.Material.Air then return true end
+			end
+		end
+	end
+	return false
+end
+
+local function handle(player: Player, action: any)
+	if action ~= "dig" and action ~= "dump" then return end
+	local now = os.clock()
+	if now - (lastAction[player] or 0) < Config.ExcavatorCooldown then return end
+	lastAction[player] = now
+
+	local a = Vehicle.GetActive(player)
+	if not a or not Defs[a.id].construction or not a.seat.Occupant then return end
+	local bucket = a.model:FindFirstChild("Bucket")
+	local tip = bucket and bucket:FindFirstChild("Tip")
+	if not tip then return end
+	local pos = tip.WorldPosition
+	if (pos - a.body.Position).Magnitude > Config.ExcavatorMaxReach then return end
+
+	local load = a.seat:GetAttribute("Load") or 0
+	if action == "dig" then
+		if load >= Config.BucketCapacity then Notify.Send(player, "Bucket full - dump it first", "error"); return end
+		if not hasTerrain(pos) then Notify.Send(player, "Nothing to dig here", "error"); return end
+		terrain:FillBall(pos, Config.DigRadius, Enum.Material.Air)
+		a.seat:SetAttribute("Load", load + 1)
+		Progression.AddSkillXp(player, "construction", 3)
+	else
+		if load <= 0 then Notify.Send(player, "Bucket is empty", "error"); return end
+		terrain:FillBall(pos, Config.DigRadius, Enum.Material.Ground)
+		a.seat:SetAttribute("Load", load - 1)
+		Progression.AddSkillXp(player, "construction", 1)
+	end
+end
+
+function E.Start()
+	Remotes.ExcavatorAction.OnServerEvent:Connect(handle)
+	game.Players.PlayerRemoving:Connect(function(p) lastAction[p] = nil end)
+end
+
+return E
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX16"><Properties><string name="Name">InteractionService</string><ProtectedString name="Source"><![CDATA[-- Single place that turns world objects into interactable prompts.
+-- The server owns the ProximityPrompt, so distance is enforced by Roblox and the
+-- callback only ever runs on the server, with a per-player cooldown.
+local Config = require(game.ReplicatedStorage.Shared.Config)
+
+local I = {}
+local last: { [Player]: { [Instance]: number } } = {}
+
+function I.Register(part: BasePart, opts: { action: string, object: string?, distance: number?, onTriggered: (Player) -> () })
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = opts.action
+	prompt.ObjectText = opts.object or ""
+	prompt.MaxActivationDistance = opts.distance or 8
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = part
+	prompt.Triggered:Connect(function(player)
+		local now = os.clock()
+		last[player] = last[player] or {}
+		if now - (last[player][prompt] or 0) < Config.InteractCooldown then return end
+		last[player][prompt] = now
+		opts.onTriggered(player)
+	end)
+	return prompt
+end
+
+game.Players.PlayerRemoving:Connect(function(p) last[p] = nil end)
+
+return I
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX17"><Properties><string name="Name">InventoryService</string><ProtectedString name="Source"><![CDATA[local Config = require(game.ReplicatedStorage.Shared.Config)
+local Items = require(game.ReplicatedStorage.Shared.ItemDefinitions)
+local DataService = require(script.Parent.DataService)
+local Economy = require(script.Parent.EconomyService)
+
+local Inventory = {}
+
+local function slotsUsed(inv) local n = 0 for _ in inv do n += 1 end return n end
+
+function Inventory.Count(player, itemId): number
+	local d = DataService.Get(player)
+	return d and d.inventory[itemId] or 0
+end
+
+-- Returns false (and changes nothing) if the item is unknown or the inventory is full.
+function Inventory.Add(player, itemId: string, qty: number): boolean
+	local d, def = DataService.Get(player), Items[itemId]
+	if not d or not def or type(qty) ~= "number" or qty < 1 or qty % 1 ~= 0 then return false end
+	local have = d.inventory[itemId] or 0
+	if have == 0 and slotsUsed(d.inventory) >= Config.InventorySlots then return false end
+	if have + qty > (def.stack or Config.MaxStack) then return false end
+	d.inventory[itemId] = have + qty
+	DataService.Push(player)
+	return true
+end
+
+function Inventory.Remove(player, itemId: string, qty: number): boolean
+	local d = DataService.Get(player)
+	if not d or type(qty) ~= "number" or qty < 1 or qty % 1 ~= 0 then return false end
+	local have = d.inventory[itemId] or 0
+	if have < qty then return false end
+	d.inventory[itemId] = have > qty and have - qty or nil
+	DataService.Push(player)
+	return true
+end
+
+-- Atomic purchase: cash is refunded if the item can't be added.
+function Inventory.Buy(player, itemId: string, qty: number): boolean
+	local def = Items[itemId]
+	if not def or type(qty) ~= "number" or qty < 1 or qty % 1 ~= 0 then return false end
+	if not Economy.SpendCash(player, def.price * qty) then return false end
+	if not Inventory.Add(player, itemId, qty) then
+		Economy.AddCash(player, def.price * qty)
+		return false
+	end
+	return true
+end
+
+return Inventory
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX18"><Properties><string name="Name">JobCentre</string><ProtectedString name="Source"><![CDATA[-- Placeholder Job Centre: a pad in Workspace named "JobCentre_<jobId>" becomes a sign-up point.
+-- Example: name a Part "JobCentre_pizza_cook". Replace with the real building later.
+local Jobs = require(game.ReplicatedStorage.Shared.JobDefinitions)
+local Interaction = require(script.Parent.InteractionService)
+local JobService = require(script.Parent.JobService)
+
+local C = {}
+
+local function hook(part: Instance)
+	if not part:IsA("BasePart") then return end
+	local jobId = part.Name:match("^JobCentre_(.+)$")
+	if not jobId or not Jobs[jobId] then return end
+	Interaction.Register(part, {
+		action = "Take job",
+		object = Jobs[jobId].name,
+		onTriggered = function(player) JobService.SetJob(player, jobId) end,
+	})
+end
+
+function C.Start()
+	for _, d in workspace:GetDescendants() do hook(d) end
+	workspace.DescendantAdded:Connect(hook)
+end
+
+return C
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX19"><Properties><string name="Name">JobService</string><ProtectedString name="Source"><![CDATA[local Jobs = require(game.ReplicatedStorage.Shared.JobDefinitions)
+local DataService = require(script.Parent.DataService)
+local Economy = require(script.Parent.EconomyService)
+local Progression = require(script.Parent.ProgressionService)
+local Notify = require(script.Parent.NotificationService)
+
+local J = {}
+
+function J.SetJob(player: Player, jobId: string): boolean
+	local d, def = DataService.Get(player), Jobs[jobId]
+	if not d or not def then return false end
+	if d.level < def.minLevel then
+		Notify.Send(player, "You need level " .. def.minLevel .. " for " .. def.name, "error")
+		return false
+	end
+	d.job = jobId
+	DataService.Push(player)
+	Notify.Send(player, "You are now: " .. def.name, "success")
+	return true
+end
+
+-- Called by job systems when a real task finishes (cooked pizza, delivered order, ...).
+-- The payout comes from server-side definitions only; callers can't pass amounts.
+function J.CompleteTask(player: Player, jobId: string): boolean
+	local d, def = DataService.Get(player), Jobs[jobId]
+	if not d or not def or d.job ~= jobId or def.pay <= 0 then return false end
+	Economy.AddCash(player, def.pay)
+	Progression.AddXp(player, def.xp)
+	if def.skill then Progression.AddSkillXp(player, def.skill, def.xp) end
+	return true
+end
+
+return J
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX20"><Properties><string name="Name">NotificationService</string><ProtectedString name="Source"><![CDATA[local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
+local N = {}
+function N.Send(player: Player, text: string, kind: string?)
+	Remotes.Notify:FireClient(player, tostring(text):sub(1, 120), kind or "info")
+end
+return N
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX21"><Properties><string name="Name">PizzaService</string><ProtectedString name="Source"><![CDATA[-- Pizza Business: supplier -> oven -> orders (counter / delivery) -> payment, XP, reputation.
+-- Workspace markers (rename Parts, no scripts needed):
+--   PizzaSupplier        buys ingredients
+--   PizzaOven_<n>        cooks pizza
+--   PizzaCounter         serves counter orders
+--   PizzaDropoff_<n>     delivery destinations
+local Players = game:GetService("Players")
+local Items = require(game.ReplicatedStorage.Shared.ItemDefinitions)
+local Recipes = require(game.ReplicatedStorage.Shared.RecipeDefinitions)
+local Biz = require(game.ReplicatedStorage.Shared.BusinessDefinitions).pizza_shop
+local DataService = require(script.Parent.DataService)
+local Economy = require(script.Parent.EconomyService)
+local Inventory = require(script.Parent.InventoryService)
+local Progression = require(script.Parent.ProgressionService)
+local JobService = require(script.Parent.JobService)
+local Interaction = require(script.Parent.InteractionService)
+local Notify = require(script.Parent.NotificationService)
+
+local P = {}
+local recipe = Recipes.pizza
+local ovens: { [Instance]: { owner: Player?, doneAt: number?, ready: boolean } } = {}
+local orders: { { id: number, kind: string, dropoff: string?, expires: number } } = {}
+local nextId = 1
+local dropoffNames: { string } = {}
+
+local function takesPizzaJobs(player) -- anyone with the cook or driver job counts as staff
+	local d = DataService.Get(player)
+	return d and (d.job == "pizza_cook" or d.job == "delivery_driver")
+end
+
+local function staffOnline()
+	for _, p in Players:GetPlayers() do if takesPizzaJobs(p) then return true end end
+	return false
+end
+
+local function reputationChange(player, delta)
+	local d = DataService.Get(player)
+	if d then d.reputation += delta; DataService.Push(player) end
+end
+
+local function removeOrder(i) table.remove(orders, i) end
+
+local function expireOrders()
+	for i = #orders, 1, -1 do
+		if os.clock() >= orders[i].expires then
+			removeOrder(i)
+			for _, p in Players:GetPlayers() do
+				if takesPizzaJobs(p) then reputationChange(p, Biz.reputationOnExpire); Notify.Send(p, "An order expired", "error") end
+			end
+		end
+	end
+end
+
+local function spawnOrder()
+	if #orders >= Biz.maxOpenOrders then return end
+	local isDelivery = #dropoffNames > 0 and math.random() < 0.5
+	local o = {
+		id = nextId, kind = isDelivery and "delivery" or "counter",
+		dropoff = isDelivery and dropoffNames[math.random(#dropoffNames)] or nil,
+		expires = os.clock() + Biz.orderLifetimeSeconds,
+	}
+	nextId += 1
+	table.insert(orders, o)
+	for _, p in Players:GetPlayers() do
+		if takesPizzaJobs(p) then
+			Notify.Send(p, o.kind == "delivery" and ("New delivery order: " .. o.dropoff) or "New counter order", "info")
+		end
+	end
+end
+
+local function findOrder(kind, dropoff)
+	for i, o in orders do
+		if o.kind == kind and (kind == "counter" or o.dropoff == dropoff) then return i, o end
+	end
+end
+
+-- Supplier: buys one full set of ingredients for the pizza recipe, atomically.
+local function buyIngredients(player)
+	if not DataService.Get(player) then return end
+	local cost = 0
+	for id, n in recipe.inputs do cost += Items[id].price * n end
+	if not Economy.SpendCash(player, cost) then Notify.Send(player, "Need $" .. cost, "error"); return end
+	local added = {}
+	for id, n in recipe.inputs do
+		if Inventory.Add(player, id, n) then added[id] = n
+		else
+			for rid, rn in added do Inventory.Remove(player, rid, rn) end
+			Economy.AddCash(player, cost)
+			Notify.Send(player, "Inventory full", "error")
+			return
+		end
+	end
+	Notify.Send(player, "Bought ingredients for $" .. cost, "success")
+end
+
+local function ovenInteract(player, oven)
+	local st = ovens[oven]
+	local d = DataService.Get(player)
+	if not d then return end
+	-- stale owner left the game
+	if st.owner and not st.owner.Parent then st.owner, st.doneAt, st.ready = nil, nil, false end
+	if st.ready and st.owner == player then
+		if not Inventory.Add(player, recipe.output, 1) then Notify.Send(player, "Inventory full", "error"); return end
+		st.owner, st.doneAt, st.ready = nil, nil, false
+		JobService.CompleteTask(player, "pizza_cook")
+		Notify.Send(player, "Pizza ready", "success")
+	elseif st.owner then
+		if st.owner == player and st.doneAt then Notify.Send(player, "Still cooking...", "info")
+		else Notify.Send(player, "Oven in use", "error") end
+	else
+		for id, n in recipe.inputs do
+			if Inventory.Count(player, id) < n then Notify.Send(player, "Missing " .. Items[id].name, "error"); return end
+		end
+		for id, n in recipe.inputs do Inventory.Remove(player, id, n) end
+		local secs = math.max(Biz.minCookSeconds, recipe.cookSeconds - Progression.SkillLevel(player, "cooking"))
+		st.owner, st.doneAt, st.ready = player, os.clock() + secs, false
+		task.delay(secs, function()
+			if st.owner == player and st.doneAt then st.ready = true; st.doneAt = nil; Notify.Send(player, "Your pizza is ready!", "success") end
+		end)
+		Notify.Send(player, "Cooking for " .. secs .. "s", "info")
+	end
+end
+
+local function serve(player, kind, dropoff)
+	local i, o = findOrder(kind, dropoff)
+	if not i then Notify.Send(player, "No matching order", "error"); return end
+	if not Inventory.Remove(player, "pizza", 1) then Notify.Send(player, "You need a pizza", "error"); return end
+	removeOrder(i)
+	local mult = kind == "delivery" and Biz.deliveryMultiplier or Biz.counterMultiplier
+	local price = math.floor(Items.pizza.price * mult)
+	Economy.AddCash(player, price)
+	local job = kind == "delivery" and "delivery_driver" or "pizza_cook"
+	JobService.CompleteTask(player, job) -- extra job pay + XP only if the player holds that job
+	Progression.AddXp(player, 5)
+	reputationChange(player, Biz.reputationOnServe)
+	Notify.Send(player, "Order complete: +$" .. price, "success")
+end
+
+local function hook(inst: Instance)
+	if not inst:IsA("BasePart") then return end
+	if inst.Name == "PizzaSupplier" then
+		Interaction.Register(inst, { action = "Buy ingredients", object = "Supplier", onTriggered = buyIngredients })
+	elseif inst.Name:match("^PizzaOven_") then
+		ovens[inst] = { ready = false }
+		Interaction.Register(inst, { action = "Use oven", object = "Pizza Oven", onTriggered = function(p) ovenInteract(p, inst) end })
+	elseif inst.Name == "PizzaCounter" then
+		Interaction.Register(inst, { action = "Serve order", object = "Counter", onTriggered = function(p) serve(p, "counter") end })
+	elseif inst.Name:match("^PizzaDropoff_") then
+		table.insert(dropoffNames, inst.Name)
+		Interaction.Register(inst, { action = "Deliver pizza", object = inst.Name, onTriggered = function(p) serve(p, "delivery", inst.Name) end })
+	end
+end
+
+function P.Start()
+	for _, d in workspace:GetDescendants() do hook(d) end
+	workspace.DescendantAdded:Connect(hook)
+	task.spawn(function()
+		while true do
+			task.wait(Biz.orderIntervalSeconds)
+			expireOrders()
+			if staffOnline() then spawnOrder() end
+		end
+	end)
+end
+
+-- test hook
+function P._orders() return orders end
+
+return P
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX22"><Properties><string name="Name">ProgressionService</string><ProtectedString name="Source"><![CDATA[local Config = require(game.ReplicatedStorage.Shared.Config)
+local Skills = require(game.ReplicatedStorage.Shared.SkillDefinitions)
+local DataService = require(script.Parent.DataService)
+local Notify = require(script.Parent.NotificationService)
+
+local P = {}
+
+function P.XpForNext(level: number): number
+	return math.floor(Config.XpBase * level ^ Config.XpExponent)
+end
+
+function P.AddXp(player: Player, amount: number): boolean
+	local d = DataService.Get(player)
+	if not d or type(amount) ~= "number" or amount ~= amount or amount <= 0 or amount > 1e6 then return false end
+	d.xp += math.floor(amount)
+	while d.level < Config.MaxLevel and d.xp >= P.XpForNext(d.level) do
+		d.xp -= P.XpForNext(d.level)
+		d.level += 1
+		Notify.Send(player, "Level up! You are now level " .. d.level, "success")
+	end
+	if d.level >= Config.MaxLevel then d.xp = 0 end
+	DataService.Push(player)
+	return true
+end
+
+-- skills[id] = { level, xp }
+function P.AddSkillXp(player: Player, skillId: string, amount: number): boolean
+	local d = DataService.Get(player)
+	if not d or not Skills[skillId] or type(amount) ~= "number" or amount <= 0 or amount > 1e6 then return false end
+	local s = d.skills[skillId] or { level = 1, xp = 0 }
+	d.skills[skillId] = s
+	if s.level >= Config.MaxSkillLevel then return true end
+	s.xp += math.floor(amount)
+	while s.level < Config.MaxSkillLevel and s.xp >= Config.SkillXpBase * s.level do
+		s.xp -= Config.SkillXpBase * s.level
+		s.level += 1
+		Notify.Send(player, Skills[skillId].name .. " is now level " .. s.level, "success")
+	end
+	DataService.Push(player)
+	return true
+end
+
+function P.SkillLevel(player: Player, skillId: string): number
+	local d = DataService.Get(player)
+	return d and d.skills[skillId] and d.skills[skillId].level or 1
+end
+
+return P
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX23"><Properties><string name="Name">TestWorld</string><ProtectedString name="Source"><![CDATA[-- Dev-only placeholder test area. Builds labelled, correctly named Parts near the origin
+-- so every Phase 1/2 system can be exercised. Delete or set Enabled=false once the real map exists.
+local TestWorld = { Enabled = true }
+
+local function pad(name: string, pos: Vector3, color: Color3, size: Vector3?)
+	if workspace:FindFirstChild(name, true) then return end -- never duplicate or overwrite map objects
+	local p = Instance.new("Part")
+	p.Name = name
+	p.Anchored = true
+	p.Size = size or Vector3.new(6, 4, 6)
+	p.Position = pos
+	p.Color = color
+	p.Material = Enum.Material.SmoothPlastic
+	p.Parent = workspace
+	local gui = Instance.new("BillboardGui")
+	gui.Size = UDim2.fromOffset(200, 40)
+	gui.StudsOffset = Vector3.new(0, 4, 0)
+	gui.AlwaysOnTop = true
+	gui.Parent = p
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.TextScaled = true
+	label.TextColor3 = Color3.new(1, 1, 1)
+	label.TextStrokeTransparency = 0
+	label.Text = name
+	label.Parent = gui
+end
+
+function TestWorld.Start()
+	if not TestWorld.Enabled then return end
+	game.Players.PlayerAdded:Connect(function(p) task.spawn(TestWorld.GrantExcavator, p) end)
+	for _, p in game.Players:GetPlayers() do task.spawn(TestWorld.GrantExcavator, p) end
+	if not workspace:FindFirstChild("TestFloor") then
+		local f = Instance.new("Part")
+		f.Name = "TestFloor"; f.Anchored = true
+		f.Size = Vector3.new(120, 1, 120); f.Position = Vector3.new(0, -0.5, 0)
+		f.Color = Color3.fromRGB(90, 140, 90); f.Parent = workspace
+	end
+	if not workspace:FindFirstChild("DigZoneSign") then
+		workspace.Terrain:FillBlock(CFrame.new(80, 0, -30), Vector3.new(40, 16, 40), Enum.Material.Ground)
+		pad("DigZoneSign", Vector3.new(58, 2, -30), Color3.fromRGB(240, 190, 30), Vector3.new(2, 4, 8))
+	end
+	pad("JobCentre_pizza_cook", Vector3.new(-30, 2, 0), Color3.fromRGB(60, 120, 220))
+	pad("JobCentre_delivery_driver", Vector3.new(-30, 2, 12), Color3.fromRGB(60, 120, 220))
+	pad("PizzaSupplier", Vector3.new(-10, 2, -20), Color3.fromRGB(150, 100, 50))
+	pad("PizzaOven_1", Vector3.new(0, 2, -20), Color3.fromRGB(200, 60, 40))
+	pad("PizzaOven_2", Vector3.new(10, 2, -20), Color3.fromRGB(200, 60, 40))
+	pad("PizzaCounter", Vector3.new(20, 2, -10), Color3.fromRGB(230, 200, 60))
+	pad("PizzaDropoff_1", Vector3.new(30, 2, 20), Color3.fromRGB(90, 200, 120))
+	pad("PizzaDropoff_2", Vector3.new(10, 2, 35), Color3.fromRGB(90, 200, 120))
+	-- vehicles (Phase 3)
+	pad("VehicleSpawn", Vector3.new(-40, 0.6, -40), Color3.fromRGB(70, 70, 70), Vector3.new(24, 1, 24))
+	for i, id in { "sedan", "pickup", "delivery_van", "excavator" } do
+		pad("VehicleGarage_" .. id, Vector3.new(-50 + i * 8, 2, -62), Color3.fromRGB(120, 120, 200), Vector3.new(6, 4, 6))
+		if id ~= "sedan" then pad("VehicleShop_" .. id, Vector3.new(-50 + i * 8, 2, -72), Color3.fromRGB(200, 160, 60), Vector3.new(6, 4, 6)) end
+	end
+	pad("FuelStation", Vector3.new(-20, 2, -40), Color3.fromRGB(230, 90, 60), Vector3.new(4, 4, 4))
+	pad("Garage_Repair", Vector3.new(-20, 2, -50), Color3.fromRGB(60, 180, 180), Vector3.new(6, 4, 6))
+end
+
+-- Dev only: every player gets the excavator for free so it can be perfected.
+function TestWorld.GrantExcavator(player: Player)
+	local DataService = require(script.Parent.DataService)
+	for _ = 1, 60 do
+		local d = DataService.Get(player)
+		if d then
+			d.vehicles.excavator = d.vehicles.excavator or { fuel = 120, condition = 100 }
+			DataService.Push(player)
+			return
+		end
+		task.wait(0.5)
+	end
+end
+
+return TestWorld
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">VehicleService</string><ProtectedString name="Source"><![CDATA[-- Vehicle ownership, spawning, fuel, wear and repair. Server-authoritative.
+-- Driving physics run on the driver's client (VehicleDriver.client.luau) via constraints built here.
+-- Workspace markers:
+--   VehicleGarage_<id>   toggle: store current vehicle / take out <id>
+--   VehicleShop_<id>     buy vehicle <id>
+--   FuelStation          refuel active vehicle (must be nearby)
+--   Garage_Repair        repair active vehicle (must be nearby)
+--   VehicleSpawn         where vehicles appear (falls back to in front of the player)
+local Players = game:GetService("Players")
+local Config = require(game.ReplicatedStorage.Shared.Config)
+local Defs = require(game.ReplicatedStorage.Shared.VehicleDefinitions)
+local DataService = require(script.Parent.DataService)
+local Economy = require(script.Parent.EconomyService)
+local Interaction = require(script.Parent.InteractionService)
+local Notify = require(script.Parent.NotificationService)
+
+local V = {}
+local active: { [Player]: { id: string, model: Model, body: BasePart, seat: VehicleSeat, fuel: number, condition: number } } = {}
+
+local function part(parent, name, size, cf, color, collide)
+	local p = Instance.new("Part")
+	p.Name = name; p.Size = size; p.CFrame = cf; p.Color = color
+	p.CanCollide = collide ~= false; p.Massless = collide == false
+	p.TopSurface = Enum.SurfaceType.Smooth; p.BottomSurface = Enum.SurfaceType.Smooth
+	p.Parent = parent
+	return p
+end
+
+local function weld(a, b)
+	local w = Instance.new("WeldConstraint"); w.Part0 = a; w.Part1 = b; w.Parent = a
+end
+
+-- Articulated excavator: Body -(swing)- Cab -(boom)- Boom -(stick)- Stick -(bucket)- Bucket.
+-- Every hinge is a servo; at TargetAngle 0 the arm is in its rest pose. The driver's client sets targets.
+local function hinge(name, a, b, frameCF, limits, speed)
+	local h = Instance.new("HingeConstraint")
+	h.Name = name
+	local a0, a1 = Instance.new("Attachment"), Instance.new("Attachment")
+	a0.CFrame = a.CFrame:ToObjectSpace(frameCF); a0.Parent = a
+	a1.CFrame = b.CFrame:ToObjectSpace(frameCF); a1.Parent = b
+	h.Attachment0 = a0; h.Attachment1 = a1
+	h.ActuatorType = Enum.ActuatorType.Servo
+	h.AngularSpeed = speed; h.ServoMaxTorque = 5e6; h.TargetAngle = 0
+	if limits then h.LimitsEnabled = true; h.LowerAngle = limits[1]; h.UpperAngle = limits[2] end
+	h.Parent = a
+	return h
+end
+
+local function buildExcavator(model, body, cf, s, def)
+	local top = s.Y / 2
+	local amber = Color3.fromRGB(200, 150, 20)
+	local cab = part(model, "Cab", Vector3.new(7, 4, 8), cf * CFrame.new(0, top + 2, 0), def.color, false)
+	local P1 = CFrame.new(0, top + 3.5, -2.5)
+	local boomFrame = P1 * CFrame.Angles(math.rad(30), 0, 0)
+	local boom = part(model, "Boom", Vector3.new(1.6, 1.6, 10), cf * boomFrame * CFrame.new(0, 0, -5), amber, false)
+	local E1 = boomFrame * CFrame.new(0, 0, -10)
+	local stickFrame = CFrame.new(E1.Position) * CFrame.Angles(math.rad(-40), 0, 0)
+	local stick = part(model, "Stick", Vector3.new(1.2, 1.2, 8), cf * stickFrame * CFrame.new(0, 0, -4), amber, false)
+	local E2 = stickFrame * CFrame.new(0, 0, -8)
+	local bucketFrame = CFrame.new(E2.Position) * CFrame.Angles(math.rad(-85), 0, 0)
+	local bucket = part(model, "Bucket", Vector3.new(4, 3, 3), cf * bucketFrame * CFrame.new(0, 0, -1.5), Color3.fromRGB(90, 90, 90), false)
+	local tip = Instance.new("Attachment"); tip.Name = "Tip"; tip.CFrame = CFrame.new(0, 0, -1.5); tip.Parent = bucket
+
+	hinge("SwingHinge", body, cab, cf * CFrame.new(0, top, 0) * CFrame.Angles(0, 0, math.rad(90)), nil, 1.0)
+	hinge("BoomHinge", cab, boom, cf * CFrame.new(P1.Position), { -40, 30 }, 0.6)
+	hinge("StickHinge", boom, stick, cf * CFrame.new(E1.Position), { -60, 50 }, 0.8)
+	hinge("BucketHinge", stick, bucket, cf * CFrame.new(E2.Position), { -70, 60 }, 1.0)
+	return cab
+end
+
+local function build(id, def, cf, player, fuel, condition)
+	local model = Instance.new("Model"); model.Name = player.Name .. "_" .. id
+	local s = def.size
+	local body = part(model, "Body", s, cf, def.color)
+	body.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0, 0, 100, 1)
+	model.PrimaryPart = body
+
+	local seat = Instance.new("VehicleSeat")
+	seat.Name = "Seat"; seat.Size = Vector3.new(2, 1, 2); seat.MaxSpeed = 0; seat.Torque = 0
+	seat.CFrame = cf * CFrame.new(0, s.Y / 2 + 0.5, s.Z * 0.1)
+	seat.Parent = model
+	if def.construction then
+		local cab = buildExcavator(model, body, cf, s, def)
+		seat.CFrame = cf * CFrame.new(0, s.Y / 2 + 4.5, 1.5)
+		weld(cab, seat)
+	else
+		weld(body, seat)
+	end
+
+	local wheelSize = Vector3.new(1.5, 2.2, 2.2)
+	for _, x in (def.construction and {} or { -s.X / 2, s.X / 2 }) do
+		for _, z in { -s.Z / 2 + 2, s.Z / 2 - 2 } do
+			local w = part(model, "Wheel", wheelSize, cf * CFrame.new(x, -s.Y / 2 + 0.2, z) * CFrame.Angles(0, 0, math.pi / 2), Color3.fromRGB(25, 25, 25), false)
+			w.Shape = Enum.PartType.Cylinder; weld(body, w)
+		end
+	end
+	local att = Instance.new("Attachment"); att.Parent = body
+	local drive = Instance.new("LinearVelocity")
+	drive.Name = "Drive"; drive.Attachment0 = att; drive.RelativeTo = Enum.ActuatorRelativeTo.World
+	drive.VelocityConstraintMode = Enum.VelocityConstraintMode.Plane
+	drive.PrimaryTangentAxis = Vector3.xAxis; drive.SecondaryTangentAxis = Vector3.zAxis
+	drive.PlaneVelocity = Vector2.zero; drive.Parent = body
+	local turn = Instance.new("AngularVelocity")
+	turn.Name = "Turn"; turn.Attachment0 = att; turn.RelativeTo = Enum.ActuatorRelativeTo.World
+	turn.AngularVelocity = Vector3.zero; turn.Parent = body
+
+	model.Parent = workspace
+	local mass = body.AssemblyMass
+	drive.MaxForce = mass * 60 -- horizontal only; gravity is untouched in Plane mode
+	turn.MaxTorque = mass * 4000
+
+	seat:SetAttribute("VehicleId", id)
+	seat:SetAttribute("OwnerUserId", player.UserId)
+	seat:SetAttribute("MaxSpeed", def.maxSpeed)
+	seat:SetAttribute("TurnRate", def.turnRate)
+	seat:SetAttribute("Fuel", fuel)
+	seat:SetAttribute("FuelCapacity", def.fuelCapacity)
+	seat:SetAttribute("Condition", condition)
+	seat:SetAttribute("Disabled", fuel <= 0)
+	seat:SetAttribute("Construction", def.construction == true)
+	seat:SetAttribute("Load", 0)
+
+	-- only the owner may drive
+	seat:GetPropertyChangedSignal("Occupant"):Connect(function()
+		local hum = seat.Occupant
+		if not hum then return end
+		local occupant = Players:GetPlayerFromCharacter(hum.Parent)
+		if occupant ~= player then
+			task.defer(function() hum.Sit = false; hum.Jump = true end)
+			if occupant then Notify.Send(occupant, "This is " .. player.Name .. "'s vehicle", "error") end
+		end
+	end)
+	return model, body, seat
+end
+
+local function spawnCFrame(player)
+	local sp = workspace:FindFirstChild("VehicleSpawn", true)
+	if sp and sp:IsA("BasePart") then return sp.CFrame * CFrame.new(0, 4, 0) end
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return nil end
+	return CFrame.new(hrp.Position + hrp.CFrame.LookVector * 14 + Vector3.new(0, 4, 0), hrp.Position + hrp.CFrame.LookVector * 30)
+end
+
+function V.Despawn(player: Player)
+	local a = active[player]
+	if not a then return end
+	active[player] = nil
+	local d = DataService.Get(player)
+	if d and d.vehicles[a.id] then d.vehicles[a.id].fuel = a.fuel; d.vehicles[a.id].condition = a.condition end
+	a.model:Destroy()
+end
+
+function V.Spawn(player: Player, id: string): boolean
+	local d, def = DataService.Get(player), Defs[id]
+	if not d or not def or not d.vehicles[id] then return false end
+	V.Despawn(player)
+	local cf = spawnCFrame(player)
+	if not cf then return false end
+	local rec = d.vehicles[id]
+	local model, body, seat = build(id, def, cf, player, rec.fuel, rec.condition)
+	active[player] = { id = id, model = model, body = body, seat = seat, fuel = rec.fuel, condition = rec.condition }
+	Notify.Send(player, def.name .. " ready", "success")
+	return true
+end
+
+function V.GetActive(player: Player)
+	return active[player]
+end
+
+function V.Buy(player: Player, id: string): boolean
+	local d, def = DataService.Get(player), Defs[id]
+	if not d or not def then return false end
+	if d.vehicles[id] then Notify.Send(player, "You already own a " .. def.name, "error"); return false end
+	if not Economy.SpendCash(player, def.price) then Notify.Send(player, "Need $" .. def.price, "error"); return false end
+	d.vehicles[id] = { fuel = def.fuelCapacity, condition = 100 }
+	DataService.Push(player)
+	Notify.Send(player, "Bought " .. def.name, "success")
+	return true
+end
+
+local function near(a, station, range)
+	return a and (a.body.Position - station.Position).Magnitude <= range
+end
+
+local function refuel(player, station)
+	local a = active[player]
+	if not near(a, station, Config.VehicleServiceRange) then Notify.Send(player, "Bring your vehicle to the pump", "error"); return end
+	local cap = Defs[a.id].fuelCapacity
+	local want = math.ceil(cap - a.fuel)
+	local d = DataService.Get(player)
+	if want <= 0 or not d then Notify.Send(player, "Tank is full", "info"); return end
+	local units = math.min(want, math.floor(d.cash / Config.FuelPricePerUnit))
+	if units <= 0 or not Economy.SpendCash(player, units * Config.FuelPricePerUnit) then Notify.Send(player, "Not enough cash", "error"); return end
+	a.fuel = math.min(cap, a.fuel + units)
+	a.seat:SetAttribute("Fuel", a.fuel); a.seat:SetAttribute("Disabled", false)
+	Notify.Send(player, "Refuelled: $" .. units * Config.FuelPricePerUnit, "success")
+end
+
+local function repair(player, station)
+	local a = active[player]
+	if not near(a, station, Config.VehicleServiceRange) then Notify.Send(player, "Bring your vehicle to the garage", "error"); return end
+	local missing = 100 - a.condition
+	local cost = math.ceil(missing * Config.RepairPricePerPoint)
+	if cost <= 0 then Notify.Send(player, "No repairs needed", "info"); return end
+	if not Economy.SpendCash(player, cost) then Notify.Send(player, "Repairs cost $" .. cost, "error"); return end
+	a.condition = 100
+	a.seat:SetAttribute("Condition", 100)
+	Notify.Send(player, "Repaired: $" .. cost, "success")
+end
+
+local function hook(inst: Instance)
+	if not inst:IsA("BasePart") then return end
+	local garageId = inst.Name:match("^VehicleGarage_(.+)$")
+	local shopId = inst.Name:match("^VehicleShop_(.+)$")
+	if garageId and Defs[garageId] then
+		Interaction.Register(inst, { action = "Take out / store", object = Defs[garageId].name, onTriggered = function(p)
+			local a = active[p]
+			if a and a.id == garageId then V.Despawn(p); Notify.Send(p, "Vehicle stored", "info")
+			elseif not V.Spawn(p, garageId) then Notify.Send(p, "You don't own a " .. Defs[garageId].name, "error") end
+		end })
+	elseif shopId and Defs[shopId] then
+		Interaction.Register(inst, { action = "Buy $" .. Defs[shopId].price, object = Defs[shopId].name, onTriggered = function(p) V.Buy(p, shopId) end })
+	elseif inst.Name == "FuelStation" then
+		Interaction.Register(inst, { action = "Refuel", object = "Fuel Pump", onTriggered = function(p) refuel(p, inst) end })
+	elseif inst.Name == "Garage_Repair" then
+		Interaction.Register(inst, { action = "Repair", object = "Mechanic", onTriggered = function(p) repair(p, inst) end })
+	end
+end
+
+function V.Start()
+	for _, d in workspace:GetDescendants() do hook(d) end
+	workspace.DescendantAdded:Connect(hook)
+	Players.PlayerRemoving:Connect(V.Despawn)
+	-- one loop for every vehicle: fuel use and wear only while moving with a driver
+	task.spawn(function()
+		while true do
+			task.wait(1)
+			for player, a in active do
+				if not a.model.Parent then active[player] = nil; continue end
+				local def = Defs[a.id]
+				if a.seat.Occupant and a.body.AssemblyLinearVelocity.Magnitude > 2 then
+					a.fuel = math.max(0, a.fuel - def.fuelPerSecond)
+					a.condition = math.max(0, a.condition - def.wearPerSecond)
+					a.seat:SetAttribute("Fuel", a.fuel); a.seat:SetAttribute("Condition", a.condition)
+					a.seat:SetAttribute("Disabled", a.fuel <= 0)
+					local d = DataService.Get(player)
+					if d and d.vehicles[a.id] then d.vehicles[a.id].fuel = a.fuel; d.vehicles[a.id].condition = a.condition end
+				end
+			end
+		end
+	end)
+end
+
+return V
+]]></ProtectedString></Properties></Item></Item><Item class="Script" referent="RBX26"><Properties><string name="Name">Main</string><ProtectedString name="Source"><![CDATA[local Systems = script.Parent:WaitForChild("Systems")
+require(game.ReplicatedStorage.Shared.Remotes) -- create remotes first
+require(Systems.DataService).Start()
+require(Systems.TestWorld).Start() -- before the systems below so Parts exist
+require(Systems.JobCentre).Start()
+require(Systems.PizzaService).Start()
+require(Systems.VehicleService).Start()
+require(Systems.ExcavatorService).Start()
+]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX31"><Properties><string name="Name">StarterPlayer</string></Properties><Item class="StarterPlayerScripts" referent="RBX30"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX28"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[local Players = game:GetService("Players")
+local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "HarbourlifeHUD"; gui.ResetOnSpawn = false
+gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+local money = Instance.new("TextLabel")
+money.Size = UDim2.fromOffset(340, 32); money.Position = UDim2.new(1, -350, 0, 10)
+money.BackgroundTransparency = 0.4; money.BackgroundColor3 = Color3.new(0, 0, 0)
+money.TextColor3 = Color3.new(1, 1, 1); money.Font = Enum.Font.GothamBold; money.TextSize = 16
+money.Text = "Cash: ..."; money.Parent = gui
+
+local toast = Instance.new("TextLabel")
+toast.Size = UDim2.fromOffset(320, 36); toast.Position = UDim2.new(0.5, -160, 0, 20)
+toast.BackgroundTransparency = 0.3; toast.BackgroundColor3 = Color3.new(0, 0, 0)
+toast.TextColor3 = Color3.new(1, 1, 1); toast.Font = Enum.Font.Gotham; toast.TextSize = 16
+toast.Visible = false; toast.Parent = gui
+
+Remotes.DataChanged.OnClientEvent:Connect(function(d)
+	money.Text = string.format("Lv %d | Cash $%d | Bank $%d | %s", d.level, d.cash, d.bank, d.job)
+end)
+
+local token = 0
+Remotes.Notify.OnClientEvent:Connect(function(text)
+	token += 1; local mine = token
+	toast.Text = text; toast.Visible = true
+	task.delay(3, function() if token == mine then toast.Visible = false end end)
+end)
+
+-- Inventory panel: press I
+local Items = require(game.ReplicatedStorage.Shared.ItemDefinitions)
+local UIS = game:GetService("UserInputService")
+local panel = Instance.new("TextLabel")
+panel.Size = UDim2.fromOffset(240, 260); panel.Position = UDim2.new(0, 10, 0.5, -130)
+panel.BackgroundTransparency = 0.3; panel.BackgroundColor3 = Color3.new(0, 0, 0)
+panel.TextColor3 = Color3.new(1, 1, 1); panel.Font = Enum.Font.Gotham; panel.TextSize = 16
+panel.TextXAlignment = Enum.TextXAlignment.Left; panel.TextYAlignment = Enum.TextYAlignment.Top
+panel.Visible = false; panel.Parent = gui
+
+local lastData
+local function render()
+	if not lastData then return end
+	local lines = { "INVENTORY (I to close)" }
+	for id, n in lastData.inventory do
+		table.insert(lines, string.format("%s x%d", Items[id] and Items[id].name or id, n))
+	end
+	table.insert(lines, "")
+	table.insert(lines, "SKILLS")
+	for id, s in lastData.skills do table.insert(lines, string.format("%s Lv %d", id, s.level)) end
+	table.insert(lines, string.format("Reputation: %d", lastData.reputation or 0))
+	panel.Text = table.concat(lines, "\n")
+end
+Remotes.DataChanged.OnClientEvent:Connect(function(d) lastData = d; render() end)
+UIS.InputBegan:Connect(function(input, processed)
+	if not processed and input.KeyCode == Enum.KeyCode.I then panel.Visible = not panel.Visible; render() end
+end)
+
+-- Vehicle gauge (reads attributes the server keeps on the seat)
+local gauge = Instance.new("TextLabel")
+gauge.Size = UDim2.fromOffset(330, 54); gauge.Position = UDim2.new(1, -340, 0, 48)
+gauge.BackgroundTransparency = 0.4; gauge.BackgroundColor3 = Color3.new(0, 0, 0)
+gauge.TextColor3 = Color3.new(1, 1, 1); gauge.Font = Enum.Font.GothamBold; gauge.TextSize = 15
+gauge.Visible = false; gauge.Parent = gui
+game:GetService("RunService").Heartbeat:Connect(function()
+	local hum = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+	local seat = hum and hum.SeatPart
+	if seat and seat:IsA("VehicleSeat") and seat:GetAttribute("VehicleId") then
+		gauge.Visible = true
+		local txt = string.format("Fuel %d/%d | Condition %d%%", seat:GetAttribute("Fuel") or 0, seat:GetAttribute("FuelCapacity") or 0, seat:GetAttribute("Condition") or 0)
+		if seat:GetAttribute("Construction") then
+			txt ..= string.format(" | Load %d\nQE swing  RF boom  TG stick  YH bucket  X dig  Z dump", seat:GetAttribute("Load") or 0)
+		end
+		gauge.Text = txt
+	else
+		gauge.Visible = false
+	end
+end)
+]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX29"><Properties><string name="Name">VehicleDriver</string><ProtectedString name="Source"><![CDATA[-- Drives the vehicle the local player is seated in. The server built the constraints
+-- (Drive / Turn); the driver's client owns the physics so steering feels instant.
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
+local player = Players.LocalPlayer
+
+-- Excavator controls (hold): Q/E swing, R/F boom, T/G stick, Y/H bucket. Tap: X dig, Z dump.
+local JOINTS = {
+	{ name = "SwingHinge", up = Enum.KeyCode.Q, down = Enum.KeyCode.E, rate = 50 },
+	{ name = "BoomHinge", up = Enum.KeyCode.R, down = Enum.KeyCode.F, rate = 30, min = -40, max = 30 },
+	{ name = "StickHinge", up = Enum.KeyCode.T, down = Enum.KeyCode.G, rate = 35, min = -60, max = 50 },
+	{ name = "BucketHinge", up = Enum.KeyCode.Y, down = Enum.KeyCode.H, rate = 50, min = -70, max = 60 },
+}
+local function driveArm(seat, dt)
+	if UIS:GetFocusedTextBox() then return end
+	local model = seat.Parent
+	for _, j in JOINTS do
+		local h = model:FindFirstChild(j.name, true)
+		if h then
+			local dir = (UIS:IsKeyDown(j.up) and 1 or 0) - (UIS:IsKeyDown(j.down) and 1 or 0)
+			if dir ~= 0 then
+				local t = h.TargetAngle + dir * j.rate * dt
+				if j.min then t = math.clamp(t, j.min, j.max) end
+				h.TargetAngle = t
+			end
+		end
+	end
+end
+UIS.InputBegan:Connect(function(input, processed)
+	if processed then return end
+	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	local seat = hum and hum.SeatPart
+	if not (seat and seat:GetAttribute("Construction")) then return end
+	if input.KeyCode == Enum.KeyCode.X then Remotes.ExcavatorAction:FireServer("dig")
+	elseif input.KeyCode == Enum.KeyCode.Z then Remotes.ExcavatorAction:FireServer("dump") end
+end)
+
+RunService.RenderStepped:Connect(function(dt)
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local seat = hum and hum.SeatPart
+	if not (seat and seat:IsA("VehicleSeat") and seat:GetAttribute("VehicleId")) then return end
+	if seat:GetAttribute("OwnerUserId") ~= player.UserId then return end
+	local body = seat.Parent and seat.Parent.PrimaryPart
+	local drive = body and body:FindFirstChild("Drive")
+	local turn = body and body:FindFirstChild("Turn")
+	if not (drive and turn) then return end
+
+	if seat:GetAttribute("Construction") then driveArm(seat, dt) end
+	local maxSpeed = seat:GetAttribute("MaxSpeed") or 0
+	local condition = seat:GetAttribute("Condition") or 100
+	if seat:GetAttribute("Disabled") then maxSpeed = 0 end
+	if condition < 25 then maxSpeed *= 0.6 end -- badly worn vehicles are slower
+
+	local look = body.CFrame.LookVector
+	local flat = Vector3.new(look.X, 0, look.Z)
+	flat = flat.Magnitude > 0.01 and flat.Unit or Vector3.zero
+	local vel = Vector3.new(body.AssemblyLinearVelocity.X, 0, body.AssemblyLinearVelocity.Z)
+	local forwardSpeed = vel:Dot(flat)
+
+	local target = seat.ThrottleFloat * maxSpeed
+	drive.PlaneVelocity = Vector2.new(flat.X * target, flat.Z * target)
+
+	local grip = math.clamp(math.abs(forwardSpeed) / 8, 0, 1) * (forwardSpeed >= 0 and 1 or -1)
+	turn.AngularVelocity = Vector3.new(0, -seat.SteerFloat * (seat:GetAttribute("TurnRate") or 1.5) * grip, 0)
+end)
+]]></ProtectedString></Properties></Item></Item></Item></roblox>
