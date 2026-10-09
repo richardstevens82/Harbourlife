@@ -55,3 +55,20 @@ Remotes.DataChanged.OnClientEvent:Connect(function(d) lastData = d; render() end
 UIS.InputBegan:Connect(function(input, processed)
 	if not processed and input.KeyCode == Enum.KeyCode.I then panel.Visible = not panel.Visible; render() end
 end)
+
+-- Vehicle gauge (reads attributes the server keeps on the seat)
+local gauge = Instance.new("TextLabel")
+gauge.Size = UDim2.fromOffset(220, 30); gauge.Position = UDim2.new(1, -230, 0, 48)
+gauge.BackgroundTransparency = 0.4; gauge.BackgroundColor3 = Color3.new(0, 0, 0)
+gauge.TextColor3 = Color3.new(1, 1, 1); gauge.Font = Enum.Font.GothamBold; gauge.TextSize = 15
+gauge.Visible = false; gauge.Parent = gui
+game:GetService("RunService").Heartbeat:Connect(function()
+	local hum = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+	local seat = hum and hum.SeatPart
+	if seat and seat:IsA("VehicleSeat") and seat:GetAttribute("VehicleId") then
+		gauge.Visible = true
+		gauge.Text = string.format("Fuel %d/%d | Condition %d%%", seat:GetAttribute("Fuel") or 0, seat:GetAttribute("FuelCapacity") or 0, seat:GetAttribute("Condition") or 0)
+	else
+		gauge.Visible = false
+	end
+end)

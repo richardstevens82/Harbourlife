@@ -12,4 +12,7 @@ return {
 	SkillXpBase = 50,
 	MaxSkillLevel = 20,
 	InteractCooldown = 0.5,
+	FuelPricePerUnit = 1,
+	RepairPricePerPoint = 0.5,
+	VehicleServiceRange = 40, -- vehicle must be this close to a fuel station
 }

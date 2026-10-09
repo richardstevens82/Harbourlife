@@ -43,6 +43,14 @@ function TestWorld.Start()
 	pad("PizzaCounter", Vector3.new(20, 2, -10), Color3.fromRGB(230, 200, 60))
 	pad("PizzaDropoff_1", Vector3.new(30, 2, 20), Color3.fromRGB(90, 200, 120))
 	pad("PizzaDropoff_2", Vector3.new(10, 2, 35), Color3.fromRGB(90, 200, 120))
+	-- vehicles (Phase 3)
+	pad("VehicleSpawn", Vector3.new(-40, 0.6, -40), Color3.fromRGB(70, 70, 70), Vector3.new(24, 1, 24))
+	for i, id in { "sedan", "pickup", "delivery_van", "excavator" } do
+		pad("VehicleGarage_" .. id, Vector3.new(-50 + i * 8, 2, -62), Color3.fromRGB(120, 120, 200), Vector3.new(6, 4, 6))
+		if id ~= "sedan" then pad("VehicleShop_" .. id, Vector3.new(-50 + i * 8, 2, -72), Color3.fromRGB(200, 160, 60), Vector3.new(6, 4, 6)) end
+	end
+	pad("FuelStation", Vector3.new(-20, 2, -40), Color3.fromRGB(230, 90, 60), Vector3.new(4, 4, 4))
+	pad("Garage_Repair", Vector3.new(-20, 2, -50), Color3.fromRGB(60, 180, 180), Vector3.new(6, 4, 6))
 end
 
 return TestWorld

@@ -13,3 +13,8 @@ Name Parts in Workspace (anchored, any size) and the server wires them up:
 Test loop: take job, buy ingredients, use oven, wait, use oven again, serve at counter (or deliver). Orders only spawn while a player holds the cook or driver job. Press I for inventory and skills.
 
 A dev-only `TestWorld` module builds all of these Parts automatically on server start (set `Enabled = false` in `TestWorld.luau` once your real map has them).
+
+## Vehicles (Phase 3)
+
+TestWorld also builds: `VehicleSpawn`, `VehicleGarage_<sedan|pickup|delivery_van|excavator>`, `VehicleShop_<pickup|delivery_van|excavator>`, `FuelStation`, `Garage_Repair`.
+Everyone starts owning a free sedan. Use the sedan garage pad to take it out, sit in the seat (on top of the body), drive with WASD. Buy the excavator ($8000) at its shop pad; drive it near the pump to refuel.

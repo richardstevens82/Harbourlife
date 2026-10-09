@@ -9,7 +9,7 @@ local profiles: { [Player]: any } = {}
 local loadFailed: { [Player]: boolean } = {}
 
 local function defaultData()
-	return { cash = Config.StartingCash, bank = Config.StartingBank, inventory = {}, xp = 0, level = 1, skills = {}, job = "unemployed", reputation = 0, version = 1 }
+	return { cash = Config.StartingCash, bank = Config.StartingBank, inventory = {}, xp = 0, level = 1, skills = {}, job = "unemployed", reputation = 0, vehicles = { sedan = { fuel = 60, condition = 100 } }, version = 1 }
 end
 
 local function reconcile(data)
