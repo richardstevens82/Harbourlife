@@ -6,7 +6,7 @@ gui.Name = "HarbourlifeHUD"; gui.ResetOnSpawn = false
 gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
 
 local money = Instance.new("TextLabel")
-money.Size = UDim2.fromOffset(220, 32); money.Position = UDim2.new(1, -230, 0, 10)
+money.Size = UDim2.fromOffset(340, 32); money.Position = UDim2.new(1, -350, 0, 10)
 money.BackgroundTransparency = 0.4; money.BackgroundColor3 = Color3.new(0, 0, 0)
 money.TextColor3 = Color3.new(1, 1, 1); money.Font = Enum.Font.GothamBold; money.TextSize = 16
 money.Text = "Cash: ..."; money.Parent = gui
@@ -18,7 +18,7 @@ toast.TextColor3 = Color3.new(1, 1, 1); toast.Font = Enum.Font.Gotham; toast.Tex
 toast.Visible = false; toast.Parent = gui
 
 Remotes.DataChanged.OnClientEvent:Connect(function(d)
-	money.Text = string.format("Cash: $%d  Bank: $%d", d.cash, d.bank)
+	money.Text = string.format("Lv %d | Cash $%d | Bank $%d | %s", d.level, d.cash, d.bank, d.job)
 end)
 
 local token = 0

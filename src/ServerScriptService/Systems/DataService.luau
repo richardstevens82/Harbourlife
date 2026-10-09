@@ -9,7 +9,7 @@ local profiles: { [Player]: any } = {}
 local loadFailed: { [Player]: boolean } = {}
 
 local function defaultData()
-	return { cash = Config.StartingCash, bank = Config.StartingBank, inventory = {}, version = 1 }
+	return { cash = Config.StartingCash, bank = Config.StartingBank, inventory = {}, xp = 0, level = 1, skills = {}, job = "unemployed", reputation = 0, version = 1 }
 end
 
 local function reconcile(data)
@@ -34,7 +34,7 @@ end
 
 function DataService.Push(player: Player)
 	local d = profiles[player]
-	if d then Remotes.DataChanged:FireClient(player, { cash = d.cash, bank = d.bank, inventory = d.inventory }) end
+	if d then Remotes.DataChanged:FireClient(player, { cash = d.cash, bank = d.bank, inventory = d.inventory, xp = d.xp, level = d.level, job = d.job, skills = d.skills, reputation = d.reputation }) end
 end
 
 function DataService.Save(player: Player)
