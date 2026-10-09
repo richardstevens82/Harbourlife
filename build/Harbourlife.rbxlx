@@ -1,4 +1,4 @@
-<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4"><Item class="Workspace" referent="RBX2"><Properties><string name="Name">Workspace</string></Properties><Item class="SpawnLocation" referent="RBX1"><Properties><string name="Name">SpawnLocation</string><bool name="Anchored">true</bool><CoordinateFrame name="CFrame"><X>0</X><Y>1</Y><Z>20</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame><Vector3 name="size"><X>6</X><Y>1</Y><Z>6</Z></Vector3></Properties></Item></Item><Item class="ReplicatedStorage" referent="RBX12"><Properties><string name="Name">ReplicatedStorage</string></Properties><Item class="Folder" referent="RBX11"><Properties><string name="Name">Shared</string></Properties><Item class="ModuleScript" referent="RBX3"><Properties><string name="Name">BusinessDefinitions</string><ProtectedString name="Source"><![CDATA[return {
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4"><Item class="Workspace" referent="RBX2"><Properties><string name="Name">Workspace</string></Properties><Item class="SpawnLocation" referent="RBX1"><Properties><string name="Name">SpawnLocation</string><bool name="Anchored">true</bool><CoordinateFrame name="CFrame"><X>0</X><Y>1</Y><Z>20</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame><Vector3 name="size"><X>6</X><Y>1</Y><Z>6</Z></Vector3></Properties></Item></Item><Item class="ReplicatedStorage" referent="RBX13"><Properties><string name="Name">ReplicatedStorage</string></Properties><Item class="Folder" referent="RBX12"><Properties><string name="Name">Shared</string></Properties><Item class="ModuleScript" referent="RBX3"><Properties><string name="Name">BusinessDefinitions</string><ProtectedString name="Source"><![CDATA[return {
 	pizza_shop = {
 		name = "Harbour Pizza",
 		maxOpenOrders = 5,
@@ -33,14 +33,79 @@
 	DigRadius = 3.5,
 	DumpRadius = 3,
 	BucketCapacity = 5,
+	ShopRange = 15, -- max studs from a shop counter to buy
+	ShopMaxQty = 10,
 }
 ]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX5"><Properties><string name="Name">ItemDefinitions</string><ProtectedString name="Source"><![CDATA[-- Server and client read this; only the server may change inventories.
+-- price = base price; shops apply their own markup. stack = max held.
+local function item(name, price, stack, category) return { name = name, price = price, stack = stack, category = category } end
+
 return {
-	pizza_dough = { name = "Pizza Dough", price = 2, stack = 99 },
-	tomato_sauce = { name = "Tomato Sauce", price = 3, stack = 99 },
-	cheese = { name = "Cheese", price = 4, stack = 99 },
-	pizza = { name = "Pizza", price = 12, stack = 10 },
-	fuel_can = { name = "Fuel Can", price = 15, stack = 5 },
+	-- food & ingredients
+	pizza_dough = item("Pizza Dough", 2, 99, "food"),
+	tomato_sauce = item("Tomato Sauce", 3, 99, "food"),
+	cheese = item("Cheese", 4, 99, "food"),
+	pizza = item("Pizza", 12, 10, "food"),
+	bread = item("Bread", 3, 20, "food"),
+	milk = item("Milk", 2, 20, "food"),
+	apple = item("Apple", 1, 30, "food"),
+	sandwich = item("Sandwich", 5, 10, "food"),
+	water_bottle = item("Water Bottle", 1, 20, "food"),
+	snack_bar = item("Snack Bar", 2, 20, "food"),
+	-- general
+	fuel_can = item("Fuel Can", 15, 5, "general"),
+	torch = item("Torch", 15, 3, "general"),
+	batteries = item("Batteries", 4, 20, "general"),
+	town_map = item("Town Map", 5, 1, "general"),
+	-- clothing
+	tshirt = item("T-Shirt", 20, 3, "clothing"),
+	jeans = item("Jeans", 35, 3, "clothing"),
+	hoodie = item("Hoodie", 45, 3, "clothing"),
+	work_boots = item("Work Boots", 50, 2, "clothing"),
+	hi_vis_vest = item("Hi-Vis Vest", 25, 2, "clothing"),
+	cap = item("Cap", 15, 3, "clothing"),
+	-- electronics
+	phone = item("Mobile Phone", 300, 1, "electronics"),
+	radio = item("Radio", 80, 2, "electronics"),
+	camera = item("Camera", 250, 1, "electronics"),
+	laptop = item("Laptop", 900, 1, "electronics"),
+	headphones = item("Headphones", 60, 2, "electronics"),
+	-- hardware
+	hammer = item("Hammer", 25, 2, "tools"),
+	wrench = item("Wrench", 30, 2, "tools"),
+	screwdriver = item("Screwdriver", 12, 2, "tools"),
+	paint_tin = item("Paint Tin", 18, 10, "tools"),
+	rope = item("Rope", 10, 5, "tools"),
+	toolbox = item("Toolbox", 70, 1, "tools"),
+	planks = item("Wooden Planks", 8, 50, "materials"),
+	nails = item("Box of Nails", 3, 20, "materials"),
+	-- fishing
+	fishing_rod = item("Fishing Rod", 60, 1, "fishing"),
+	bait = item("Bait", 2, 50, "fishing"),
+	tackle_box = item("Tackle Box", 40, 1, "fishing"),
+	landing_net = item("Landing Net", 35, 1, "fishing"),
+	cool_box = item("Cool Box", 45, 1, "fishing"),
+	-- furniture (placed in homes in the Property phase)
+	chair = item("Chair", 40, 4, "furniture"),
+	table = item("Table", 90, 2, "furniture"),
+	sofa = item("Sofa", 300, 1, "furniture"),
+	bed = item("Bed", 400, 1, "furniture"),
+	lamp = item("Lamp", 35, 4, "furniture"),
+	rug = item("Rug", 60, 2, "furniture"),
+	-- pets (live pets arrive with the pet system; these are supplies and pet clothes)
+	pet_food = item("Pet Food", 6, 20, "pets"),
+	pet_bed = item("Pet Bed", 40, 1, "pets"),
+	pet_collar = item("Pet Collar", 15, 3, "pets"),
+	pet_jumper = item("Pet Jumper", 20, 3, "pets"),
+	pet_hat = item("Pet Hat", 12, 3, "pets"),
+	pet_toy = item("Pet Toy", 8, 5, "pets"),
+	-- gun shop: clothing and display items only (developer decision, no functional weapons)
+	camo_jacket = item("Camo Jacket", 60, 2, "clothing"),
+	cargo_trousers = item("Cargo Trousers", 40, 2, "clothing"),
+	tactical_boots = item("Tactical Boots", 70, 2, "clothing"),
+	range_cap = item("Range Cap", 15, 3, "clothing"),
+	ear_defenders = item("Ear Defenders", 25, 2, "clothing"),
+	display_case = item("Display Case (decor)", 120, 1, "furniture"),
 }
 ]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX6"><Properties><string name="Name">JobDefinitions</string><ProtectedString name="Source"><![CDATA[-- pay = cash per completed task; xp = XP per task; skill = skill trained; minLevel = player level required
 return {
@@ -61,7 +126,7 @@ return {
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local NAMES = { "DataChanged", "Notify", "ExcavatorAction" }
+local NAMES = { "DataChanged", "Notify", "ExcavatorAction", "OpenShop", "ShopBuy" }
 local Remotes = {}
 
 local folder
@@ -81,7 +146,29 @@ for _, name in NAMES do
 	Remotes[name] = folder:WaitForChild(name)
 end
 return Remotes
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX9"><Properties><string name="Name">SkillDefinitions</string><ProtectedString name="Source"><![CDATA[return {
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX9"><Properties><string name="Name">ShopDefinitions</string><ProtectedString name="Source"><![CDATA[-- markup multiplies the item's base price. stock = max units held; restock adds 1 of each item per interval.
+-- Any Part named "Shop_<id>" becomes a counter for that shop (several locations may share one id).
+return {
+	grocery = { name = "Grocery", markup = 1.0, stock = 20, restockSeconds = 30,
+		items = { "bread", "milk", "apple", "cheese", "tomato_sauce", "pizza_dough", "water_bottle", "sandwich" } },
+	general_store = { name = "General Store", markup = 1.2, stock = 10, restockSeconds = 45,
+		items = { "water_bottle", "snack_bar", "torch", "batteries", "fuel_can", "town_map" } },
+	clothing = { name = "Clothing Store", markup = 1.0, stock = 6, restockSeconds = 60,
+		items = { "tshirt", "jeans", "hoodie", "work_boots", "hi_vis_vest", "cap" } },
+	electronics = { name = "Electronics", markup = 1.0, stock = 3, restockSeconds = 120,
+		items = { "phone", "radio", "camera", "laptop", "headphones" } },
+	hardware = { name = "Hardware Store", markup = 1.0, stock = 10, restockSeconds = 45,
+		items = { "hammer", "wrench", "screwdriver", "paint_tin", "rope", "toolbox", "planks", "nails" } },
+	fishing_shop = { name = "Fishing Shop", markup = 1.0, stock = 6, restockSeconds = 60,
+		items = { "fishing_rod", "bait", "tackle_box", "landing_net", "cool_box" } },
+	furniture = { name = "Furniture Store", markup = 1.0, stock = 4, restockSeconds = 90,
+		items = { "chair", "table", "sofa", "bed", "lamp", "rug" } },
+	pet_store = { name = "Pet Store", markup = 1.0, stock = 8, restockSeconds = 60,
+		items = { "pet_food", "pet_bed", "pet_collar", "pet_jumper", "pet_hat", "pet_toy" } },
+	gun_shop = { name = "Gun Shop (Clothing & Display)", markup = 1.0, stock = 5, restockSeconds = 60,
+		items = { "camo_jacket", "cargo_trousers", "tactical_boots", "range_cap", "ear_defenders", "display_case" } },
+}
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX10"><Properties><string name="Name">SkillDefinitions</string><ProtectedString name="Source"><![CDATA[return {
 	cooking = { name = "Cooking" },
 	driving = { name = "Driving" },
 	seamanship = { name = "Seamanship" },
@@ -89,7 +176,7 @@ return Remotes
 	fishing = { name = "Fishing" },
 	construction = { name = "Construction" },
 }
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX10"><Properties><string name="Name">VehicleDefinitions</string><ProtectedString name="Source"><![CDATA[-- price 0 = starter vehicle. size is (width, height, length); the vehicle faces -Z.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX11"><Properties><string name="Name">VehicleDefinitions</string><ProtectedString name="Source"><![CDATA[-- price 0 = starter vehicle. size is (width, height, length); the vehicle faces -Z.
 return {
 	sedan = { name = "Sedan", price = 0, size = Vector3.new(7, 2, 14), color = Color3.fromRGB(60, 100, 200),
 		fuelCapacity = 60, fuelPerSecond = 0.15, wearPerSecond = 0.01, maxSpeed = 60, turnRate = 1.6 },
@@ -100,7 +187,7 @@ return {
 	excavator = { name = "Excavator", price = 8000, size = Vector3.new(10, 3, 12), color = Color3.fromRGB(240, 190, 30),
 		fuelCapacity = 120, fuelPerSecond = 0.3, wearPerSecond = 0.02, maxSpeed = 18, turnRate = 1.0, construction = true },
 }
-]]></ProtectedString></Properties></Item></Item></Item><Item class="ServerScriptService" referent="RBX27"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Folder" referent="RBX25"><Properties><string name="Name">Systems</string></Properties><Item class="ModuleScript" referent="RBX13"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[local DataStoreService = game:GetService("DataStoreService")
+]]></ProtectedString></Properties></Item></Item></Item><Item class="ServerScriptService" referent="RBX29"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Folder" referent="RBX27"><Properties><string name="Name">Systems</string></Properties><Item class="ModuleScript" referent="RBX14"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
@@ -192,7 +279,7 @@ function DataService.Start()
 end
 
 return DataService
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX14"><Properties><string name="Name">EconomyService</string><ProtectedString name="Source"><![CDATA[local DataService = require(script.Parent.DataService)
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX15"><Properties><string name="Name">EconomyService</string><ProtectedString name="Source"><![CDATA[local DataService = require(script.Parent.DataService)
 
 local Economy = {}
 
@@ -231,7 +318,7 @@ function Economy.Withdraw(player: Player, amount: number): boolean
 end
 
 return Economy
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX15"><Properties><string name="Name">ExcavatorService</string><ProtectedString name="Source"><![CDATA[-- Server-validated digging. The client only asks ("dig" / "dump"); the server checks the
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX16"><Properties><string name="Name">ExcavatorService</string><ProtectedString name="Source"><![CDATA[-- Server-validated digging. The client only asks ("dig" / "dump"); the server checks the
 -- driver, cooldown, reach and the real bucket position before editing terrain.
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Defs = require(game.ReplicatedStorage.Shared.VehicleDefinitions)
@@ -319,7 +406,7 @@ function E.Start()
 end
 
 return E
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX16"><Properties><string name="Name">InteractionService</string><ProtectedString name="Source"><![CDATA[-- Single place that turns world objects into interactable prompts.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX17"><Properties><string name="Name">InteractionService</string><ProtectedString name="Source"><![CDATA[-- Single place that turns world objects into interactable prompts.
 -- The server owns the ProximityPrompt, so distance is enforced by Roblox and the
 -- callback only ever runs on the server, with a per-player cooldown.
 local Config = require(game.ReplicatedStorage.Shared.Config)
@@ -347,7 +434,7 @@ end
 game.Players.PlayerRemoving:Connect(function(p) last[p] = nil end)
 
 return I
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX17"><Properties><string name="Name">InventoryService</string><ProtectedString name="Source"><![CDATA[local Config = require(game.ReplicatedStorage.Shared.Config)
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX18"><Properties><string name="Name">InventoryService</string><ProtectedString name="Source"><![CDATA[local Config = require(game.ReplicatedStorage.Shared.Config)
 local Items = require(game.ReplicatedStorage.Shared.ItemDefinitions)
 local DataService = require(script.Parent.DataService)
 local Economy = require(script.Parent.EconomyService)
@@ -396,7 +483,7 @@ function Inventory.Buy(player, itemId: string, qty: number): boolean
 end
 
 return Inventory
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX18"><Properties><string name="Name">JobCentre</string><ProtectedString name="Source"><![CDATA[-- Placeholder Job Centre: a pad in Workspace named "JobCentre_<jobId>" becomes a sign-up point.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX19"><Properties><string name="Name">JobCentre</string><ProtectedString name="Source"><![CDATA[-- Placeholder Job Centre: a pad in Workspace named "JobCentre_<jobId>" becomes a sign-up point.
 -- Example: name a Part "JobCentre_pizza_cook". Replace with the real building later.
 local Jobs = require(game.ReplicatedStorage.Shared.JobDefinitions)
 local Interaction = require(script.Parent.InteractionService)
@@ -421,7 +508,7 @@ function C.Start()
 end
 
 return C
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX19"><Properties><string name="Name">JobService</string><ProtectedString name="Source"><![CDATA[local Jobs = require(game.ReplicatedStorage.Shared.JobDefinitions)
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX20"><Properties><string name="Name">JobService</string><ProtectedString name="Source"><![CDATA[local Jobs = require(game.ReplicatedStorage.Shared.JobDefinitions)
 local DataService = require(script.Parent.DataService)
 local Economy = require(script.Parent.EconomyService)
 local Progression = require(script.Parent.ProgressionService)
@@ -454,13 +541,13 @@ function J.CompleteTask(player: Player, jobId: string): boolean
 end
 
 return J
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX20"><Properties><string name="Name">NotificationService</string><ProtectedString name="Source"><![CDATA[local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX21"><Properties><string name="Name">NotificationService</string><ProtectedString name="Source"><![CDATA[local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
 local N = {}
 function N.Send(player: Player, text: string, kind: string?)
 	Remotes.Notify:FireClient(player, tostring(text):sub(1, 120), kind or "info")
 end
 return N
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX21"><Properties><string name="Name">PizzaService</string><ProtectedString name="Source"><![CDATA[-- Pizza Business: supplier -> oven -> orders (counter / delivery) -> payment, XP, reputation.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX22"><Properties><string name="Name">PizzaService</string><ProtectedString name="Source"><![CDATA[-- Pizza Business: supplier -> oven -> orders (counter / delivery) -> payment, XP, reputation.
 -- Workspace markers (rename Parts, no scripts needed):
 --   PizzaSupplier        buys ingredients
 --   PizzaOven_<n>        cooks pizza
@@ -629,7 +716,7 @@ end
 function P._orders() return orders end
 
 return P
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX22"><Properties><string name="Name">ProgressionService</string><ProtectedString name="Source"><![CDATA[local Config = require(game.ReplicatedStorage.Shared.Config)
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX23"><Properties><string name="Name">ProgressionService</string><ProtectedString name="Source"><![CDATA[local Config = require(game.ReplicatedStorage.Shared.Config)
 local Skills = require(game.ReplicatedStorage.Shared.SkillDefinitions)
 local DataService = require(script.Parent.DataService)
 local Notify = require(script.Parent.NotificationService)
@@ -677,7 +764,112 @@ function P.SkillLevel(player: Player, skillId: string): number
 end
 
 return P
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX23"><Properties><string name="Name">TestWorld</string><ProtectedString name="Source"><![CDATA[-- Dev-only placeholder test area. Builds labelled, correctly named Parts near the origin
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">ShopService</string><ProtectedString name="Source"><![CDATA[-- Retail: browse a shop at its counter, buy with server-validated price, range and stock.
+local Players = game:GetService("Players")
+local Config = require(game.ReplicatedStorage.Shared.Config)
+local Items = require(game.ReplicatedStorage.Shared.ItemDefinitions)
+local Shops = require(game.ReplicatedStorage.Shared.ShopDefinitions)
+local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
+local DataService = require(script.Parent.DataService)
+local Economy = require(script.Parent.EconomyService)
+local Inventory = require(script.Parent.InventoryService)
+local Interaction = require(script.Parent.InteractionService)
+local Notify = require(script.Parent.NotificationService)
+
+local ShopService = {}
+local counters: { [string]: { BasePart } } = {}
+local stock: { [string]: { [string]: number } } = {}
+local lastBuy: { [Player]: number } = {}
+
+function ShopService.Price(shopId: string, itemId: string): number
+	return math.ceil(Items[itemId].price * Shops[shopId].markup)
+end
+
+local function nearShop(player: Player, shopId: string): boolean
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return false end
+	for _, p in counters[shopId] or {} do
+		if p.Parent and (p.Position - hrp.Position).Magnitude <= Config.ShopRange then return true end
+	end
+	return false
+end
+
+local function payload(shopId: string)
+	local def = Shops[shopId]
+	local list = {}
+	for _, id in def.items do
+		table.insert(list, { id = id, name = Items[id].name, price = ShopService.Price(shopId, id), stock = stock[shopId][id] })
+	end
+	return { id = shopId, name = def.name, items = list }
+end
+
+local function open(player: Player, shopId: string)
+	Remotes.OpenShop:FireClient(player, payload(shopId))
+end
+
+local function buy(player: Player, shopId: any, itemId: any, qty: any)
+	-- validate everything the client sent
+	if type(shopId) ~= "string" or type(itemId) ~= "string" or type(qty) ~= "number" then return end
+	local def = Shops[shopId]
+	if not def or not Items[itemId] or not table.find(def.items, itemId) then return end
+	if qty ~= qty or qty % 1 ~= 0 or qty < 1 or qty > Config.ShopMaxQty then return end
+	local now = os.clock()
+	if now - (lastBuy[player] or 0) < 0.2 then return end
+	lastBuy[player] = now
+	if not DataService.Get(player) then return end
+	if not nearShop(player, shopId) then Notify.Send(player, "Walk back to the counter", "error"); return end
+
+	if stock[shopId][itemId] < qty then Notify.Send(player, "Out of stock", "error"); open(player, shopId); return end
+	local total = ShopService.Price(shopId, itemId) * qty
+	if not Economy.SpendCash(player, total) then Notify.Send(player, "Need $" .. total, "error"); return end
+	if not Inventory.Add(player, itemId, qty) then
+		Economy.AddCash(player, total) -- refund
+		Notify.Send(player, "No room in your inventory", "error")
+		return
+	end
+	stock[shopId][itemId] -= qty
+	Notify.Send(player, string.format("Bought %dx %s for $%d", qty, Items[itemId].name, total), "success")
+	open(player, shopId) -- refresh stock on the client
+end
+
+local function hook(inst: Instance)
+	if not inst:IsA("BasePart") then return end
+	local shopId = inst.Name:match("^Shop_(.+)$")
+	if not shopId or not Shops[shopId] then return end
+	counters[shopId] = counters[shopId] or {}
+	table.insert(counters[shopId], inst)
+	Interaction.Register(inst, { action = "Browse", object = Shops[shopId].name, onTriggered = function(p) open(p, shopId) end })
+end
+
+function ShopService.Start()
+	for id, def in Shops do
+		stock[id] = {}
+		for _, itemId in def.items do
+			assert(Items[itemId], "ShopDefinitions: unknown item " .. itemId .. " in " .. id)
+			stock[id][itemId] = def.stock
+		end
+	end
+	for _, d in workspace:GetDescendants() do hook(d) end
+	workspace.DescendantAdded:Connect(hook)
+	Remotes.ShopBuy.OnServerEvent:Connect(buy)
+	Players.PlayerRemoving:Connect(function(p) lastBuy[p] = nil end)
+	-- one restock loop for all shops
+	task.spawn(function()
+		local elapsed = 0
+		while true do
+			task.wait(5)
+			elapsed += 5
+			for id, def in Shops do
+				if elapsed % def.restockSeconds < 5 then
+					for itemId, n in stock[id] do stock[id][itemId] = math.min(def.stock, n + 1) end
+				end
+			end
+		end
+	end)
+end
+
+return ShopService
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX25"><Properties><string name="Name">TestWorld</string><ProtectedString name="Source"><![CDATA[-- Dev-only placeholder test area. Builds labelled, correctly named Parts near the origin
 -- so every Phase 1/2 system can be exercised. Delete or set Enabled=false once the real map exists.
 local TestWorld = { Enabled = true }
 
@@ -734,6 +926,10 @@ function TestWorld.Start()
 		pad("VehicleGarage_" .. id, Vector3.new(-50 + i * 8, 2, -62), Color3.fromRGB(120, 120, 200), Vector3.new(6, 4, 6))
 		if id ~= "sedan" then pad("VehicleShop_" .. id, Vector3.new(-50 + i * 8, 2, -72), Color3.fromRGB(200, 160, 60), Vector3.new(6, 4, 6)) end
 	end
+	-- shops (Phase 4): a row along the south edge
+	for i, id in { "grocery", "general_store", "clothing", "electronics", "hardware", "fishing_shop", "furniture", "pet_store", "gun_shop" } do
+		pad("Shop_" .. id, Vector3.new(-52 + i * 11, 2, 52), Color3.fromRGB(150, 90, 200), Vector3.new(6, 4, 4))
+	end
 	pad("FuelStation", Vector3.new(-20, 2, -40), Color3.fromRGB(230, 90, 60), Vector3.new(4, 4, 4))
 	pad("Garage_Repair", Vector3.new(-20, 2, -50), Color3.fromRGB(60, 180, 180), Vector3.new(6, 4, 6))
 end
@@ -753,7 +949,7 @@ function TestWorld.GrantExcavator(player: Player)
 end
 
 return TestWorld
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">VehicleService</string><ProtectedString name="Source"><![CDATA[-- Vehicle ownership, spawning, fuel, wear and repair. Server-authoritative.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX26"><Properties><string name="Name">VehicleService</string><ProtectedString name="Source"><![CDATA[-- Vehicle ownership, spawning, fuel, wear and repair. Server-authoritative.
 -- Driving physics run on the driver's client (VehicleDriver.client.luau) via constraints built here.
 -- Workspace markers:
 --   VehicleGarage_<id>   toggle: store current vehicle / take out <id>
@@ -1083,17 +1279,17 @@ function V.Start()
 end
 
 return V
-]]></ProtectedString></Properties></Item></Item><Item class="Script" referent="RBX26"><Properties><string name="Name">Main</string><ProtectedString name="Source"><![CDATA[local Systems = script.Parent:WaitForChild("Systems")
+]]></ProtectedString></Properties></Item></Item><Item class="Script" referent="RBX28"><Properties><string name="Name">Main</string><ProtectedString name="Source"><![CDATA[local Systems = script.Parent:WaitForChild("Systems")
 require(game.ReplicatedStorage.Shared.Remotes) -- create remotes first
 
 -- Start each system on its own so one failure can't stop the rest; failures are named in Output.
-local ORDER = { "DataService", "TestWorld", "JobCentre", "PizzaService", "VehicleService", "ExcavatorService" }
+local ORDER = { "DataService", "TestWorld", "JobCentre", "PizzaService", "VehicleService", "ExcavatorService", "ShopService" }
 for _, name in ORDER do
 	local ok, err = pcall(function() require(Systems[name]).Start() end)
 	if not ok then warn("[Harbourlife] " .. name .. " failed to start: " .. tostring(err)) end
 end
 print("[Harbourlife] server started")
-]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX31"><Properties><string name="Name">StarterPlayer</string></Properties><Item class="StarterPlayerScripts" referent="RBX30"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX28"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[local Players = game:GetService("Players")
+]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX34"><Properties><string name="Name">StarterPlayer</string></Properties><Item class="StarterPlayerScripts" referent="RBX33"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX30"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[local Players = game:GetService("Players")
 local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
 
 local gui = Instance.new("ScreenGui")
@@ -1171,7 +1367,82 @@ game:GetService("RunService").Heartbeat:Connect(function()
 		gauge.Visible = false
 	end
 end)
-]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX29"><Properties><string name="Name">VehicleDriver</string><ProtectedString name="Source"><![CDATA[-- Drives the vehicle the local player is seated in. The server built the constraints
+]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX31"><Properties><string name="Name">ShopUI</string><ProtectedString name="Source"><![CDATA[-- Shop window. The server sends the item list; buying only sends a request, the server decides.
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
+local player = Players.LocalPlayer
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "ShopUI"; gui.ResetOnSpawn = false; gui.Enabled = false
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.fromOffset(420, 400); frame.Position = UDim2.new(0.5, -210, 0.5, -200)
+frame.BackgroundColor3 = Color3.fromRGB(25, 30, 40); frame.BackgroundTransparency = 0.05; frame.Parent = gui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -60, 0, 44); title.Position = UDim2.fromOffset(14, 0)
+title.BackgroundTransparency = 1; title.TextXAlignment = Enum.TextXAlignment.Left
+title.Font = Enum.Font.GothamBold; title.TextSize = 20; title.TextColor3 = Color3.new(1, 1, 1); title.Parent = frame
+
+local close = Instance.new("TextButton")
+close.Size = UDim2.fromOffset(36, 36); close.Position = UDim2.new(1, -44, 0, 4)
+close.Text = "X"; close.Font = Enum.Font.GothamBold; close.TextSize = 18
+close.BackgroundColor3 = Color3.fromRGB(170, 50, 50); close.TextColor3 = Color3.new(1, 1, 1); close.Parent = frame
+Instance.new("UICorner", close)
+
+local list = Instance.new("ScrollingFrame")
+list.Size = UDim2.new(1, -20, 1, -54); list.Position = UDim2.fromOffset(10, 48)
+list.BackgroundTransparency = 1; list.ScrollBarThickness = 6
+list.AutomaticCanvasSize = Enum.AutomaticSize.Y; list.CanvasSize = UDim2.new()
+list.Parent = frame
+local layout = Instance.new("UIListLayout"); layout.Padding = UDim.new(0, 6); layout.Parent = list
+
+local current
+local openedAt: Vector3?
+
+local function row(shopId, it)
+	local r = Instance.new("Frame")
+	r.Size = UDim2.new(1, -8, 0, 44); r.BackgroundColor3 = Color3.fromRGB(45, 52, 66); r.Parent = list
+	Instance.new("UICorner", r).CornerRadius = UDim.new(0, 6)
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -100, 1, 0); label.Position = UDim2.fromOffset(10, 0); label.BackgroundTransparency = 1
+	label.TextXAlignment = Enum.TextXAlignment.Left; label.Font = Enum.Font.Gotham; label.TextSize = 15
+	label.TextColor3 = Color3.new(1, 1, 1)
+	label.Text = string.format("%s   $%d   (stock %d)", it.name, it.price, it.stock); label.Parent = r
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.fromOffset(80, 32); b.Position = UDim2.new(1, -88, 0.5, -16)
+	b.Font = Enum.Font.GothamBold; b.TextSize = 15; b.TextColor3 = Color3.new(1, 1, 1)
+	b.Text = it.stock > 0 and "Buy" or "Sold out"
+	b.BackgroundColor3 = it.stock > 0 and Color3.fromRGB(40, 150, 80) or Color3.fromRGB(90, 90, 90)
+	b.AutoButtonColor = it.stock > 0; b.Parent = r
+	Instance.new("UICorner", b)
+	b.Activated:Connect(function()
+		if it.stock > 0 then Remotes.ShopBuy:FireServer(shopId, it.id, 1) end
+	end)
+end
+
+Remotes.OpenShop.OnClientEvent:Connect(function(data)
+	current = data.id
+	title.Text = data.name
+	for _, c in list:GetChildren() do if c:IsA("Frame") then c:Destroy() end end
+	for _, it in data.items do row(data.id, it) end
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not gui.Enabled then openedAt = hrp and hrp.Position end
+	gui.Enabled = true
+end)
+
+close.Activated:Connect(function() gui.Enabled = false; current = nil end)
+
+-- close when the player walks away from the counter
+RunService.Heartbeat:Connect(function()
+	if not gui.Enabled or not openedAt then return end
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not hrp or (hrp.Position - openedAt).Magnitude > 18 then gui.Enabled = false; current = nil end
+end)
+]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX32"><Properties><string name="Name">VehicleDriver</string><ProtectedString name="Source"><![CDATA[-- Drives the vehicle the local player is seated in. The server built the constraints
 -- (Drive / Turn); the driver's client owns the physics so steering feels instant.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")

@@ -23,3 +23,8 @@ Everyone starts owning a free sedan. Use the sedan garage pad to take it out, si
 
 TestWorld gives every player an excavator for free and builds a dirt mound (east of the floor, sign: `DigZoneSign`).
 Take it out at `VehicleGarage_excavator`, drive with WASD. Hold Q/E swing, R/F boom, T/G stick, Y/H bucket; hold X to dig and Z to dump (bucket teeth must be in the dirt; holds 5 loads, dirt shows in the bucket). Or use the Drive prompt on the seat inside the cab.
+
+## Shops (Phase 4)
+
+TestWorld builds a row of purple pads along the south edge: `Shop_grocery`, `Shop_general_store`, `Shop_clothing`, `Shop_electronics`, `Shop_hardware`, `Shop_fishing_shop`, `Shop_furniture`, `Shop_pet_store`, `Shop_gun_shop`.
+Use Browse, click Buy. Stock goes down per server and restocks over time. Walking away closes the window. Any Part named `Shop_<id>` in your own map works the same way.

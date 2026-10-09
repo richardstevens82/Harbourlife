@@ -8,7 +8,8 @@ A system is only marked complete when it works in Play Mode.
 | 1 | Core framework | In progress. Written, NOT yet tested in Play Mode. Written: data/save, money/bank, inventory, notifications, HUD, progression + skills, jobs, interaction service, placeholder Job Centre. Inventory/skills panel (press I) added. Missing: Studio Play Mode testing |
 | 2 | Pizza Business | Core loop VERIFIED in Studio by developer (cook, serve). Remaining items below not built. Written/other parts NOT tested in Play Mode. Supplier, ovens, counter + delivery orders, payment, XP, reputation. Missing: employees, business ownership, packaging, fuel/vehicle link, customer NPCs, till UI |
 | 3 | Vehicles | Written, NOT tested. Ownership, spawn/store, shop, fuel, wear, repair, owner-only seat, placeholder sedan/pickup/van/excavator. Missing: purchase UI, insurance, customisation, collision damage |
-| 3b | Excavator | Driving + arm VERIFIED by developer. Detailed model (tracks, cab, counterweight, rams, toothed bucket) and dig fix NOT yet tested. Swing/boom/stick/bucket servos, terrain dig + dump, load limit, construction skill. Needs tuning (arm geometry, stability, reach) |
-| 4-22 | Remaining phases | Not started |
+| 3b | Excavator | VERIFIED by developer: driving, arm, detailed model, digging and dumping. Swing/boom/stick/bucket servos, terrain dig + dump, load limit, construction skill. Needs tuning (arm geometry, stability, reach) |
+| 4 | Retail | Written, NOT tested. Shared ShopService + shop UI: grocery, general store, clothing, electronics, hardware, fishing shop, furniture, pet store, gun shop (clothing/display only). Server-validated price, range, qty, stock with restock. Missing: shop staff job + till, NPC shoppers, wearing clothing (needs clothing assets), using items |
+| 5-22 | Remaining phases | Not started |
 
 Phase 1 started on developer approval (fresh Rojo project). Nothing is marked complete until verified in Studio.

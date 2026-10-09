@@ -55,6 +55,10 @@ function TestWorld.Start()
 		pad("VehicleGarage_" .. id, Vector3.new(-50 + i * 8, 2, -62), Color3.fromRGB(120, 120, 200), Vector3.new(6, 4, 6))
 		if id ~= "sedan" then pad("VehicleShop_" .. id, Vector3.new(-50 + i * 8, 2, -72), Color3.fromRGB(200, 160, 60), Vector3.new(6, 4, 6)) end
 	end
+	-- shops (Phase 4): a row along the south edge
+	for i, id in { "grocery", "general_store", "clothing", "electronics", "hardware", "fishing_shop", "furniture", "pet_store", "gun_shop" } do
+		pad("Shop_" .. id, Vector3.new(-52 + i * 11, 2, 52), Color3.fromRGB(150, 90, 200), Vector3.new(6, 4, 4))
+	end
 	pad("FuelStation", Vector3.new(-20, 2, -40), Color3.fromRGB(230, 90, 60), Vector3.new(4, 4, 4))
 	pad("Garage_Repair", Vector3.new(-20, 2, -50), Color3.fromRGB(60, 180, 180), Vector3.new(6, 4, 6))
 end

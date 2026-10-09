@@ -20,4 +20,6 @@ return {
 	DigRadius = 3.5,
 	DumpRadius = 3,
 	BucketCapacity = 5,
+	ShopRange = 15, -- max studs from a shop counter to buy
+	ShopMaxQty = 10,
 }
