@@ -1,0 +1,20 @@
+{
+  "name": "Harbourlife",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Shared": { "$path": "src/ReplicatedStorage/Shared" }
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "Systems": { "$path": "src/ServerScriptService/Systems" },
+      "Main": { "$path": "src/ServerScriptService/Main.server.luau" }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": { "$path": "src/StarterPlayer/StarterPlayerScripts" }
+    },
+    "Workspace": { "$className": "Workspace", "$properties": { "Gravity": 196.2 } }
+  }
+}

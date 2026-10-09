@@ -49,7 +49,7 @@ Prison Island, pet store, gun shop, sewers, CCTV, car showroom, airport, mobile 
 
 ## Potential conflicts to resolve with the developer
 
-- **Gun shop + "not a crime simulator"**: spec says criminal justice is NPC-driven. A gun shop needs a decision: cosmetic/prop items only, or a licensed-item system with no player-vs-player harm. Roblox policy compliance also applies. Recommended: no functional firearms for players; clothing/cosmetics and display items only.
+- **Gun shop**: RESOLVED by developer. Cosmetic, clothing and display items only; no functional weapons.
 - **Giant squid vs "no survival"**: acceptable as a rare environmental event against boats (damage and rescue jobs), with no player-death survival loop.
 - **Sewers vs performance**: needs streaming and a separate low-detail traffic-free zone.
 - **Airport** is a large new location; schedule it after Phase 15 or treat it as a new island.

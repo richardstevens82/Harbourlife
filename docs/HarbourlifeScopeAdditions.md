@@ -15,7 +15,7 @@ Additions made after the master prompt. All follow the master rules: server auth
 | Item | Notes |
 |---|---|
 | Pet store | Pets and pet clothes; pet cosmetics are an allowed Robux category |
-| Gun shop with clothes | Needs developer decision (see audit). Default: cosmetic/display/clothing only |
+| Gun shop with clothes | DECIDED: clothing, cosmetics and display items only; no functional weapons |
 | Sewer system | Road drains, ladders in and out, maintenance jobs; streamed zone |
 | CCTV system | Detects NPC crime events and feeds police dispatch |
 | Car showroom | Display cars, purchase flow into the vehicle ownership system |
