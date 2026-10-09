@@ -1,8 +1,10 @@
 local Systems = script.Parent:WaitForChild("Systems")
 require(game.ReplicatedStorage.Shared.Remotes) -- create remotes first
-require(Systems.DataService).Start()
-require(Systems.TestWorld).Start() -- before the systems below so Parts exist
-require(Systems.JobCentre).Start()
-require(Systems.PizzaService).Start()
-require(Systems.VehicleService).Start()
-require(Systems.ExcavatorService).Start()
+
+-- Start each system on its own so one failure can't stop the rest; failures are named in Output.
+local ORDER = { "DataService", "TestWorld", "JobCentre", "PizzaService", "VehicleService", "ExcavatorService" }
+for _, name in ORDER do
+	local ok, err = pcall(function() require(Systems[name]).Start() end)
+	if not ok then warn("[Harbourlife] " .. name .. " failed to start: " .. tostring(err)) end
+end
+print("[Harbourlife] server started")
