@@ -15,8 +15,9 @@ return {
 	FuelPricePerUnit = 1,
 	RepairPricePerPoint = 0.5,
 	VehicleServiceRange = 40, -- vehicle must be this close to a fuel station
-	ExcavatorCooldown = 1.2,
+	ExcavatorCooldown = 0.6,
 	ExcavatorMaxReach = 40,
-	DigRadius = 3,
+	DigRadius = 3.5,
+	DumpRadius = 3,
 	BucketCapacity = 5,
 }

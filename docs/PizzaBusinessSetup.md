@@ -22,4 +22,4 @@ Everyone starts owning a free sedan. Use the sedan garage pad to take it out, si
 ## Excavator (testing)
 
 TestWorld gives every player an excavator for free and builds a dirt mound (east of the floor, sign: `DigZoneSign`).
-Take it out at `VehicleGarage_excavator`, climb into the seat on the cab roof, drive with WASD. Hold Q/E swing, R/F boom, T/G stick, Y/H bucket; tap X to dig and Z to dump (bucket tip must be at the ground; holds 5 loads).
+Take it out at `VehicleGarage_excavator`, drive with WASD. Hold Q/E swing, R/F boom, T/G stick, Y/H bucket; hold X to dig and Z to dump (bucket teeth must be in the dirt; holds 5 loads, dirt shows in the bucket). Or use the Drive prompt on the seat inside the cab.

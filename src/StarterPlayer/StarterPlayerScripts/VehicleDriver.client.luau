@@ -6,12 +6,12 @@ local UIS = game:GetService("UserInputService")
 local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
 local player = Players.LocalPlayer
 
--- Excavator controls (hold): Q/E swing, R/F boom, T/G stick, Y/H bucket. Tap: X dig, Z dump.
+-- Excavator controls (hold): Q/E swing, R/F boom, T/G stick, Y/H bucket. Hold: X dig, Z dump.
 local JOINTS = {
 	{ name = "SwingHinge", up = Enum.KeyCode.Q, down = Enum.KeyCode.E, rate = 50 },
-	{ name = "BoomHinge", up = Enum.KeyCode.R, down = Enum.KeyCode.F, rate = 30, min = -40, max = 30 },
-	{ name = "StickHinge", up = Enum.KeyCode.T, down = Enum.KeyCode.G, rate = 35, min = -60, max = 50 },
-	{ name = "BucketHinge", up = Enum.KeyCode.Y, down = Enum.KeyCode.H, rate = 50, min = -70, max = 60 },
+	{ name = "BoomHinge", up = Enum.KeyCode.R, down = Enum.KeyCode.F, rate = 30, min = -45, max = 30 },
+	{ name = "StickHinge", up = Enum.KeyCode.T, down = Enum.KeyCode.G, rate = 35, min = -60, max = 55 },
+	{ name = "BucketHinge", up = Enum.KeyCode.Y, down = Enum.KeyCode.H, rate = 50, min = -80, max = 70 },
 }
 local function driveArm(seat, dt)
 	if UIS:GetFocusedTextBox() then return end
@@ -28,14 +28,13 @@ local function driveArm(seat, dt)
 		end
 	end
 end
-UIS.InputBegan:Connect(function(input, processed)
-	if processed then return end
-	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-	local seat = hum and hum.SeatPart
-	if not (seat and seat:GetAttribute("Construction")) then return end
-	if input.KeyCode == Enum.KeyCode.X then Remotes.ExcavatorAction:FireServer("dig")
-	elseif input.KeyCode == Enum.KeyCode.Z then Remotes.ExcavatorAction:FireServer("dump") end
-end)
+-- Hold X to keep digging, hold Z to keep dumping (the server enforces the real rate).
+local lastAction = 0
+local function armActions(seat)
+	if UIS:GetFocusedTextBox() or os.clock() - lastAction < 0.65 then return end
+	if UIS:IsKeyDown(Enum.KeyCode.X) then lastAction = os.clock(); Remotes.ExcavatorAction:FireServer("dig")
+	elseif UIS:IsKeyDown(Enum.KeyCode.Z) then lastAction = os.clock(); Remotes.ExcavatorAction:FireServer("dump") end
+end
 
 RunService.RenderStepped:Connect(function(dt)
 	local char = player.Character
@@ -48,7 +47,7 @@ RunService.RenderStepped:Connect(function(dt)
 	local turn = body and body:FindFirstChild("Turn")
 	if not (drive and turn) then return end
 
-	if seat:GetAttribute("Construction") then driveArm(seat, dt) end
+	if seat:GetAttribute("Construction") then driveArm(seat, dt); armActions(seat) end
 	local maxSpeed = seat:GetAttribute("MaxSpeed") or 0
 	local condition = seat:GetAttribute("Condition") or 100
 	if seat:GetAttribute("Disabled") then maxSpeed = 0 end

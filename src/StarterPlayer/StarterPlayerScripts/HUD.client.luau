@@ -69,7 +69,7 @@ game:GetService("RunService").Heartbeat:Connect(function()
 		gauge.Visible = true
 		local txt = string.format("Fuel %d/%d | Condition %d%%", seat:GetAttribute("Fuel") or 0, seat:GetAttribute("FuelCapacity") or 0, seat:GetAttribute("Condition") or 0)
 		if seat:GetAttribute("Construction") then
-			txt ..= string.format(" | Load %d\nQE swing  RF boom  TG stick  YH bucket  X dig  Z dump", seat:GetAttribute("Load") or 0)
+			txt ..= string.format(" | Load %d\nQE swing  RF boom  TG stick  YH bucket  hold X dig  hold Z dump", seat:GetAttribute("Load") or 0)
 		end
 		gauge.Text = txt
 	else

@@ -46,25 +46,95 @@ local function hinge(name, a, b, frameCF, limits, speed)
 	return h
 end
 
+local function deco(parent: BasePart, model, name, size, localCF, color, material, shape)
+	local p = part(model, name, size, parent.CFrame * localCF, color, false)
+	if material then p.Material = material end
+	if shape then p.Shape = shape end
+	weld(parent, p)
+	return p
+end
+
+-- Coordinates below are relative to the vehicle's own frame (cf): -Z is forward, +Y is up.
 local function buildExcavator(model, body, cf, s, def)
+	local yellow, dark, steel = def.color, Color3.fromRGB(35, 35, 38), Color3.fromRGB(120, 120, 125)
+	local Metal, Glass = Enum.Material.Metal, Enum.Material.Glass
 	local top = s.Y / 2
-	local amber = Color3.fromRGB(200, 150, 20)
-	local cab = part(model, "Cab", Vector3.new(7, 4, 8), cf * CFrame.new(0, top + 2, 0), def.color, false)
-	local P1 = CFrame.new(0, top + 3.5, -2.5)
-	local boomFrame = P1 * CFrame.Angles(math.rad(30), 0, 0)
-	local boom = part(model, "Boom", Vector3.new(1.6, 1.6, 10), cf * boomFrame * CFrame.new(0, 0, -5), amber, false)
-	local E1 = boomFrame * CFrame.new(0, 0, -10)
-	local stickFrame = CFrame.new(E1.Position) * CFrame.Angles(math.rad(-40), 0, 0)
-	local stick = part(model, "Stick", Vector3.new(1.2, 1.2, 8), cf * stickFrame * CFrame.new(0, 0, -4), amber, false)
-	local E2 = stickFrame * CFrame.new(0, 0, -8)
+
+	-- Undercarriage: body is the invisible collider; tracks, frame and sprockets are visual.
+	body.Transparency = 1
+	deco(body, model, "Frame", Vector3.new(5, 1.6, 8), CFrame.new(0, 0.3, 0), dark, Metal)
+	for _, x in { -3.8, 3.8 } do
+		deco(body, model, "Track", Vector3.new(2.4, 2.6, 12.4), CFrame.new(x, -0.2, 0), Color3.fromRGB(25, 25, 25), Enum.Material.Slate)
+		for _, z in { -5.4, 5.4 } do
+			deco(body, model, "Sprocket", Vector3.new(2.6, 2.8, 2.8), CFrame.new(x, -0.2, z), steel, Metal, Enum.PartType.Cylinder)
+		end
+		for i = -5, 5 do
+			deco(body, model, "TrackPad", Vector3.new(2.5, 0.25, 0.45), CFrame.new(x, 1.15, i * 1.1), Color3.fromRGB(45, 45, 45), Metal)
+		end
+	end
+
+	-- Upper structure on a turntable ("Cab") that swings on the undercarriage.
+	local cab = part(model, "Cab", Vector3.new(8, 1, 10), cf * CFrame.new(0, top + 0.5, 0), dark, false)
+	cab.Material = Metal
+	-- pos is in vehicle space; convert to turntable space (turntable sits at y = top + 0.5)
+	local function onCab(name, size, pos, color, material, rot)
+		return deco(cab, model, name, size, CFrame.new(pos - Vector3.new(0, top + 0.5, 0)) * (rot or CFrame.identity), color, material)
+	end
+	-- operator cab (front left): solid lower walls, glass upper, roof
+	onCab("CabBack", Vector3.new(3.6, 4.6, 0.2), Vector3.new(-2.2, 4.8, -0.5), yellow, Metal)
+	onCab("CabSideLow", Vector3.new(0.2, 1.6, 4.4), Vector3.new(-3.9, 3.3, -2.6), yellow, Metal)
+	onCab("CabSideGlass", Vector3.new(0.2, 3.0, 4.4), Vector3.new(-3.9, 5.6, -2.6), Color3.fromRGB(160, 200, 220), Glass).Transparency = 0.6
+	onCab("CabInnerGlass", Vector3.new(0.2, 4.6, 4.4), Vector3.new(-0.5, 4.8, -2.6), Color3.fromRGB(160, 200, 220), Glass).Transparency = 0.6
+	onCab("CabFrontGlass", Vector3.new(3.6, 4.6, 0.2), Vector3.new(-2.2, 4.8, -4.7), Color3.fromRGB(160, 200, 220), Glass).Transparency = 0.6
+	onCab("CabRoof", Vector3.new(3.9, 0.3, 4.7), Vector3.new(-2.2, 7.25, -2.6), yellow, Metal)
+	for i, x in { -3.3, -1.1 } do
+		local lamp = onCab("WorkLight" .. i, Vector3.new(0.7, 0.4, 0.3), Vector3.new(x, 7.6, -4.6), Color3.fromRGB(255, 245, 210), Enum.Material.Neon)
+		local light = Instance.new("SpotLight"); light.Face = Enum.NormalId.Front; light.Range = 40; light.Brightness = 2; light.Parent = lamp
+	end
+	-- engine housing, counterweight, exhaust
+	onCab("EngineHousing", Vector3.new(8, 2.8, 3.6), Vector3.new(0, 3.9, 3.0), yellow, Metal)
+	local cw = onCab("Counterweight", Vector3.new(8, 2.2, 1.2), Vector3.new(0, 3.4, 5.3), dark, Metal)
+	local sg = Instance.new("SurfaceGui"); sg.Face = Enum.NormalId.Back; sg.Parent = cw
+	local txt = Instance.new("TextLabel"); txt.Size = UDim2.fromScale(1, 1); txt.BackgroundTransparency = 1
+	txt.Text = "HARBOURLIFE"; txt.TextScaled = true; txt.Font = Enum.Font.GothamBlack; txt.TextColor3 = yellow; txt.Parent = sg
+	onCab("Exhaust", Vector3.new(1.6, 0.4, 0.4), Vector3.new(2.6, 6.0, 2.4), dark, Metal, CFrame.Angles(0, 0, math.rad(90))).Shape = Enum.PartType.Cylinder
+	onCab("BoomMount", Vector3.new(1.8, 1.6, 2), Vector3.new(1.2, 3.3, -3.5), dark, Metal)
+
+	-- Boom, stick and bucket (each on its own servo hinge)
+	local P1 = CFrame.new(1.2, top + 2.2, -3.5)
+	local boomFrame = P1 * CFrame.Angles(math.rad(35), 0, 0)
+	local boom = part(model, "Boom", Vector3.new(1.4, 1.8, 11), cf * boomFrame * CFrame.new(0, 0, -5.5), yellow, false)
+	boom.Material = Metal
+	deco(boom, model, "BoomRam", Vector3.new(8, 0.5, 0.5), CFrame.new(0, 1.15, 0.5) * CFrame.Angles(0, math.rad(90), 0), steel, Metal, Enum.PartType.Cylinder)
+	local E1 = boomFrame * CFrame.new(0, 0, -11)
+	local stickFrame = CFrame.new(E1.Position) * CFrame.Angles(math.rad(-50), 0, 0)
+	local stick = part(model, "Stick", Vector3.new(1.1, 1.4, 7), cf * stickFrame * CFrame.new(0, 0, -3.5), yellow, false)
+	stick.Material = Metal
+	deco(stick, model, "StickRam", Vector3.new(5, 0.4, 0.4), CFrame.new(0, 0.95, 0.4) * CFrame.Angles(0, math.rad(90), 0), steel, Metal, Enum.PartType.Cylinder)
+	local E2 = stickFrame * CFrame.new(0, 0, -7)
 	local bucketFrame = CFrame.new(E2.Position) * CFrame.Angles(math.rad(-85), 0, 0)
-	local bucket = part(model, "Bucket", Vector3.new(4, 3, 3), cf * bucketFrame * CFrame.new(0, 0, -1.5), Color3.fromRGB(90, 90, 90), false)
-	local tip = Instance.new("Attachment"); tip.Name = "Tip"; tip.CFrame = CFrame.new(0, 0, -1.5); tip.Parent = bucket
+	local bucket = part(model, "Bucket", Vector3.new(4, 2, 3), cf * bucketFrame * CFrame.new(0, 0, -1.5), dark, false)
+	bucket.Material = Metal
+	for _, x in { -2.1, 2.1 } do
+		deco(bucket, model, "BucketSide", Vector3.new(0.25, 2.6, 3.2), CFrame.new(x, -0.3, 0), dark, Metal)
+	end
+	for _, x in { -1.5, -0.5, 0.5, 1.5 } do
+		deco(bucket, model, "Tooth", Vector3.new(0.45, 0.35, 0.8), CFrame.new(x, -0.5, -1.8), steel, Metal)
+	end
+	-- dirt heap shown while the bucket is loaded (server toggles transparency)
+	local dirt = deco(bucket, model, "BucketDirt", Vector3.new(3.6, 0.8, 2.6), CFrame.new(0, -1.3, 0.2), Color3.fromRGB(110, 80, 50), Enum.Material.Ground)
+	dirt.Transparency = 1
+	local tip = Instance.new("Attachment"); tip.Name = "Tip"; tip.CFrame = CFrame.new(0, 0, -1.8); tip.Parent = bucket
+	local dust = Instance.new("ParticleEmitter")
+	dust.Name = "Dust"; dust.Enabled = false; dust.Rate = 80
+	dust.Color = ColorSequence.new(Color3.fromRGB(120, 90, 60)); dust.Size = NumberSequence.new(0.7, 0.2)
+	dust.Lifetime = NumberRange.new(0.5, 0.9); dust.Speed = NumberRange.new(6, 10); dust.SpreadAngle = Vector2.new(60, 60)
+	dust.Acceleration = Vector3.new(0, -30, 0); dust.Parent = tip
 
 	hinge("SwingHinge", body, cab, cf * CFrame.new(0, top, 0) * CFrame.Angles(0, 0, math.rad(90)), nil, 1.0)
-	hinge("BoomHinge", cab, boom, cf * CFrame.new(P1.Position), { -40, 30 }, 0.6)
-	hinge("StickHinge", boom, stick, cf * CFrame.new(E1.Position), { -60, 50 }, 0.8)
-	hinge("BucketHinge", stick, bucket, cf * CFrame.new(E2.Position), { -70, 60 }, 1.0)
+	hinge("BoomHinge", cab, boom, cf * CFrame.new(P1.Position), { -45, 30 }, 0.6)
+	hinge("StickHinge", boom, stick, cf * CFrame.new(E1.Position), { -60, 55 }, 0.8)
+	hinge("BucketHinge", stick, bucket, cf * CFrame.new(E2.Position), { -80, 70 }, 1.0)
 	return cab
 end
 
@@ -81,7 +151,7 @@ local function build(id, def, cf, player, fuel, condition)
 	seat.Parent = model
 	if def.construction then
 		local cab = buildExcavator(model, body, cf, s, def)
-		seat.CFrame = cf * CFrame.new(0, s.Y / 2 + 4.5, 1.5)
+		seat.CFrame = cf * CFrame.new(-2.2, s.Y / 2 + 1.5, -2.2) -- inside the operator cab
 		weld(cab, seat)
 	else
 		weld(body, seat)
@@ -119,6 +189,12 @@ local function build(id, def, cf, player, fuel, condition)
 	seat:SetAttribute("Disabled", fuel <= 0)
 	seat:SetAttribute("Construction", def.construction == true)
 	seat:SetAttribute("Load", 0)
+
+	-- prompt so the owner can get in without having to climb onto the seat
+	Interaction.Register(seat, { action = "Drive", object = def.name, distance = 12, onTriggered = function(p)
+		local hum = p.Character and p.Character:FindFirstChildOfClass("Humanoid")
+		if p == player and hum and not seat.Occupant then seat:Sit(hum) end
+	end })
 
 	-- only the owner may drive
 	seat:GetPropertyChangedSignal("Occupant"):Connect(function()

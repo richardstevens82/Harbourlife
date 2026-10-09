@@ -7,3 +7,4 @@
 | 3 | Phase 1 code untested in Roblox Studio (no Studio in this environment) | Open |
 | 4 | DataService uses plain DataStore SetAsync with no session lock; consider ProfileStore before launch | Open |
 | 5 | Vehicle driving physics (LinearVelocity plane mode, client driven) need tuning in Studio; expect first-run handling issues | Open |
+| 6 | Excavator dig did nothing: ReadVoxels result iterated with generic for (hits Size field) | Fixed, awaiting retest |
