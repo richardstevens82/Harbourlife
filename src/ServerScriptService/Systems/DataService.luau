@@ -44,10 +44,18 @@ function DataService.Save(player: Player)
 end
 
 local function onJoin(player: Player)
-	local ok, data = tryAsync(function() return store:GetAsync("p_" .. player.UserId) end, 3)
+	local tries = game:GetService("RunService"):IsStudio() and 1 or 3
+	local ok, data = tryAsync(function() return store:GetAsync("p_" .. player.UserId) end, tries)
 	if not player.Parent then return end
 	if not ok then
-		loadFailed[player] = true
+		loadFailed[player] = true -- never save over real data we couldn't read
+		if game:GetService("RunService"):IsStudio() then
+			-- Unpublished place / API access off: play with temporary data instead of kicking.
+			warn("[Harbourlife] DataStore unavailable in Studio; using temporary data (nothing will save)")
+			profiles[player] = defaultData()
+			DataService.Push(player)
+			return
+		end
 		player:Kick("Could not load your data. Rejoin to protect your progress.")
 		return
 	end
