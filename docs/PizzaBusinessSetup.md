@@ -11,3 +11,5 @@ Name Parts in Workspace (anchored, any size) and the server wires them up:
 | `PizzaDropoff_1`, `_2`, ... | Delivery destinations |
 
 Test loop: take job, buy ingredients, use oven, wait, use oven again, serve at counter (or deliver). Orders only spawn while a player holds the cook or driver job. Press I for inventory and skills.
+
+A dev-only `TestWorld` module builds all of these Parts automatically on server start (set `Enabled = false` in `TestWorld.luau` once your real map has them).
