@@ -27,3 +27,31 @@ Remotes.Notify.OnClientEvent:Connect(function(text)
 	toast.Text = text; toast.Visible = true
 	task.delay(3, function() if token == mine then toast.Visible = false end end)
 end)
+
+-- Inventory panel: press I
+local Items = require(game.ReplicatedStorage.Shared.ItemDefinitions)
+local UIS = game:GetService("UserInputService")
+local panel = Instance.new("TextLabel")
+panel.Size = UDim2.fromOffset(240, 260); panel.Position = UDim2.new(0, 10, 0.5, -130)
+panel.BackgroundTransparency = 0.3; panel.BackgroundColor3 = Color3.new(0, 0, 0)
+panel.TextColor3 = Color3.new(1, 1, 1); panel.Font = Enum.Font.Gotham; panel.TextSize = 16
+panel.TextXAlignment = Enum.TextXAlignment.Left; panel.TextYAlignment = Enum.TextYAlignment.Top
+panel.Visible = false; panel.Parent = gui
+
+local lastData
+local function render()
+	if not lastData then return end
+	local lines = { "INVENTORY (I to close)" }
+	for id, n in lastData.inventory do
+		table.insert(lines, string.format("%s x%d", Items[id] and Items[id].name or id, n))
+	end
+	table.insert(lines, "")
+	table.insert(lines, "SKILLS")
+	for id, s in lastData.skills do table.insert(lines, string.format("%s Lv %d", id, s.level)) end
+	table.insert(lines, string.format("Reputation: %d", lastData.reputation or 0))
+	panel.Text = table.concat(lines, "\n")
+end
+Remotes.DataChanged.OnClientEvent:Connect(function(d) lastData = d; render() end)
+UIS.InputBegan:Connect(function(input, processed)
+	if not processed and input.KeyCode == Enum.KeyCode.I then panel.Visible = not panel.Visible; render() end
+end)
