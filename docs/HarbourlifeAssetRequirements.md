@@ -15,3 +15,4 @@ Nothing exists in the repo yet. Placeholders will be used where assets are missi
 | NPC assets | Character rigs, animations, prisoner and staff uniforms | Needed |
 | Pets | Models and clothing | Needed |
 | UI | Phone and apps, map, ticket, job UI | Needed |
+| Mall | Placeholder geometry built by MallBuilder. Could be replaced with mesh shop fittings, mannequins, escalator steps, store logos | Placeholder |

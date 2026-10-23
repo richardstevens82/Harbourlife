@@ -26,8 +26,9 @@ Take it out at `VehicleGarage_excavator`, drive with WASD. Hold Q/E swing, R/F b
 
 ## Shops (Phase 4)
 
-TestWorld builds a row of purple pads along the south edge: `Shop_grocery`, `Shop_general_store`, `Shop_clothing`, `Shop_electronics`, `Shop_hardware`, `Shop_fishing_shop`, `Shop_furniture`, `Shop_pet_store`, `Shop_gun_shop`.
-Use Browse, click Buy. Stock goes down per server and restocks over time. Walking away closes the window. Any Part named `Shop_<id>` in your own map works the same way.
+All retail shops now live in Harbour Mall (see `docs/MallSetup.md`); each store's till counter is the Part `Shop_<id>`.
+Use Browse, click Buy. Stock goes down per server and restocks over time. Walking away closes the window. Any Part
+named `Shop_<id>` in your own map still works the same way.
 
 ## Food businesses (Phase 5)
 

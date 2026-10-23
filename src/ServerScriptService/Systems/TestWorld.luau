@@ -55,9 +55,18 @@ function TestWorld.Start()
 		pad("VehicleGarage_" .. id, Vector3.new(-50 + i * 8, 2, -62), Color3.fromRGB(120, 120, 200), Vector3.new(6, 4, 6))
 		if id ~= "sedan" then pad("VehicleShop_" .. id, Vector3.new(-50 + i * 8, 2, -72), Color3.fromRGB(200, 160, 60), Vector3.new(6, 4, 6)) end
 	end
-	-- shops (Phase 4): a row along the south edge
-	for i, id in { "grocery", "general_store", "clothing", "electronics", "hardware", "fishing_shop", "furniture", "pet_store", "gun_shop" } do
-		pad("Shop_" .. id, Vector3.new(-52 + i * 11, 2, 52), Color3.fromRGB(150, 90, 200), Vector3.new(6, 4, 4))
+	-- Harbour Mall test site (retail shops live inside the mall). Your real map supplies its own
+	-- MallSite / CarParkSite Parts; these are only made when the map has none.
+	if not workspace:FindFirstChild("MallSite", true) then
+		local function ground(name, size, pos, color)
+			local g = Instance.new("Part")
+			g.Name = name; g.Anchored = true; g.Size = size; g.Position = pos; g.Color = color
+			g.Material = Enum.Material.Asphalt; g.Parent = workspace
+			return g
+		end
+		ground("MallTestGround", Vector3.new(800, 1, 600), Vector3.new(100, -0.5, 360), Color3.fromRGB(70, 72, 76))
+		ground("MallSite", Vector3.new(480, 1, 480), Vector3.new(-40, -0.4, 360), Color3.fromRGB(200, 190, 170))
+		ground("CarParkSite", Vector3.new(220, 1, 480), Vector3.new(350, -0.4, 360), Color3.fromRGB(90, 90, 95))
 	end
 	-- food businesses (Phase 5): one row per business, counter then stations
 	for i, job in { "barista", "baker", "chef", "waiter", "fast_food_worker" } do
