@@ -37,6 +37,11 @@ The builder turns the mall so its car park entrance and footbridge face `CarPark
 | Toilets | At the end of each upper arm, with cubicles, basins and mirrors |
 | Lifts | 2 glass lifts in the north and south arms. Click CALL outside, or a floor button inside. The doors only open when the car is at that floor |
 | Stores | 16 units (8 per level), each about 100 x 190 studs. Each has: its own colours, floor material, sign font, layout and feature pieces; a glass shopfront and LED fascia sign; a till counter (`Shop_<id>`, the Browse prompt); stocked fixtures; a STAFF ONLY door to a stockroom with pallet racking; a staff room (table, lockers, kitchenette); and a loading door (`LoadingDoor_<id>`, or `GoodsLift_<id>` upstairs) |
+| Food court | Upper level, north arm. Four kiosks: Wok Express, Squeeze Juice Bar, Harbour Scoops and a Dockside Burgers branch. Each has a counter with an order board, cooking stations and a menu board with prices. Seating for 64, and a staff supplies counter (the Food Wholesaler). Run by FoodService like the other food businesses |
+| Mall Management | South arm, ground floor. Desks to take the Mall Cleaner and Mall Security jobs |
+| Cleaner job | While a cleaner is on shift, litter (cans, packets, spills, newspapers) builds up around both floors, up to 10 pieces. "Clean up" pays each time |
+| Security job | 7 numbered checkpoints across both floors. Check in at them in order (1 to 7, then round again); each correct check-in pays |
+| NPC shoppers | Up to 16 at a time, only while a player is within 700 studs. They come in through the entrances (or the footbridge for the upper floor) and visit 1-3 stores. At each till they buy one item, which comes off that store's real stock, and they carry a bag out. Doors open for them |
 | Car park | Ground plus 3 decks (12 studs each), painted bays, columns and a green pedestrian walkway. Stacked two-way ramps (7 degrees) with walls and barriers, and height bars at both entrances. A big P sign tower, lamp posts on the roof deck, and a lift to every deck |
 | Footbridge | From the car park deck level with the mall's upper floor to the mall's east entrance tower |
 

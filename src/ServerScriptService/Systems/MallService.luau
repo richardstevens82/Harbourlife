@@ -10,7 +10,7 @@ local Interaction = require(script.Parent.InteractionService)
 local Notify = require(script.Parent.NotificationService)
 
 local MallService = {}
-local DOOR_RADIUS, DOOR_HEIGHT = 11, 8 -- a player this close (horizontally / vertically) opens the doors
+local DOOR_RADIUS, DOOR_HEIGHT = 11, 8 -- a player or NPC this close (horizontally / vertically) opens the doors
 local ATM_AMOUNT = 100
 local doorTween = TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local doors = {}
@@ -81,13 +81,17 @@ local function addDoor(m: Instance)
 	if #panels > 0 then table.insert(doors, { model = m, centre = centre, panels = panels, open = false }) end
 end
 
--- One loop for every door: open while any player is close, close when they have all gone.
+-- One loop for every door: open while any player or NPC (tagged HarbourNPC) is close, close when they have gone.
 local function runDoors()
 	while true do
 		local roots = {}
 		for _, plr in Players:GetPlayers() do
 			local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
 			if hrp then table.insert(roots, hrp.Position) end
+		end
+		for _, npc in CollectionService:GetTagged("HarbourNPC") do
+			local root = npc:FindFirstChild("HumanoidRootPart")
+			if root and root:IsA("BasePart") then table.insert(roots, root.Position) end
 		end
 		for i = #doors, 1, -1 do
 			local d = doors[i]

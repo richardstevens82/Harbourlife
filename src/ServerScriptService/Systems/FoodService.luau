@@ -2,7 +2,7 @@
 -- Food Wholesaler (a shop) -> ingredients -> station cooks a menu recipe -> counter serves a customer order
 -- -> payment, job pay, XP, reputation. Definitions live in BusinessDefinitions (entries with food = true).
 -- Workspace markers per business, e.g. the café:
---   CafeCounter              serves orders (shows open orders above it)
+--   CafeCounter              serves orders (shows open orders above it); CafeCounter_2 etc. for more branches
 --   CafeCoffeeMachine_<n>    a station; prefix -> appliance type in the definition
 local Players = game:GetService("Players")
 local Items = require(game.ReplicatedStorage.Shared.ItemDefinitions)
@@ -185,7 +185,7 @@ end
 local function hook(inst: Instance)
 	if not inst:IsA("BasePart") then return end
 	for bizId, def in foodBiz do
-		if inst.Name == def.counter then
+		if inst.Name == def.counter or inst.Name:match("^" .. def.counter .. "_%d+$") then
 			addBoard(inst, bizId)
 			Interaction.Register(inst, { action = "Serve order", object = def.name, onTriggered = function(p) serve(p, bizId) end })
 			return

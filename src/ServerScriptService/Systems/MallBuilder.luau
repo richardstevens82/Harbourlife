@@ -8,6 +8,9 @@ local CollectionService = game:GetService("CollectionService")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Def = require(Shared.MallDefinitions)
 local Shops = require(Shared.ShopDefinitions)
+local Businesses = require(Shared.BusinessDefinitions)
+local Recipes = require(Shared.RecipeDefinitions)
+local Items = require(Shared.ItemDefinitions)
 local C = Def.structure
 local Mat = Enum.Material
 
@@ -845,6 +848,71 @@ local function buildEscalator(f, parent, bottom: Vector3, top: Vector3, up: bool
 end
 
 --------------------------------------------------------------------------------------------------
+-- food court: kiosks along both sides of an arm, seating down the middle (frame f: arm runs along +Z)
+
+local function buildFoodCourt(f, parent, H)
+	local fc = Instance.new("Model")
+	fc.Name = "FoodCourt"
+	for _, k in Def.foodCourt do
+		local biz = Businesses[k.biz]
+		if not biz then warn("[MallBuilder] unknown food court business " .. k.biz); continue end
+		-- kiosk frame: front at z'=0 facing the seating, running back 10 studs to the store wall
+		local kf = f * CFrame.new(k.side * 14, H, k.z) * CFrame.Angles(0, k.side < 0 and -math.pi / 2 or math.pi / 2, 0)
+		local km = Instance.new("Model"); km.Name = k.biz; km.Parent = fc
+		box(kf, km, "KioskFloor", -12, 0, 0, 12, 0.08, 10, Color3.fromRGB(60, 60, 64), Mat.Slate, DECOR)
+		for _, s in { -1, 1 } do box(kf, km, "KioskWall", s * 12 - 0.3, 0, 0, s * 12 + 0.3, 10, 10, k.accent, Mat.SmoothPlastic) end
+		box(kf, km, "KioskCanopy", -12.5, 10, -1.5, 12.5, 12.5, 10, k.accent, Mat.SmoothPlastic)
+		local sg = box(kf, km, "KioskSign", -9, 10.4, -1.8, 9, 12.1, -1.5, Color3.new(1, 1, 1), Mat.SmoothPlastic, DECOR)
+		sign(sg, Enum.NormalId.Front, string.upper(biz.name), k.accent, "GothamBlack")
+		box(kf, km, "CanopyLED", -12.5, 9.8, -1.6, 12.5, 10, 10, Color3.fromRGB(255, 245, 225), Mat.Neon, DECOR)
+		box(kf, km, k.counter, -8, 0, 0, 8, 4, 2, Color3.fromRGB(245, 245, 245), Mat.Marble)
+		box(kf, km, "CounterFront", -8, 0.5, -0.1, 8, 3.5, 0, k.accent, Mat.SmoothPlastic, DECOR)
+		for i, name in k.stations do
+			local x = -8 + (i - 1) * 8
+			box(kf, km, name, x - 2.5, 0, 6.5, x + 2.5, 4, 9.5, C.metal, Mat.Metal)
+			box(kf, km, "StationLight", x - 2.5, 4, 6.5, x + 2.5, 4.2, 9.5, k.accent, Mat.Neon, DECOR)
+		end
+		local menu = {}
+		for _, r in biz.menu do
+			local out = Recipes[r] and Items[Recipes[r].output]
+			if out then table.insert(menu, string.format("%s  $%d", out.name, math.floor(out.price * biz.counterMultiplier))) end
+		end
+		board(kf, km, "MenuBoard", -10, 5.5, 9.3, 10, 9.5, table.concat(menu, "\n"), "MENU")
+	end
+	-- seating
+	local wood = Color3.fromRGB(170, 125, 80)
+	for z = 100, 170, 10 do
+		for _, x in { -5, 5 } do
+			post(f, fc, "Table", x, H, z, 2.8, 0.6, C.metal, Mat.Metal)
+			part(fc, "TableTop", Vector3.new(0.3, 4, 4), f * CFrame.new(x, H + 2.95, z) * CFrame.Angles(0, 0, math.pi / 2), wood, Mat.Wood, nil, Enum.PartType.Cylinder)
+			for _, o in { { 2.8, 0 }, { -2.8, 0 }, { 0, 2.8 }, { 0, -2.8 } } do
+				post(f, fc, "Stool", x + o[1], H, z + o[2], 1.8, 1.4, wood, Mat.Wood)
+			end
+		end
+	end
+	for _, z in { 104, 136, 168 } do
+		local lamp = box(f, fc, "Pendant", -1.5, 2 * H - 4, z - 1.5, 1.5, 2 * H - 3.4, z + 1.5, Color3.fromRGB(255, 240, 200), Mat.Neon, DECOR)
+		local l = Instance.new("PointLight"); l.Range = 36; l.Brightness = 1.2; l.Parent = lamp
+	end
+	local fs = box(f, fc, "FoodCourtSign", -12, H + 14, 94, 12, H + 18, 94.4, C.bronze, Mat.Metal, DECOR)
+	sign(fs, Enum.NormalId.Front, "FOOD COURT", Color3.new(1, 1, 1), "GothamBlack")
+	-- staff can restock here without leaving the mall
+	box(f, fc, "Shop_food_wholesale", -23, H, 162, -19, H + 4, 170, C.bronze, Mat.Wood)
+	local ss = box(f, fc, "SuppliesSign", -23, H + 6, 161.6, -19, H + 7.5, 161.9, C.dark, Mat.SmoothPlastic, DECOR)
+	sign(ss, Enum.NormalId.Front, "STAFF SUPPLIES", Color3.new(1, 1, 1), "GothamBold")
+	fc.Parent = parent
+	return fc
+end
+
+-- Invisible marker used by the shopper NPCs and mall jobs.
+local function node(parent, name, cf: CFrame, attrs)
+	local p = part(parent, name, Vector3.new(1, 1, 1), cf, Color3.new(1, 0, 1), Mat.SmoothPlastic,
+		{ Transparency = 1, CanCollide = false, CanQuery = false, CanTouch = false })
+	for k, v in attrs or {} do p:SetAttribute(k, v) end
+	return p
+end
+
+--------------------------------------------------------------------------------------------------
 -- the mall building
 
 -- W x D is the whole site; the building is set back so canopies, planters and the plaza stay on the site.
@@ -952,6 +1020,37 @@ local function buildMall(M, siteW, siteD, root)
 		box(sf, structure, "Mirror", -5.2, H + 4, tz0 + 4, -4.9, H + 8, tz0 + 20, C.glass, Mat.Glass, { Reflectance = 0.6 })
 	end
 
+	buildFoodCourt(stairFrames[1], structure, H)
+	local nodes = Instance.new("Folder"); nodes.Name = "Nodes"; nodes.Parent = root
+
+	-- mall management office (south arm, ground floor): sign up as cleaner or security here
+	local mo = stairFrames[2]
+	for i, job in { "mall_cleaner", "mall_security" } do
+		local z = 96 + i * 8
+		box(mo, structure, "JobCentre_" .. job, -23, 0, z, -18, 4, z + 3, C.bronze, Mat.Wood)
+	end
+	local ms = box(mo, structure, "OfficeSign", -23.4, 7, 103, -23.1, 9.5, 120, C.dark, Mat.SmoothPlastic, DECOR)
+	sign(ms, Enum.NormalId.Right, "MALL MANAGEMENT - JOBS", Color3.new(1, 1, 1), "GothamBold")
+
+	-- security patrol checkpoints, visited in order by the security guard
+	local checkpoints = {
+		Vector3.new(-W / 2 + 20, 0, -21), Vector3.new(-21, 0, 120), Vector3.new(W / 2 - 20, 0, 21), Vector3.new(21, 0, -120),
+		Vector3.new(W / 2 - 20, H, -21), Vector3.new(-21, H, -120), Vector3.new(-W / 2 + 20, H, 21),
+	}
+	for i, p in checkpoints do
+		local post = box(M, structure, "SecurityPoint_" .. i, p.X - 0.6, p.Y, p.Z - 0.6, p.X + 0.6, p.Y + 5, p.Z + 0.6, Color3.fromRGB(30, 60, 140), Mat.Metal)
+		box(M, structure, "CardReader", p.X - 0.4, p.Y + 3.5, p.Z - 0.7, p.X + 0.4, p.Y + 4.5, p.Z + 0.7, Color3.fromRGB(80, 255, 120), Mat.Neon, DECOR)
+		post:SetAttribute("Checkpoint", i)
+	end
+
+	-- litter appears at these spots while a cleaner is on shift
+	for _, y in { 0, H } do
+		for x = -W / 2 + 30, W / 2 - 30, 40 do
+			for _, z in { -18, 18 } do node(nodes, "LitterSpot", M * CFrame.new(x, y, z)) end
+		end
+		for z = 50, 170, 40 do node(nodes, "LitterSpot", M * CFrame.new(-10.5, y, z)); node(nodes, "LitterSpot", M * CFrame.new(10.5, y, -z)) end
+	end
+
 	-- ATMs in each arm (MallService turns parts named ATM_<n> into deposit / withdraw points)
 	for i, sf in stairFrames do
 		box(sf, structure, "ATM_" .. i, -23, 0, 28, -20, 7, 31, C.dark, Mat.Metal)
@@ -1022,9 +1121,13 @@ local function buildMall(M, siteW, siteD, root)
 		end
 		box(f, structure, "Transom", -doorW, 12.6, TD - 0.2, doorW, doorH, TD + 0.2, C.glass, Mat.Glass, GLASS)
 		autoDoor(f, structure, -8, 8, 0, 12, TD - 0.6, C.bronze)
+		node(nodes, "EntranceOut", f * CFrame.new(0, 0, TD + 10), { Level = 0 })
+		node(nodes, "EntranceIn", f * CFrame.new(0, 0, -T - 8), { Level = 0 })
 		if sd.name == "East" then -- footbridge doors on the upper level
 			box(f, structure, "Transom", -8, H + 10.6, TD - 0.2, 8, H + 12, TD + 0.2, C.glass, Mat.Glass, GLASS)
 			autoDoor(f, structure, -8, 8, H, H + 10, TD - 0.6, C.bronze)
+			node(nodes, "EntranceOut", f * CFrame.new(0, H, TD + 10), { Level = 1 })
+			node(nodes, "EntranceIn", f * CFrame.new(0, H, -T - 8), { Level = 1 })
 		end
 		for y = doorH, TH, 12 do wall(f, structure, "Transom", -TW / 2, TW / 2, y - 0.3, y + 0.3, TD + 0.3, 0.4, tops, C.bronze, Mat.Metal) end
 		box(f, structure, "TowerRoof", -TW / 2 - 1, TH, -T, TW / 2 + 1, TH + 1.5, TD + 1, C.bronze, Mat.Metal)
@@ -1076,6 +1179,10 @@ local function buildMall(M, siteW, siteD, root)
 		buildStore(storesFolder, u.fr, uw, ud, hc, def, u.ground)
 		if def then
 			placed[def.shop] = true
+			local a = { Shop = def.shop, Level = u.ground and 0 or 1 }
+			node(nodes, "StoreFront", u.fr * CFrame.new(0, 0, -6), a)
+			node(nodes, "StoreInside", u.fr * CFrame.new(0, 0, 5), a)
+			node(nodes, "StoreTill", u.fr * CFrame.new(uw / 2 - 20, 0, 8), a)
 			if u.ground then -- roller door and dock on the outside wall
 				local back = M * CFrame.new(u.x, 0, u.sz * D / 2) * (u.sz < 0 and CFrame.Angles(0, math.pi, 0) or CFrame.identity)
 				local rx = uw / 2 - 13 -- both frames are mirrored the same way on the south side

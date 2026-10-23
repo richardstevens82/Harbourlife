@@ -37,5 +37,6 @@ return {
 	-- trade supplier for the Phase 5 food businesses (no markup)
 	food_wholesale = { name = "Food Wholesaler", markup = 1.0, stock = 40, restockSeconds = 15,
 		items = { "coffee_beans", "tea_leaves", "milk", "bread", "cheese", "butter", "flour", "sugar", "eggs",
-			"chicken", "vegetables", "rice", "potatoes", "beef_patty", "burger_bun", "lettuce", "cooking_oil" } },
+			"chicken", "vegetables", "rice", "potatoes", "beef_patty", "burger_bun", "lettuce", "cooking_oil",
+			"noodle_pack", "strawberries", "bananas", "oranges", "ice_cream_mix", "wafer_cone" } },
 }

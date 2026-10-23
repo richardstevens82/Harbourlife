@@ -11,7 +11,7 @@
 		minCookSeconds = 4,
 	},
 	-- Phase 5 food businesses, all run by FoodService.
-	-- counter = Part name that serves orders; stations = Part name prefix -> appliance type
+	-- counter = Part name that serves orders (extra branches add "_<n>", e.g. FastFoodCounter_2); stations = Part name prefix -> appliance type
 	-- (e.g. a Part "CafeCoffeeMachine_1"); jobs = jobs that count as staff; menu = recipes customers order.
 	cafe = {
 		food = true, name = "Harbour Café", counter = "CafeCounter", jobs = { "barista" },
@@ -40,6 +40,28 @@
 		menu = { "burger", "fries", "nuggets" },
 		maxOpenOrders = 6, orderIntervalSeconds = 12, orderLifetimeSeconds = 90,
 		counterMultiplier = 1.4, reputationOnServe = 1, reputationOnExpire = -1, minCookSeconds = 2,
+	},
+	-- Harbour Mall food court kiosks (the court also has a second Dockside Burgers counter, FastFoodCounter_2)
+	noodle_bar = {
+		food = true, name = "Wok Express", counter = "NoodleCounter", jobs = { "chef", "fast_food_worker" },
+		stations = { NoodleWok = "wok" },
+		menu = { "noodles", "stir_fry", "spring_rolls" },
+		maxOpenOrders = 5, orderIntervalSeconds = 16, orderLifetimeSeconds = 120,
+		counterMultiplier = 1.5, reputationOnServe = 1, reputationOnExpire = -2, minCookSeconds = 2,
+	},
+	juice_bar = {
+		food = true, name = "Squeeze Juice Bar", counter = "JuiceCounter", jobs = { "barista" },
+		stations = { JuiceBlender = "blender" },
+		menu = { "smoothie", "orange_juice" },
+		maxOpenOrders = 4, orderIntervalSeconds = 18, orderLifetimeSeconds = 100,
+		counterMultiplier = 1.6, reputationOnServe = 1, reputationOnExpire = -1, minCookSeconds = 1,
+	},
+	ice_cream = {
+		food = true, name = "Harbour Scoops", counter = "IceCreamCounter", jobs = { "barista", "fast_food_worker" },
+		stations = { IceCreamFreezer = "freezer" },
+		menu = { "ice_cream_cone", "sundae", "milkshake" },
+		maxOpenOrders = 5, orderIntervalSeconds = 14, orderLifetimeSeconds = 90,
+		counterMultiplier = 1.5, reputationOnServe = 1, reputationOnExpire = -1, minCookSeconds = 1,
 	},
 }
 ]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX4"><Properties><string name="Name">Config</string><ProtectedString name="Source"><![CDATA[return {
@@ -98,6 +120,12 @@ return {
 	chicken = item("Chicken", 4, 99, "ingredient"),
 	vegetables = item("Vegetables", 2, 99, "ingredient"),
 	rice = item("Rice", 1, 99, "ingredient"),
+	noodle_pack = item("Noodles (dry)", 1, 99, "ingredient"),
+	strawberries = item("Strawberries", 2, 99, "ingredient"),
+	bananas = item("Bananas", 1, 99, "ingredient"),
+	oranges = item("Oranges", 1, 99, "ingredient"),
+	ice_cream_mix = item("Ice Cream Mix", 2, 99, "ingredient"),
+	wafer_cone = item("Wafer Cone", 1, 99, "ingredient"),
 	-- food business products (Phase 5)
 	coffee = item("Coffee", 6, 10, "food"),
 	tea = item("Tea", 4, 10, "food"),
@@ -110,6 +138,14 @@ return {
 	burger = item("Burger", 9, 10, "food"),
 	fries = item("Fries", 5, 10, "food"),
 	nuggets = item("Chicken Nuggets", 8, 10, "food"),
+	noodles = item("Noodle Box", 9, 10, "food"),
+	stir_fry = item("Chicken Stir Fry", 12, 10, "food"),
+	spring_rolls = item("Spring Rolls", 6, 10, "food"),
+	smoothie = item("Strawberry Smoothie", 6, 10, "food"),
+	orange_juice = item("Orange Juice", 4, 10, "food"),
+	ice_cream_cone = item("Ice Cream Cone", 4, 10, "food"),
+	sundae = item("Sundae", 7, 10, "food"),
+	milkshake = item("Milkshake", 5, 10, "food"),
 	-- general
 	fuel_can = item("Fuel Can", 15, 5, "general"),
 	torch = item("Torch", 15, 3, "general"),
@@ -213,6 +249,8 @@ return {
 	fast_food_worker = { name = "Fast Food Worker", pay = 6, xp = 8, skill = "cooking", minLevel = 1 },
 	chef = { name = "Chef", pay = 12, xp = 14, skill = "cooking", minLevel = 3 },
 	waiter = { name = "Waiter", pay = 7, xp = 8, minLevel = 1 },
+	mall_cleaner = { name = "Mall Cleaner", pay = 5, xp = 6, minLevel = 1 },
+	mall_security = { name = "Mall Security", pay = 12, xp = 10, minLevel = 2 },
 	ferry_operator = { name = "Ferry Operator", pay = 40, xp = 30, skill = "seamanship", minLevel = 5 },
 	mechanic = { name = "Mechanic", pay = 18, xp = 16, skill = "repair", minLevel = 3 },
 }
@@ -242,6 +280,14 @@ return {
 		floor = rgb(236, 230, 218), inlay = rgb(70, 66, 62), gallery = rgb(240, 238, 232), ceiling = rgb(248, 247, 243),
 		glass = rgb(150, 195, 225), metal = rgb(185, 188, 195), dark = rgb(55, 57, 62), planter = rgb(180, 165, 140),
 		leaves = rgb(80, 130, 60), deck = rgb(120, 120, 124), lines = rgb(245, 245, 245),
+	},
+
+	-- food court on the upper level of the north arm: kiosks run by FoodService (see BusinessDefinitions)
+	foodCourt = {
+		{ biz = "noodle_bar", side = -1, z = 112, accent = rgb(200, 30, 40), counter = "NoodleCounter", stations = { "NoodleWok_1", "NoodleWok_2" } },
+		{ biz = "juice_bar", side = -1, z = 142, accent = rgb(250, 150, 20), counter = "JuiceCounter", stations = { "JuiceBlender_1", "JuiceBlender_2" } },
+		{ biz = "ice_cream", side = 1, z = 112, accent = rgb(240, 130, 190), counter = "IceCreamCounter", stations = { "IceCreamFreezer_1", "IceCreamFreezer_2" } },
+		{ biz = "fast_food", side = 1, z = 142, accent = rgb(230, 180, 0), counter = "FastFoodCounter_2", stations = { "FastFoodGrill_21", "FastFoodFryer_21" } },
 	},
 
 	stores = {
@@ -333,6 +379,15 @@ return {
 	burger = { output = "burger", inputs = { beef_patty = 1, burger_bun = 1, lettuce = 1 }, cookSeconds = 6, station = "grill" },
 	fries = { output = "fries", inputs = { potatoes = 1, cooking_oil = 1 }, cookSeconds = 5, station = "fryer" },
 	nuggets = { output = "nuggets", inputs = { chicken = 1, cooking_oil = 1 }, cookSeconds = 6, station = "fryer" },
+	-- mall food court
+	noodles = { output = "noodles", inputs = { noodle_pack = 1, vegetables = 1 }, cookSeconds = 6, station = "wok" },
+	stir_fry = { output = "stir_fry", inputs = { chicken = 1, vegetables = 1, rice = 1 }, cookSeconds = 8, station = "wok" },
+	spring_rolls = { output = "spring_rolls", inputs = { vegetables = 1, flour = 1, cooking_oil = 1 }, cookSeconds = 6, station = "wok" },
+	smoothie = { output = "smoothie", inputs = { strawberries = 1, bananas = 1, milk = 1 }, cookSeconds = 4, station = "blender" },
+	orange_juice = { output = "orange_juice", inputs = { oranges = 2 }, cookSeconds = 3, station = "blender" },
+	ice_cream_cone = { output = "ice_cream_cone", inputs = { ice_cream_mix = 1, wafer_cone = 1 }, cookSeconds = 3, station = "freezer" },
+	sundae = { output = "sundae", inputs = { ice_cream_mix = 1, strawberries = 1, sugar = 1 }, cookSeconds = 4, station = "freezer" },
+	milkshake = { output = "milkshake", inputs = { ice_cream_mix = 1, milk = 1 }, cookSeconds = 4, station = "freezer" },
 }
 ]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX9"><Properties><string name="Name">Remotes</string><ProtectedString name="Source"><![CDATA[-- Creates (server) or waits for (client) the shared RemoteEvents.
 local RunService = game:GetService("RunService")
@@ -397,7 +452,8 @@ return {
 	-- trade supplier for the Phase 5 food businesses (no markup)
 	food_wholesale = { name = "Food Wholesaler", markup = 1.0, stock = 40, restockSeconds = 15,
 		items = { "coffee_beans", "tea_leaves", "milk", "bread", "cheese", "butter", "flour", "sugar", "eggs",
-			"chicken", "vegetables", "rice", "potatoes", "beef_patty", "burger_bun", "lettuce", "cooking_oil" } },
+			"chicken", "vegetables", "rice", "potatoes", "beef_patty", "burger_bun", "lettuce", "cooking_oil",
+			"noodle_pack", "strawberries", "bananas", "oranges", "ice_cream_mix", "wafer_cone" } },
 }
 ]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX11"><Properties><string name="Name">SkillDefinitions</string><ProtectedString name="Source"><![CDATA[return {
 	cooking = { name = "Cooking" },
@@ -418,7 +474,7 @@ return {
 	excavator = { name = "Excavator", price = 8000, size = Vector3.new(10, 3, 12), color = Color3.fromRGB(240, 190, 30),
 		fuelCapacity = 120, fuelPerSecond = 0.3, wearPerSecond = 0.02, maxSpeed = 18, turnRate = 1.0, construction = true },
 }
-]]></ProtectedString></Properties></Item></Item></Item><Item class="ServerScriptService" referent="RBX33"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Folder" referent="RBX31"><Properties><string name="Name">Systems</string></Properties><Item class="ModuleScript" referent="RBX15"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[local DataStoreService = game:GetService("DataStoreService")
+]]></ProtectedString></Properties></Item></Item></Item><Item class="ServerScriptService" referent="RBX35"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Folder" referent="RBX33"><Properties><string name="Name">Systems</string></Properties><Item class="ModuleScript" referent="RBX15"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
@@ -641,7 +697,7 @@ return E
 -- Food Wholesaler (a shop) -> ingredients -> station cooks a menu recipe -> counter serves a customer order
 -- -> payment, job pay, XP, reputation. Definitions live in BusinessDefinitions (entries with food = true).
 -- Workspace markers per business, e.g. the café:
---   CafeCounter              serves orders (shows open orders above it)
+--   CafeCounter              serves orders (shows open orders above it); CafeCounter_2 etc. for more branches
 --   CafeCoffeeMachine_<n>    a station; prefix -> appliance type in the definition
 local Players = game:GetService("Players")
 local Items = require(game.ReplicatedStorage.Shared.ItemDefinitions)
@@ -824,7 +880,7 @@ end
 local function hook(inst: Instance)
 	if not inst:IsA("BasePart") then return end
 	for bizId, def in foodBiz do
-		if inst.Name == def.counter then
+		if inst.Name == def.counter or inst.Name:match("^" .. def.counter .. "_%d+$") then
 			addBoard(inst, bizId)
 			Interaction.Register(inst, { action = "Serve order", object = def.name, onTriggered = function(p) serve(p, bizId) end })
 			return
@@ -1015,6 +1071,9 @@ local CollectionService = game:GetService("CollectionService")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Def = require(Shared.MallDefinitions)
 local Shops = require(Shared.ShopDefinitions)
+local Businesses = require(Shared.BusinessDefinitions)
+local Recipes = require(Shared.RecipeDefinitions)
+local Items = require(Shared.ItemDefinitions)
 local C = Def.structure
 local Mat = Enum.Material
 
@@ -1852,6 +1911,71 @@ local function buildEscalator(f, parent, bottom: Vector3, top: Vector3, up: bool
 end
 
 --------------------------------------------------------------------------------------------------
+-- food court: kiosks along both sides of an arm, seating down the middle (frame f: arm runs along +Z)
+
+local function buildFoodCourt(f, parent, H)
+	local fc = Instance.new("Model")
+	fc.Name = "FoodCourt"
+	for _, k in Def.foodCourt do
+		local biz = Businesses[k.biz]
+		if not biz then warn("[MallBuilder] unknown food court business " .. k.biz); continue end
+		-- kiosk frame: front at z'=0 facing the seating, running back 10 studs to the store wall
+		local kf = f * CFrame.new(k.side * 14, H, k.z) * CFrame.Angles(0, k.side < 0 and -math.pi / 2 or math.pi / 2, 0)
+		local km = Instance.new("Model"); km.Name = k.biz; km.Parent = fc
+		box(kf, km, "KioskFloor", -12, 0, 0, 12, 0.08, 10, Color3.fromRGB(60, 60, 64), Mat.Slate, DECOR)
+		for _, s in { -1, 1 } do box(kf, km, "KioskWall", s * 12 - 0.3, 0, 0, s * 12 + 0.3, 10, 10, k.accent, Mat.SmoothPlastic) end
+		box(kf, km, "KioskCanopy", -12.5, 10, -1.5, 12.5, 12.5, 10, k.accent, Mat.SmoothPlastic)
+		local sg = box(kf, km, "KioskSign", -9, 10.4, -1.8, 9, 12.1, -1.5, Color3.new(1, 1, 1), Mat.SmoothPlastic, DECOR)
+		sign(sg, Enum.NormalId.Front, string.upper(biz.name), k.accent, "GothamBlack")
+		box(kf, km, "CanopyLED", -12.5, 9.8, -1.6, 12.5, 10, 10, Color3.fromRGB(255, 245, 225), Mat.Neon, DECOR)
+		box(kf, km, k.counter, -8, 0, 0, 8, 4, 2, Color3.fromRGB(245, 245, 245), Mat.Marble)
+		box(kf, km, "CounterFront", -8, 0.5, -0.1, 8, 3.5, 0, k.accent, Mat.SmoothPlastic, DECOR)
+		for i, name in k.stations do
+			local x = -8 + (i - 1) * 8
+			box(kf, km, name, x - 2.5, 0, 6.5, x + 2.5, 4, 9.5, C.metal, Mat.Metal)
+			box(kf, km, "StationLight", x - 2.5, 4, 6.5, x + 2.5, 4.2, 9.5, k.accent, Mat.Neon, DECOR)
+		end
+		local menu = {}
+		for _, r in biz.menu do
+			local out = Recipes[r] and Items[Recipes[r].output]
+			if out then table.insert(menu, string.format("%s  $%d", out.name, math.floor(out.price * biz.counterMultiplier))) end
+		end
+		board(kf, km, "MenuBoard", -10, 5.5, 9.3, 10, 9.5, table.concat(menu, "\n"), "MENU")
+	end
+	-- seating
+	local wood = Color3.fromRGB(170, 125, 80)
+	for z = 100, 170, 10 do
+		for _, x in { -5, 5 } do
+			post(f, fc, "Table", x, H, z, 2.8, 0.6, C.metal, Mat.Metal)
+			part(fc, "TableTop", Vector3.new(0.3, 4, 4), f * CFrame.new(x, H + 2.95, z) * CFrame.Angles(0, 0, math.pi / 2), wood, Mat.Wood, nil, Enum.PartType.Cylinder)
+			for _, o in { { 2.8, 0 }, { -2.8, 0 }, { 0, 2.8 }, { 0, -2.8 } } do
+				post(f, fc, "Stool", x + o[1], H, z + o[2], 1.8, 1.4, wood, Mat.Wood)
+			end
+		end
+	end
+	for _, z in { 104, 136, 168 } do
+		local lamp = box(f, fc, "Pendant", -1.5, 2 * H - 4, z - 1.5, 1.5, 2 * H - 3.4, z + 1.5, Color3.fromRGB(255, 240, 200), Mat.Neon, DECOR)
+		local l = Instance.new("PointLight"); l.Range = 36; l.Brightness = 1.2; l.Parent = lamp
+	end
+	local fs = box(f, fc, "FoodCourtSign", -12, H + 14, 94, 12, H + 18, 94.4, C.bronze, Mat.Metal, DECOR)
+	sign(fs, Enum.NormalId.Front, "FOOD COURT", Color3.new(1, 1, 1), "GothamBlack")
+	-- staff can restock here without leaving the mall
+	box(f, fc, "Shop_food_wholesale", -23, H, 162, -19, H + 4, 170, C.bronze, Mat.Wood)
+	local ss = box(f, fc, "SuppliesSign", -23, H + 6, 161.6, -19, H + 7.5, 161.9, C.dark, Mat.SmoothPlastic, DECOR)
+	sign(ss, Enum.NormalId.Front, "STAFF SUPPLIES", Color3.new(1, 1, 1), "GothamBold")
+	fc.Parent = parent
+	return fc
+end
+
+-- Invisible marker used by the shopper NPCs and mall jobs.
+local function node(parent, name, cf: CFrame, attrs)
+	local p = part(parent, name, Vector3.new(1, 1, 1), cf, Color3.new(1, 0, 1), Mat.SmoothPlastic,
+		{ Transparency = 1, CanCollide = false, CanQuery = false, CanTouch = false })
+	for k, v in attrs or {} do p:SetAttribute(k, v) end
+	return p
+end
+
+--------------------------------------------------------------------------------------------------
 -- the mall building
 
 -- W x D is the whole site; the building is set back so canopies, planters and the plaza stay on the site.
@@ -1959,6 +2083,37 @@ local function buildMall(M, siteW, siteD, root)
 		box(sf, structure, "Mirror", -5.2, H + 4, tz0 + 4, -4.9, H + 8, tz0 + 20, C.glass, Mat.Glass, { Reflectance = 0.6 })
 	end
 
+	buildFoodCourt(stairFrames[1], structure, H)
+	local nodes = Instance.new("Folder"); nodes.Name = "Nodes"; nodes.Parent = root
+
+	-- mall management office (south arm, ground floor): sign up as cleaner or security here
+	local mo = stairFrames[2]
+	for i, job in { "mall_cleaner", "mall_security" } do
+		local z = 96 + i * 8
+		box(mo, structure, "JobCentre_" .. job, -23, 0, z, -18, 4, z + 3, C.bronze, Mat.Wood)
+	end
+	local ms = box(mo, structure, "OfficeSign", -23.4, 7, 103, -23.1, 9.5, 120, C.dark, Mat.SmoothPlastic, DECOR)
+	sign(ms, Enum.NormalId.Right, "MALL MANAGEMENT - JOBS", Color3.new(1, 1, 1), "GothamBold")
+
+	-- security patrol checkpoints, visited in order by the security guard
+	local checkpoints = {
+		Vector3.new(-W / 2 + 20, 0, -21), Vector3.new(-21, 0, 120), Vector3.new(W / 2 - 20, 0, 21), Vector3.new(21, 0, -120),
+		Vector3.new(W / 2 - 20, H, -21), Vector3.new(-21, H, -120), Vector3.new(-W / 2 + 20, H, 21),
+	}
+	for i, p in checkpoints do
+		local post = box(M, structure, "SecurityPoint_" .. i, p.X - 0.6, p.Y, p.Z - 0.6, p.X + 0.6, p.Y + 5, p.Z + 0.6, Color3.fromRGB(30, 60, 140), Mat.Metal)
+		box(M, structure, "CardReader", p.X - 0.4, p.Y + 3.5, p.Z - 0.7, p.X + 0.4, p.Y + 4.5, p.Z + 0.7, Color3.fromRGB(80, 255, 120), Mat.Neon, DECOR)
+		post:SetAttribute("Checkpoint", i)
+	end
+
+	-- litter appears at these spots while a cleaner is on shift
+	for _, y in { 0, H } do
+		for x = -W / 2 + 30, W / 2 - 30, 40 do
+			for _, z in { -18, 18 } do node(nodes, "LitterSpot", M * CFrame.new(x, y, z)) end
+		end
+		for z = 50, 170, 40 do node(nodes, "LitterSpot", M * CFrame.new(-10.5, y, z)); node(nodes, "LitterSpot", M * CFrame.new(10.5, y, -z)) end
+	end
+
 	-- ATMs in each arm (MallService turns parts named ATM_<n> into deposit / withdraw points)
 	for i, sf in stairFrames do
 		box(sf, structure, "ATM_" .. i, -23, 0, 28, -20, 7, 31, C.dark, Mat.Metal)
@@ -2029,9 +2184,13 @@ local function buildMall(M, siteW, siteD, root)
 		end
 		box(f, structure, "Transom", -doorW, 12.6, TD - 0.2, doorW, doorH, TD + 0.2, C.glass, Mat.Glass, GLASS)
 		autoDoor(f, structure, -8, 8, 0, 12, TD - 0.6, C.bronze)
+		node(nodes, "EntranceOut", f * CFrame.new(0, 0, TD + 10), { Level = 0 })
+		node(nodes, "EntranceIn", f * CFrame.new(0, 0, -T - 8), { Level = 0 })
 		if sd.name == "East" then -- footbridge doors on the upper level
 			box(f, structure, "Transom", -8, H + 10.6, TD - 0.2, 8, H + 12, TD + 0.2, C.glass, Mat.Glass, GLASS)
 			autoDoor(f, structure, -8, 8, H, H + 10, TD - 0.6, C.bronze)
+			node(nodes, "EntranceOut", f * CFrame.new(0, H, TD + 10), { Level = 1 })
+			node(nodes, "EntranceIn", f * CFrame.new(0, H, -T - 8), { Level = 1 })
 		end
 		for y = doorH, TH, 12 do wall(f, structure, "Transom", -TW / 2, TW / 2, y - 0.3, y + 0.3, TD + 0.3, 0.4, tops, C.bronze, Mat.Metal) end
 		box(f, structure, "TowerRoof", -TW / 2 - 1, TH, -T, TW / 2 + 1, TH + 1.5, TD + 1, C.bronze, Mat.Metal)
@@ -2083,6 +2242,10 @@ local function buildMall(M, siteW, siteD, root)
 		buildStore(storesFolder, u.fr, uw, ud, hc, def, u.ground)
 		if def then
 			placed[def.shop] = true
+			local a = { Shop = def.shop, Level = u.ground and 0 or 1 }
+			node(nodes, "StoreFront", u.fr * CFrame.new(0, 0, -6), a)
+			node(nodes, "StoreInside", u.fr * CFrame.new(0, 0, 5), a)
+			node(nodes, "StoreTill", u.fr * CFrame.new(uw / 2 - 20, 0, 8), a)
 			if u.ground then -- roller door and dock on the outside wall
 				local back = M * CFrame.new(u.x, 0, u.sz * D / 2) * (u.sz < 0 and CFrame.Angles(0, math.pi, 0) or CFrame.identity)
 				local rx = uw / 2 - 13 -- both frames are mirrored the same way on the south side
@@ -2292,7 +2455,122 @@ function MallBuilder.Build(rebuild: boolean?)
 end
 
 return MallBuilder
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">MallService</string><ProtectedString name="Source"><![CDATA[-- Harbour Mall at runtime: builds the mall if the place has a MallSite but no baked "HarbourMall",
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">MallJobService</string><ProtectedString name="Source"><![CDATA[-- Mall jobs (sign up at Mall Management, south arm):
+--   Mall Cleaner   litter builds up at the mall's LitterSpot nodes while a cleaner is on shift; clear it for pay
+--   Mall Security  patrol the SecurityPoint_<n> checkpoints in order; each correct check-in pays
+-- Pay and XP come from JobDefinitions via JobService.CompleteTask.
+local Players = game:GetService("Players")
+local DataService = require(script.Parent.DataService)
+local JobService = require(script.Parent.JobService)
+local Interaction = require(script.Parent.InteractionService)
+local Notify = require(script.Parent.NotificationService)
+
+local MallJobService = {}
+local MAX_LITTER, LITTER_INTERVAL = 10, 12
+local LITTER = {
+	{ name = "Drinks can", size = Vector3.new(0.6, 1, 0.6), color = Color3.fromRGB(200, 40, 40), material = Enum.Material.Metal },
+	{ name = "Crisp packet", size = Vector3.new(1.4, 0.2, 1), color = Color3.fromRGB(240, 200, 40), material = Enum.Material.Plastic },
+	{ name = "Spilt drink", size = Vector3.new(4, 0.05, 3), color = Color3.fromRGB(140, 90, 40), material = Enum.Material.Glass },
+	{ name = "Newspaper", size = Vector3.new(2, 0.1, 1.5), color = Color3.fromRGB(230, 230, 225), material = Enum.Material.Fabric },
+}
+
+local litterSpots: { BasePart } = {}
+local litter: { [BasePart]: BasePart } = {}
+local checkpoints: { [number]: BasePart } = {}
+local nextCheckpoint: { [Player]: number } = {}
+local folder
+
+local function holds(player: Player, job: string): boolean
+	local d = DataService.Get(player)
+	return d ~= nil and d.job == job
+end
+
+local function onShift(job: string): boolean
+	for _, p in Players:GetPlayers() do if holds(p, job) then return true end end
+	return false
+end
+
+local function spawnLitter()
+	local free, count = {}, 0
+	for _, spot in litterSpots do
+		if litter[spot] then count += 1 elseif spot.Parent then table.insert(free, spot) end
+	end
+	if count >= MAX_LITTER or #free == 0 then return end
+	local spot = free[math.random(#free)]
+	local look = LITTER[math.random(#LITTER)]
+	local p = Instance.new("Part")
+	p.Name = "Litter"
+	p.Anchored = true; p.CanCollide = false; p.CastShadow = false
+	p.Size = look.size; p.Color = look.color; p.Material = look.material
+	p.CFrame = spot.CFrame * CFrame.new((math.random() - 0.5) * 4, look.size.Y / 2 + 0.06, (math.random() - 0.5) * 4) * CFrame.Angles(0, math.random() * math.pi * 2, 0)
+	p.Parent = folder
+	litter[spot] = p
+	Interaction.Register(p, { action = "Clean up", object = look.name, onTriggered = function(player)
+		if litter[spot] ~= p then return end -- already cleaned
+		if not holds(player, "mall_cleaner") then
+			Notify.Send(player, "Mall cleaners clean this up (jobs at Mall Management)", "error")
+			return
+		end
+		litter[spot] = nil
+		p:Destroy()
+		JobService.CompleteTask(player, "mall_cleaner")
+		Notify.Send(player, "Cleaned up " .. string.lower(look.name), "success")
+	end })
+end
+
+local function checkIn(player: Player, i: number)
+	if not holds(player, "mall_security") then
+		Notify.Send(player, "Security checkpoint (jobs at Mall Management)", "error")
+		return
+	end
+	local want = nextCheckpoint[player] or 1
+	if i ~= want then Notify.Send(player, "Wrong checkpoint. Next on your patrol: " .. want, "error"); return end
+	JobService.CompleteTask(player, "mall_security")
+	nextCheckpoint[player] = want % #checkpoints + 1
+	Notify.Send(player, "Checkpoint " .. i .. " clear. Next: " .. nextCheckpoint[player], "success")
+end
+
+local function label(part: BasePart, text: string)
+	local gui = Instance.new("BillboardGui")
+	gui.Size = UDim2.fromOffset(140, 30)
+	gui.StudsOffset = Vector3.new(0, 4, 0)
+	gui.MaxDistance = 60
+	gui.Parent = part
+	local t = Instance.new("TextLabel")
+	t.Size = UDim2.fromScale(1, 1); t.BackgroundColor3 = Color3.fromRGB(30, 60, 140); t.BackgroundTransparency = 0.2
+	t.TextColor3 = Color3.new(1, 1, 1); t.TextScaled = true; t.Font = Enum.Font.GothamBold; t.Text = text
+	t.Parent = gui
+end
+
+local function hook(inst: Instance)
+	if not inst:IsA("BasePart") then return end
+	if inst.Name == "LitterSpot" then
+		table.insert(litterSpots, inst)
+	elseif inst.Name:match("^SecurityPoint_%d+$") then
+		local i = tonumber(inst.Name:match("%d+$"))
+		checkpoints[i] = inst
+		label(inst, "CHECKPOINT " .. i)
+		Interaction.Register(inst, { action = "Check in", object = "Security checkpoint " .. i, onTriggered = function(p) checkIn(p, i) end })
+	end
+end
+
+function MallJobService.Start()
+	folder = Instance.new("Folder")
+	folder.Name = "MallLitter"
+	folder.Parent = workspace
+	for _, d in workspace:GetDescendants() do hook(d) end
+	workspace.DescendantAdded:Connect(hook)
+	Players.PlayerRemoving:Connect(function(p) nextCheckpoint[p] = nil end)
+	task.spawn(function()
+		while true do
+			task.wait(LITTER_INTERVAL)
+			if onShift("mall_cleaner") then spawnLitter() end
+		end
+	end)
+end
+
+return MallJobService
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX25"><Properties><string name="Name">MallService</string><ProtectedString name="Source"><![CDATA[-- Harbour Mall at runtime: builds the mall if the place has a MallSite but no baked "HarbourMall",
 -- then runs every escalator (conveyor steps), lift (server-owned prismatic car with floor gates),
 -- automatic door and ATM. Works the same for a mall built at runtime or baked into the place.
 local CollectionService = game:GetService("CollectionService")
@@ -2304,7 +2582,7 @@ local Interaction = require(script.Parent.InteractionService)
 local Notify = require(script.Parent.NotificationService)
 
 local MallService = {}
-local DOOR_RADIUS, DOOR_HEIGHT = 11, 8 -- a player this close (horizontally / vertically) opens the doors
+local DOOR_RADIUS, DOOR_HEIGHT = 11, 8 -- a player or NPC this close (horizontally / vertically) opens the doors
 local ATM_AMOUNT = 100
 local doorTween = TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local doors = {}
@@ -2375,13 +2653,17 @@ local function addDoor(m: Instance)
 	if #panels > 0 then table.insert(doors, { model = m, centre = centre, panels = panels, open = false }) end
 end
 
--- One loop for every door: open while any player is close, close when they have all gone.
+-- One loop for every door: open while any player or NPC (tagged HarbourNPC) is close, close when they have gone.
 local function runDoors()
 	while true do
 		local roots = {}
 		for _, plr in Players:GetPlayers() do
 			local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
 			if hrp then table.insert(roots, hrp.Position) end
+		end
+		for _, npc in CollectionService:GetTagged("HarbourNPC") do
+			local root = npc:FindFirstChild("HumanoidRootPart")
+			if root and root:IsA("BasePart") then table.insert(roots, root.Position) end
 		end
 		for i = #doors, 1, -1 do
 			local d = doors[i]
@@ -2433,13 +2715,13 @@ function MallService.Start()
 end
 
 return MallService
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX25"><Properties><string name="Name">NotificationService</string><ProtectedString name="Source"><![CDATA[local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX26"><Properties><string name="Name">NotificationService</string><ProtectedString name="Source"><![CDATA[local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
 local N = {}
 function N.Send(player: Player, text: string, kind: string?)
 	Remotes.Notify:FireClient(player, tostring(text):sub(1, 120), kind or "info")
 end
 return N
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX26"><Properties><string name="Name">PizzaService</string><ProtectedString name="Source"><![CDATA[-- Pizza Business: supplier -> oven -> orders (counter / delivery) -> payment, XP, reputation.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX27"><Properties><string name="Name">PizzaService</string><ProtectedString name="Source"><![CDATA[-- Pizza Business: supplier -> oven -> orders (counter / delivery) -> payment, XP, reputation.
 -- Workspace markers (rename Parts, no scripts needed):
 --   PizzaSupplier        buys ingredients
 --   PizzaOven_<n>        cooks pizza
@@ -2608,7 +2890,7 @@ end
 function P._orders() return orders end
 
 return P
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX27"><Properties><string name="Name">ProgressionService</string><ProtectedString name="Source"><![CDATA[local Config = require(game.ReplicatedStorage.Shared.Config)
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX28"><Properties><string name="Name">ProgressionService</string><ProtectedString name="Source"><![CDATA[local Config = require(game.ReplicatedStorage.Shared.Config)
 local Skills = require(game.ReplicatedStorage.Shared.SkillDefinitions)
 local DataService = require(script.Parent.DataService)
 local Notify = require(script.Parent.NotificationService)
@@ -2656,7 +2938,7 @@ function P.SkillLevel(player: Player, skillId: string): number
 end
 
 return P
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX28"><Properties><string name="Name">ShopService</string><ProtectedString name="Source"><![CDATA[-- Retail: browse a shop at its counter, buy with server-validated price, range and stock.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX29"><Properties><string name="Name">ShopService</string><ProtectedString name="Source"><![CDATA[-- Retail: browse a shop at its counter, buy with server-validated price, range and stock.
 local Players = game:GetService("Players")
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Items = require(game.ReplicatedStorage.Shared.ItemDefinitions)
@@ -2724,6 +3006,19 @@ local function buy(player: Player, shopId: any, itemId: any, qty: any)
 	open(player, shopId) -- refresh stock on the client
 end
 
+-- An NPC customer buys one random in-stock item: real stock comes off the shelf, so NPC demand
+-- competes with players. Returns the item id, or nil when the shop is sold out.
+function ShopService.NpcBuy(shopId: string): string?
+	local s = stock[shopId]
+	if not s then return nil end
+	local inStock = {}
+	for id, n in s do if n > 0 then table.insert(inStock, id) end end
+	if #inStock == 0 then return nil end
+	local id = inStock[math.random(#inStock)]
+	s[id] -= 1
+	return id
+end
+
 local function hook(inst: Instance)
 	if not inst:IsA("BasePart") then return end
 	local shopId = inst.Name:match("^Shop_(.+)$")
@@ -2761,7 +3056,212 @@ function ShopService.Start()
 end
 
 return ShopService
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX29"><Properties><string name="Name">TestWorld</string><ProtectedString name="Source"><![CDATA[-- Dev-only placeholder test area. Builds labelled, correctly named Parts near the origin
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX30"><Properties><string name="Name">ShopperService</string><ProtectedString name="Source"><![CDATA[-- NPC shoppers for Harbour Mall. Each one arrives at an entrance (ground doors, or the footbridge for the
+-- upper level), walks to 1-3 stores on that level, buys at the till (real stock comes off the shelf via
+-- ShopService.NpcBuy), then leaves by an entrance on the same level and is removed.
+-- Routes use the mall's Nodes (EntranceOut/In, StoreFront/Inside/Till) with PathfindingService between them.
+-- Shoppers are tagged HarbourNPC so the automatic doors open for them.
+local Players = game:GetService("Players")
+local PathfindingService = game:GetService("PathfindingService")
+local CollectionService = game:GetService("CollectionService")
+local ShopService = require(script.Parent.ShopService)
+
+local ShopperService = {}
+local MAX_SHOPPERS = 16
+local SPAWN_EVERY = 5
+local ACTIVE_RANGE = 700 -- shoppers only come while a player is this close to the mall
+local WALK_ANIM, IDLE_ANIM = "rbxassetid://507777826", "rbxassetid://507766388" -- Roblox default R15 animations
+local SKIN = { Color3.fromRGB(255, 220, 190), Color3.fromRGB(230, 180, 140), Color3.fromRGB(190, 135, 95), Color3.fromRGB(140, 95, 65), Color3.fromRGB(90, 60, 40) }
+
+local folder: Folder
+local active = 0
+local index -- built from HarbourMall.Nodes
+
+local function buildIndex()
+	local mall = workspace:FindFirstChild("HarbourMall")
+	local nodes = mall and mall:FindFirstChild("Nodes")
+	if not nodes then return nil end
+	local idx = { mall = mall, entrances = { [0] = {}, [1] = {} }, stores = { [0] = {}, [1] = {} }, centre = Vector3.zero }
+	local byShop, entOut, entIn = {}, {}, {}
+	local sum, n = Vector3.zero, 0
+	for _, p in nodes:GetChildren() do
+		local level = p:GetAttribute("Level")
+		if p.Name == "EntranceOut" then table.insert(entOut, p)
+		elseif p.Name == "EntranceIn" then table.insert(entIn, p)
+		elseif p:GetAttribute("Shop") then
+			local shop = p:GetAttribute("Shop")
+			byShop[shop] = byShop[shop] or { shop = shop, level = level }
+			byShop[shop][p.Name] = p.Position
+		end
+		sum += p.Position; n += 1
+	end
+	-- pair each outside node with the nearest inside node on the same level
+	for _, o in entOut do
+		local best, bestD
+		for _, i in entIn do
+			local d = (i.Position - o.Position).Magnitude
+			if i:GetAttribute("Level") == o:GetAttribute("Level") and (not bestD or d < bestD) then best, bestD = i, d end
+		end
+		if best then table.insert(idx.entrances[o:GetAttribute("Level")], { out = o.Position, inn = best.Position }) end
+	end
+	for _, s in byShop do
+		if s.StoreFront and s.StoreInside and s.StoreTill then table.insert(idx.stores[s.level], s) end
+	end
+	idx.centre = n > 0 and sum / n or Vector3.zero
+	return idx
+end
+
+local function flat(v: Vector3) return Vector3.new(v.X, 0, v.Z).Magnitude end
+
+-- Walk in a straight line, re-issuing MoveTo so long legs don't time out; false if stuck.
+local function moveStraight(hum: Humanoid, root: BasePart, pos: Vector3): boolean
+	local limit = os.clock() + flat(root.Position - pos) / hum.WalkSpeed * 2 + 4
+	local last, lastCheck = root.Position, os.clock()
+	while flat(root.Position - pos) > 2.5 do
+		if os.clock() > limit or not hum.Parent or hum.Health <= 0 then return false end
+		hum:MoveTo(pos)
+		task.wait(0.2)
+		if os.clock() - lastCheck > 2.5 then
+			if flat(root.Position - last) < 1 then return false end
+			last, lastCheck = root.Position, os.clock()
+		end
+	end
+	return true
+end
+
+local function walkPath(hum: Humanoid, root: BasePart, pos: Vector3): boolean
+	local path = PathfindingService:CreatePath({ AgentRadius = 2, AgentHeight = 5.5, AgentCanJump = false, WaypointSpacing = 10 })
+	local ok = pcall(function() path:ComputeAsync(root.Position, pos) end)
+	if ok and path.Status == Enum.PathStatus.Success then
+		for _, wp in path:GetWaypoints() do
+			if not moveStraight(hum, root, wp.Position) then return false end
+		end
+		return true
+	end
+	return moveStraight(hum, root, pos) -- no path: try directly
+end
+
+local function simpleRig(shirt: Color3, skin: Color3): Model
+	local m = Instance.new("Model")
+	local root = Instance.new("Part")
+	root.Name = "HumanoidRootPart"; root.Size = Vector3.new(2, 2, 1); root.Transparency = 1; root.Parent = m
+	local function limb(name, size, offset, color)
+		local p = Instance.new("Part")
+		p.Name = name; p.Size = size; p.Color = color; p.CanCollide = false; p.Massless = true
+		p.CFrame = root.CFrame * CFrame.new(offset); p.Parent = m
+		local w = Instance.new("WeldConstraint"); w.Part0 = root; w.Part1 = p; w.Parent = p
+	end
+	limb("Torso", Vector3.new(2, 2, 1), Vector3.zero, shirt)
+	limb("Head", Vector3.new(1.2, 1.2, 1.2), Vector3.new(0, 1.6, 0), skin)
+	limb("Legs", Vector3.new(2, 2, 1), Vector3.new(0, -2, 0), Color3.fromRGB(50, 50, 70))
+	local hum = Instance.new("Humanoid"); hum.HipHeight = 2; hum.Parent = m
+	m.PrimaryPart = root
+	return m
+end
+
+local function makeShopper(): Model
+	local skin = SKIN[math.random(#SKIN)]
+	local shirt = Color3.fromHSV(math.random(), 0.3 + math.random() * 0.5, 0.4 + math.random() * 0.5)
+	local trousers = Color3.fromHSV(math.random(), 0.2 + math.random() * 0.3, 0.2 + math.random() * 0.4)
+	local desc = Instance.new("HumanoidDescription")
+	desc.HeadColor, desc.LeftArmColor, desc.RightArmColor = skin, skin, skin
+	desc.TorsoColor, desc.LeftLegColor, desc.RightLegColor = shirt, trousers, trousers
+	local ok, model = pcall(function() return Players:CreateHumanoidModelFromDescription(desc, Enum.HumanoidRigType.R15) end)
+	if not ok or not model then model = simpleRig(shirt, skin) end
+	model.Name = "Shopper"
+	local hum = model:FindFirstChildOfClass("Humanoid")
+	hum.WalkSpeed = 9 + math.random() * 4
+	hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+	hum.BreakJointsOnDeath = false
+	CollectionService:AddTag(model, "HarbourNPC")
+	return model
+end
+
+local function animate(hum: Humanoid)
+	local animator = hum:FindFirstChildOfClass("Animator") or Instance.new("Animator", hum)
+	local ok, walk, idle = pcall(function()
+		local w, i = Instance.new("Animation"), Instance.new("Animation")
+		w.AnimationId, i.AnimationId = WALK_ANIM, IDLE_ANIM
+		return animator:LoadAnimation(w), animator:LoadAnimation(i)
+	end)
+	if not ok then return end
+	idle:Play()
+	hum.Running:Connect(function(speed)
+		if speed > 0.5 then if not walk.IsPlaying then walk:Play() end
+		elseif walk.IsPlaying then walk:Stop() end
+	end)
+end
+
+local function carryBag(model: Model, root: BasePart)
+	local hand = model:FindFirstChild("RightHand") or root
+	local bag = Instance.new("Part")
+	bag.Name = "ShoppingBag"; bag.Size = Vector3.new(1.2, 1.4, 0.5); bag.CanCollide = false; bag.Massless = true
+	bag.Color = Color3.fromHSV(math.random(), 0.6, 0.9); bag.Material = Enum.Material.Fabric
+	bag.CFrame = hand.CFrame * CFrame.new(0, -1, 0)
+	local w = Instance.new("WeldConstraint"); w.Part0 = hand; w.Part1 = bag; w.Parent = bag
+	bag.Parent = model
+end
+
+local function shop(idx)
+	local level = (#idx.entrances[1] > 0 and #idx.stores[1] > 0 and math.random() < 0.4) and 1 or 0
+	local ents, stores = idx.entrances[level], idx.stores[level]
+	if #ents == 0 or #stores == 0 then return end
+	local entry = ents[math.random(#ents)]
+	local model = makeShopper()
+	local hum = model:FindFirstChildOfClass("Humanoid") :: Humanoid
+	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart
+	model:PivotTo(CFrame.new(entry.out + Vector3.new(0, 3.5, 0), entry.inn))
+	model.Parent = folder
+	pcall(function() root:SetNetworkOwner(nil) end)
+	animate(hum)
+	active += 1
+
+	local function trip(): boolean
+		if not moveStraight(hum, root, entry.inn) then return false end
+		for _ = 1, math.random(1, 3) do
+			local s = stores[math.random(#stores)]
+			if not walkPath(hum, root, s.StoreFront) then return false end
+			if not moveStraight(hum, root, s.StoreInside) then return false end
+			if not moveStraight(hum, root, s.StoreTill) then return false end
+			task.wait(3 + math.random() * 4) -- queueing and paying
+			if ShopService.NpcBuy(s.shop) and not model:FindFirstChild("ShoppingBag") then carryBag(model, root) end
+			if not moveStraight(hum, root, s.StoreInside) then return false end
+			if not moveStraight(hum, root, s.StoreFront) then return false end
+		end
+		local exit = ents[math.random(#ents)]
+		if not walkPath(hum, root, exit.inn) then return false end
+		return moveStraight(hum, root, exit.out)
+	end
+
+	local ok, err = pcall(trip)
+	if not ok then warn("[ShopperService] " .. tostring(err)) end
+	active -= 1
+	model:Destroy() -- finished, or stuck: either way they leave
+end
+
+local function playerNear(centre: Vector3): boolean
+	for _, p in Players:GetPlayers() do
+		local hrp = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+		if hrp and (hrp.Position - centre).Magnitude < ACTIVE_RANGE then return true end
+	end
+	return false
+end
+
+function ShopperService.Start()
+	folder = Instance.new("Folder")
+	folder.Name = "MallShoppers"
+	folder.Parent = workspace
+	task.spawn(function()
+		while true do
+			task.wait(SPAWN_EVERY)
+			if not (index and index.mall.Parent) then index = buildIndex() end
+			if index and active < MAX_SHOPPERS and playerNear(index.centre) then task.spawn(shop, index) end
+		end
+	end)
+end
+
+return ShopperService
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX31"><Properties><string name="Name">TestWorld</string><ProtectedString name="Source"><![CDATA[-- Dev-only placeholder test area. Builds labelled, correctly named Parts near the origin
 -- so every Phase 1/2 system can be exercised. Delete or set Enabled=false once the real map exists.
 local TestWorld = { Enabled = true }
 
@@ -2867,7 +3367,7 @@ function TestWorld.GrantExcavator(player: Player)
 end
 
 return TestWorld
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX30"><Properties><string name="Name">VehicleService</string><ProtectedString name="Source"><![CDATA[-- Vehicle ownership, spawning, fuel, wear and repair. Server-authoritative.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX32"><Properties><string name="Name">VehicleService</string><ProtectedString name="Source"><![CDATA[-- Vehicle ownership, spawning, fuel, wear and repair. Server-authoritative.
 -- Driving physics run on the driver's client (VehicleDriver.client.luau) via constraints built here.
 -- Workspace markers:
 --   VehicleGarage_<id>   toggle: store current vehicle / take out <id>
@@ -3197,17 +3697,17 @@ function V.Start()
 end
 
 return V
-]]></ProtectedString></Properties></Item></Item><Item class="Script" referent="RBX32"><Properties><string name="Name">Main</string><ProtectedString name="Source"><![CDATA[local Systems = script.Parent:WaitForChild("Systems")
+]]></ProtectedString></Properties></Item></Item><Item class="Script" referent="RBX34"><Properties><string name="Name">Main</string><ProtectedString name="Source"><![CDATA[local Systems = script.Parent:WaitForChild("Systems")
 require(game.ReplicatedStorage.Shared.Remotes) -- create remotes first
 
 -- Start each system on its own so one failure can't stop the rest; failures are named in Output.
-local ORDER = { "DataService", "TestWorld", "MallService", "JobCentre", "PizzaService", "VehicleService", "ExcavatorService", "ShopService", "FoodService" }
+local ORDER = { "DataService", "TestWorld", "MallService", "MallJobService", "JobCentre", "PizzaService", "VehicleService", "ExcavatorService", "ShopService", "FoodService", "ShopperService" }
 for _, name in ORDER do
 	local ok, err = pcall(function() require(Systems[name]).Start() end)
 	if not ok then warn("[Harbourlife] " .. name .. " failed to start: " .. tostring(err)) end
 end
 print("[Harbourlife] server started")
-]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX39"><Properties><string name="Name">StarterPlayer</string></Properties><Item class="StarterPlayerScripts" referent="RBX38"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX34"><Properties><string name="Name">EscalatorVisuals</string><ProtectedString name="Source"><![CDATA[-- Moving step edges on every escalator, drawn locally so the server only runs the conveyor.
+]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX41"><Properties><string name="Name">StarterPlayer</string></Properties><Item class="StarterPlayerScripts" referent="RBX40"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX36"><Properties><string name="Name">EscalatorVisuals</string><ProtectedString name="Source"><![CDATA[-- Moving step edges on every escalator, drawn locally so the server only runs the conveyor.
 -- The steps Part's Conveyor attribute (set by MallBuilder) gives the direction and speed.
 local CollectionService = game:GetService("CollectionService")
 local RunService = game:GetService("RunService")
@@ -3260,7 +3760,7 @@ RunService.RenderStepped:Connect(function()
 	end
 	workspace:BulkMoveTo(parts, cframes, Enum.BulkMoveMode.FireCFrameChanged)
 end)
-]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX35"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[local Players = game:GetService("Players")
+]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX37"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[local Players = game:GetService("Players")
 local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
 
 local gui = Instance.new("ScreenGui")
@@ -3338,7 +3838,7 @@ game:GetService("RunService").Heartbeat:Connect(function()
 		gauge.Visible = false
 	end
 end)
-]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX36"><Properties><string name="Name">ShopUI</string><ProtectedString name="Source"><![CDATA[-- Shop window. The server sends the item list; buying only sends a request, the server decides.
+]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX38"><Properties><string name="Name">ShopUI</string><ProtectedString name="Source"><![CDATA[-- Shop window. The server sends the item list; buying only sends a request, the server decides.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
@@ -3413,7 +3913,7 @@ RunService.Heartbeat:Connect(function()
 	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 	if not hrp or (hrp.Position - openedAt).Magnitude > 18 then gui.Enabled = false; current = nil end
 end)
-]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX37"><Properties><string name="Name">VehicleDriver</string><ProtectedString name="Source"><![CDATA[-- Drives the vehicle the local player is seated in. The server built the constraints
+]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX39"><Properties><string name="Name">VehicleDriver</string><ProtectedString name="Source"><![CDATA[-- Drives the vehicle the local player is seated in. The server built the constraints
 -- (Drive / Turn); the driver's client owns the physics so steering feels instant.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")

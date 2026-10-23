@@ -26,6 +26,14 @@ return {
 		leaves = rgb(80, 130, 60), deck = rgb(120, 120, 124), lines = rgb(245, 245, 245),
 	},
 
+	-- food court on the upper level of the north arm: kiosks run by FoodService (see BusinessDefinitions)
+	foodCourt = {
+		{ biz = "noodle_bar", side = -1, z = 112, accent = rgb(200, 30, 40), counter = "NoodleCounter", stations = { "NoodleWok_1", "NoodleWok_2" } },
+		{ biz = "juice_bar", side = -1, z = 142, accent = rgb(250, 150, 20), counter = "JuiceCounter", stations = { "JuiceBlender_1", "JuiceBlender_2" } },
+		{ biz = "ice_cream", side = 1, z = 112, accent = rgb(240, 130, 190), counter = "IceCreamCounter", stations = { "IceCreamFreezer_1", "IceCreamFreezer_2" } },
+		{ biz = "fast_food", side = 1, z = 142, accent = rgb(230, 180, 0), counter = "FastFoodCounter_2", stations = { "FastFoodGrill_21", "FastFoodFryer_21" } },
+	},
+
 	stores = {
 		-- ground floor: bulky goods and big footprints
 		{ shop = "grocery", wall = rgb(236, 244, 232), floor = rgb(210, 214, 206), floorMat = "Marble", accent = rgb(40, 140, 70),

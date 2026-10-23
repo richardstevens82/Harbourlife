@@ -8,6 +8,8 @@ return {
 	fast_food_worker = { name = "Fast Food Worker", pay = 6, xp = 8, skill = "cooking", minLevel = 1 },
 	chef = { name = "Chef", pay = 12, xp = 14, skill = "cooking", minLevel = 3 },
 	waiter = { name = "Waiter", pay = 7, xp = 8, minLevel = 1 },
+	mall_cleaner = { name = "Mall Cleaner", pay = 5, xp = 6, minLevel = 1 },
+	mall_security = { name = "Mall Security", pay = 12, xp = 10, minLevel = 2 },
 	ferry_operator = { name = "Ferry Operator", pay = 40, xp = 30, skill = "seamanship", minLevel = 5 },
 	mechanic = { name = "Mechanic", pay = 18, xp = 16, skill = "repair", minLevel = 3 },
 }
