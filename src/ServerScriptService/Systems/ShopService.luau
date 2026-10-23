@@ -66,6 +66,19 @@ local function buy(player: Player, shopId: any, itemId: any, qty: any)
 	open(player, shopId) -- refresh stock on the client
 end
 
+-- An NPC customer buys one random in-stock item: real stock comes off the shelf, so NPC demand
+-- competes with players. Returns the item id, or nil when the shop is sold out.
+function ShopService.NpcBuy(shopId: string): string?
+	local s = stock[shopId]
+	if not s then return nil end
+	local inStock = {}
+	for id, n in s do if n > 0 then table.insert(inStock, id) end end
+	if #inStock == 0 then return nil end
+	local id = inStock[math.random(#inStock)]
+	s[id] -= 1
+	return id
+end
+
 local function hook(inst: Instance)
 	if not inst:IsA("BasePart") then return end
 	local shopId = inst.Name:match("^Shop_(.+)$")
