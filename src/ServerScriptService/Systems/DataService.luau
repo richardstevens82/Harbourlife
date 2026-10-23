@@ -39,7 +39,7 @@ end
 
 function DataService.Push(player: Player)
 	local d = profiles[player]
-	if d then Remotes.DataChanged:FireClient(player, { cash = d.cash, bank = d.bank, inventory = d.inventory, xp = d.xp, level = d.level, job = d.job, skills = d.skills, reputation = d.reputation }) end
+	if d then Remotes.DataChanged:FireClient(player, { cash = d.cash, bank = d.bank, inventory = d.inventory, xp = d.xp, level = d.level, job = d.job, skills = d.skills, reputation = d.reputation, vehicles = d.vehicles }) end
 end
 
 function DataService.Save(player: Player)

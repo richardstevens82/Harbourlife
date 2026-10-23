@@ -17,3 +17,6 @@
 | 13 | NPC shoppers stay on the level they entered (they don't ride the escalators or lifts yet) | Open |
 | 14 | NPC purchases reduce stock but the money goes to nobody until business ownership (Phase 18) | Open |
 | 15 | Shoppers that get stuck are removed rather than rerouted; watch Output for [ShopperService] warnings | Open |
+| 16 | Phone and inventory icons use emoji; check they render on every platform | Open |
+| 17 | GPS only finds places streamed in on the client (StreamingEnabled) | Open |
+| 18 | Phone clock shows Lighting.ClockTime; there is no day/night cycle yet, so it stays fixed | Open |

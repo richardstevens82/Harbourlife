@@ -24,6 +24,8 @@ All source is in `src/`. It was written and checked offline but has **never run 
 | Mall jobs | `MallJobService`, `JobDefinitions` | Mall Cleaner (litter appears while a cleaner is on shift) and Mall Security (7 checkpoints visited in order). Sign up at the Mall Management desks |
 | NPC shoppers | `ShopperService`, `ShopService` (`NpcBuy`) | Up to 16 shoppers. They enter, visit stores, buy real stock, carry bags and leave. Doors open for them |
 | 7 new stores | `ShopDefinitions`, `ItemDefinitions` | Pharmacy, sports, shoes, jewellers, books, toys, music |
+| Inventory menu | `InventoryUI` (LocalScript), `ItemCategories` | Press I, or tap the 🎒 button. Items are grouped by category with a tab per category, a search box, item tiles with quantity badges, and a detail panel (value, stack). Also a Skills & Stats page. Replaces the old text panel in `HUD` |
+| Mobile phone | `PhoneUI` (LocalScript), `PhoneService`, `Remotes` (`PhoneAction`), `DataService` (sends vehicles) | Press P, or tap the 📱 button. The phone slides up in the bottom-right corner, GTA style: notch, status bar with clock, home screen of apps, home bar, Backspace for back. Apps: Bank (deposit/withdraw, server-checked), Jobs (current job, quit, list), Bag, GPS (waypoint marker to places), Messages (notification history), Stats, Garage (owned vehicles), Settings (wallpaper) |
 
 Human-readable details: `docs/MallSetup.md`, `docs/PizzaBusinessSetup.md`.
 
@@ -63,7 +65,8 @@ Studio can't read files from disk, so send each file's text through `run_code`.
 
 The instance name is the file name without `.luau`, `.server.luau` or `.client.luau`. Copy **all** files in `src/`, not
 just the new ones, because existing files changed too (ShopService, FoodService, ItemDefinitions, Main, …).
-New files in this update: `MallDefinitions`, `MallBuilder`, `MallService`, `MallJobService`, `ShopperService`, `EscalatorVisuals`.
+New files in this update: `MallDefinitions`, `MallBuilder`, `MallService`, `MallJobService`, `ShopperService`, `EscalatorVisuals`,
+`ItemCategories`, `InventoryUI`, `PhoneUI`, `PhoneService`.
 
 ### How to send a file
 
@@ -100,12 +103,12 @@ newline. If it doesn't, resend the file.
 
 ```lua
 local need = {
-    Shared = { "BusinessDefinitions", "Config", "ItemDefinitions", "JobDefinitions", "MallDefinitions", "RecipeDefinitions",
+    Shared = { "BusinessDefinitions", "Config", "ItemCategories", "ItemDefinitions", "JobDefinitions", "MallDefinitions", "RecipeDefinitions",
         "Remotes", "ShopDefinitions", "SkillDefinitions", "VehicleDefinitions" },
     Systems = { "DataService", "EconomyService", "ExcavatorService", "FoodService", "InteractionService", "InventoryService",
         "JobCentre", "JobService", "MallBuilder", "MallJobService", "MallService", "NotificationService", "PizzaService",
-        "ProgressionService", "ShopService", "ShopperService", "TestWorld", "VehicleService" },
-    StarterPlayerScripts = { "EscalatorVisuals", "HUD", "ShopUI", "VehicleDriver" },
+        "PhoneService", "ProgressionService", "ShopService", "ShopperService", "TestWorld", "VehicleService" },
+    StarterPlayerScripts = { "EscalatorVisuals", "HUD", "InventoryUI", "PhoneUI", "ShopUI", "VehicleDriver" },
 }
 local roots = { Shared = game.ReplicatedStorage.Shared, Systems = game.ServerScriptService.Systems,
     StarterPlayerScripts = game.StarterPlayer.StarterPlayerScripts }
@@ -234,6 +237,13 @@ Ask them to paste anything red from the Output window.
 | 11 | Stand in the mall for a minute | NPC shoppers come in, doors open for them, they visit tills and leave with bags |
 | 12 | Drive a car into the car park and up the ramps | Reaches every deck; footbridge at the deck level with the mall's upper floor |
 | 13 | Two players (Test → Clients and Servers) | Doors, lifts and stock behave the same for both |
+| 14 | Press I after buying items from two different stores | Inventory opens. Items appear under their category headers, the tabs filter, search filters, clicking a tile shows details. Skills & Stats tab works |
+| 15 | Press P (and tap the 📱 button) | Phone slides up bottom-right. Clock ticks. App icons open apps, ‹ and the home bar go back, P closes it |
+| 16 | Phone → Bank: deposit $50, then withdraw All | Cash and bank change; a message confirms each. Spamming the buttons can't go negative |
+| 17 | Phone → GPS: tap Harbour Mall | A 📍 marker shows the distance in metres and disappears on arrival |
+| 18 | Phone → Jobs: Quit job | Job becomes Unemployed |
+| 19 | Phone → Messages | Recent notifications are listed, newest first |
+| 20 | Small window / phone-sized screen | Phone and inventory scale down to fit |
 
 ---
 
@@ -257,6 +267,8 @@ Ask them to paste anything red from the Output window.
 | Escalators don't move players | The conveyor velocity is set at runtime by MallService; check MallService started. Speed is `escalatorSpeed` in MallDefinitions |
 | Lift car falls or jitters | Check the `Lift` PrismaticConstraint servo settings in `MallBuilder` (`buildElevator`). The car must be unanchored and welded parts massless |
 | Shoppers stand still | Usually the R15 rig or animation load failed (Output shows `[ShopperService]`). The fallback block rig still walks. Pathfinding failures make them leave early |
+| Emoji show as boxes | The device font lacks emoji. Swap the `icon` values in `ItemCategories` and the app icons in `PhoneUI` for letters, or use image assets |
+| Phone covers the vehicle gauge or toasts | Move `OPEN_POS` in `PhoneUI`, or the gauge position in `HUD` |
 | Doors never close | A player or NPC is within 11 studs. The radius is `DOOR_RADIUS` in MallService |
 
 ---

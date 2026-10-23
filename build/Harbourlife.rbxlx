@@ -1,4 +1,4 @@
-<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4"><Item class="Workspace" referent="RBX2"><Properties><string name="Name">Workspace</string></Properties><Item class="SpawnLocation" referent="RBX1"><Properties><string name="Name">SpawnLocation</string><bool name="Anchored">true</bool><CoordinateFrame name="CFrame"><X>0</X><Y>1</Y><Z>20</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame><Vector3 name="size"><X>6</X><Y>1</Y><Z>6</Z></Vector3></Properties></Item></Item><Item class="ReplicatedStorage" referent="RBX14"><Properties><string name="Name">ReplicatedStorage</string></Properties><Item class="Folder" referent="RBX13"><Properties><string name="Name">Shared</string></Properties><Item class="ModuleScript" referent="RBX3"><Properties><string name="Name">BusinessDefinitions</string><ProtectedString name="Source"><![CDATA[return {
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4"><Item class="Workspace" referent="RBX2"><Properties><string name="Name">Workspace</string></Properties><Item class="SpawnLocation" referent="RBX1"><Properties><string name="Name">SpawnLocation</string><bool name="Anchored">true</bool><CoordinateFrame name="CFrame"><X>0</X><Y>1</Y><Z>20</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame><Vector3 name="size"><X>6</X><Y>1</Y><Z>6</Z></Vector3></Properties></Item></Item><Item class="ReplicatedStorage" referent="RBX15"><Properties><string name="Name">ReplicatedStorage</string></Properties><Item class="Folder" referent="RBX14"><Properties><string name="Name">Shared</string></Properties><Item class="ModuleScript" referent="RBX3"><Properties><string name="Name">BusinessDefinitions</string><ProtectedString name="Source"><![CDATA[return {
 	pizza_shop = {
 		name = "Harbour Pizza",
 		maxOpenOrders = 5,
@@ -89,7 +89,38 @@
 	ShopRange = 15, -- max studs from a shop counter to buy
 	ShopMaxQty = 10,
 }
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX5"><Properties><string name="Name">ItemDefinitions</string><ProtectedString name="Source"><![CDATA[-- Server and client read this; only the server may change inventories.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX5"><Properties><string name="Name">ItemCategories</string><ProtectedString name="Source"><![CDATA[-- How item categories (ItemDefinitions .category) are shown in the inventory menu and on the phone.
+local rgb = Color3.fromRGB
+
+local info = {
+	food = { name = "Food & Drink", icon = "🍔", color = rgb(235, 130, 50) },
+	ingredient = { name = "Ingredients", icon = "🧂", color = rgb(200, 160, 90) },
+	clothing = { name = "Clothing", icon = "👕", color = rgb(220, 90, 150) },
+	jewellery = { name = "Jewellery", icon = "💍", color = rgb(212, 175, 55) },
+	electronics = { name = "Electronics", icon = "📱", color = rgb(40, 160, 230) },
+	tools = { name = "Tools", icon = "🔧", color = rgb(240, 120, 20) },
+	materials = { name = "Materials", icon = "🪵", color = rgb(160, 120, 80) },
+	fishing = { name = "Fishing", icon = "🎣", color = rgb(40, 110, 170) },
+	sports = { name = "Sports", icon = "⚽", color = rgb(60, 170, 80) },
+	health = { name = "Health", icon = "💊", color = rgb(0, 170, 120) },
+	books = { name = "Books", icon = "📚", color = rgb(150, 40, 50) },
+	toys = { name = "Toys", icon = "🧸", color = rgb(255, 90, 90) },
+	music = { name = "Music", icon = "🎸", color = rgb(150, 80, 220) },
+	furniture = { name = "Furniture", icon = "🛋️", color = rgb(130, 95, 70) },
+	pets = { name = "Pets", icon = "🐾", color = rgb(0, 150, 150) },
+	general = { name = "General", icon = "🎒", color = rgb(110, 120, 140) },
+}
+
+return {
+	order = { "food", "ingredient", "clothing", "jewellery", "electronics", "tools", "materials", "fishing", "sports",
+		"health", "books", "toys", "music", "furniture", "pets", "general" },
+	info = info,
+	-- anything with an unknown category is shown under General
+	get = function(category: string?)
+		return info[category or "general"] or info.general
+	end,
+}
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX6"><Properties><string name="Name">ItemDefinitions</string><ProtectedString name="Source"><![CDATA[-- Server and client read this; only the server may change inventories.
 -- price = base price; shops apply their own markup. stack = max held.
 local function item(name, price, stack, category) return { name = name, price = price, stack = stack, category = category } end
 
@@ -239,7 +270,7 @@ return {
 	drum_sticks = item("Drum Sticks", 12, 3, "music"),
 	vinyl_record = item("Vinyl Record", 20, 10, "music"),
 }
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX6"><Properties><string name="Name">JobDefinitions</string><ProtectedString name="Source"><![CDATA[-- pay = cash per completed task; xp = XP per task; skill = skill trained; minLevel = player level required
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX7"><Properties><string name="Name">JobDefinitions</string><ProtectedString name="Source"><![CDATA[-- pay = cash per completed task; xp = XP per task; skill = skill trained; minLevel = player level required
 return {
 	unemployed = { name = "Unemployed", pay = 0, xp = 0, minLevel = 1 },
 	pizza_cook = { name = "Pizza Cook", pay = 8, xp = 10, skill = "cooking", minLevel = 1 },
@@ -254,7 +285,7 @@ return {
 	ferry_operator = { name = "Ferry Operator", pay = 40, xp = 30, skill = "seamanship", minLevel = 5 },
 	mechanic = { name = "Mechanic", pay = 18, xp = 16, skill = "repair", minLevel = 3 },
 }
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX7"><Properties><string name="Name">MallDefinitions</string><ProtectedString name="Source"><![CDATA[-- Harbour Mall: retail stores only. MallBuilder fits the building to a Part named "MallSite"
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX8"><Properties><string name="Name">MallDefinitions</string><ProtectedString name="Source"><![CDATA[-- Harbour Mall: retail stores only. MallBuilder fits the building to a Part named "MallSite"
 -- and the multi-storey car park to a Part named "CarParkSite" (see docs/MallSetup.md).
 -- Stores fill units in order: ground floor first (north side west->east, then south side), then level 1.
 -- Each store: shop = ShopDefinitions id, colours, floor material, sign font, interior layout and extra features.
@@ -355,7 +386,7 @@ return {
 			products = { rgb(30, 90, 200), rgb(255, 220, 40), rgb(220, 80, 60), rgb(240, 240, 240) } },
 	},
 }
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX8"><Properties><string name="Name">RecipeDefinitions</string><ProtectedString name="Source"><![CDATA[-- station = the appliance type that cooks it (see BusinessDefinitions food businesses).
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX9"><Properties><string name="Name">RecipeDefinitions</string><ProtectedString name="Source"><![CDATA[-- station = the appliance type that cooks it (see BusinessDefinitions food businesses).
 -- cookSeconds is reduced by cooking skill down to the business's minCookSeconds.
 return {
 	pizza = {
@@ -389,11 +420,11 @@ return {
 	sundae = { output = "sundae", inputs = { ice_cream_mix = 1, strawberries = 1, sugar = 1 }, cookSeconds = 4, station = "freezer" },
 	milkshake = { output = "milkshake", inputs = { ice_cream_mix = 1, milk = 1 }, cookSeconds = 4, station = "freezer" },
 }
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX9"><Properties><string name="Name">Remotes</string><ProtectedString name="Source"><![CDATA[-- Creates (server) or waits for (client) the shared RemoteEvents.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX10"><Properties><string name="Name">Remotes</string><ProtectedString name="Source"><![CDATA[-- Creates (server) or waits for (client) the shared RemoteEvents.
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local NAMES = { "DataChanged", "Notify", "ExcavatorAction", "OpenShop", "ShopBuy" }
+local NAMES = { "DataChanged", "Notify", "ExcavatorAction", "OpenShop", "ShopBuy", "PhoneAction" }
 local Remotes = {}
 
 local folder
@@ -413,7 +444,7 @@ for _, name in NAMES do
 	Remotes[name] = folder:WaitForChild(name)
 end
 return Remotes
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX10"><Properties><string name="Name">ShopDefinitions</string><ProtectedString name="Source"><![CDATA[-- markup multiplies the item's base price. stock = max units held; restock adds 1 of each item per interval.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX11"><Properties><string name="Name">ShopDefinitions</string><ProtectedString name="Source"><![CDATA[-- markup multiplies the item's base price. stock = max units held; restock adds 1 of each item per interval.
 -- Any Part named "Shop_<id>" becomes a counter for that shop (several locations may share one id).
 return {
 	grocery = { name = "Grocery", markup = 1.0, stock = 20, restockSeconds = 30,
@@ -455,7 +486,7 @@ return {
 			"chicken", "vegetables", "rice", "potatoes", "beef_patty", "burger_bun", "lettuce", "cooking_oil",
 			"noodle_pack", "strawberries", "bananas", "oranges", "ice_cream_mix", "wafer_cone" } },
 }
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX11"><Properties><string name="Name">SkillDefinitions</string><ProtectedString name="Source"><![CDATA[return {
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX12"><Properties><string name="Name">SkillDefinitions</string><ProtectedString name="Source"><![CDATA[return {
 	cooking = { name = "Cooking" },
 	driving = { name = "Driving" },
 	seamanship = { name = "Seamanship" },
@@ -463,7 +494,7 @@ return {
 	fishing = { name = "Fishing" },
 	construction = { name = "Construction" },
 }
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX12"><Properties><string name="Name">VehicleDefinitions</string><ProtectedString name="Source"><![CDATA[-- price 0 = starter vehicle. size is (width, height, length); the vehicle faces -Z.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX13"><Properties><string name="Name">VehicleDefinitions</string><ProtectedString name="Source"><![CDATA[-- price 0 = starter vehicle. size is (width, height, length); the vehicle faces -Z.
 return {
 	sedan = { name = "Sedan", price = 0, size = Vector3.new(7, 2, 14), color = Color3.fromRGB(60, 100, 200),
 		fuelCapacity = 60, fuelPerSecond = 0.15, wearPerSecond = 0.01, maxSpeed = 60, turnRate = 1.6 },
@@ -474,7 +505,7 @@ return {
 	excavator = { name = "Excavator", price = 8000, size = Vector3.new(10, 3, 12), color = Color3.fromRGB(240, 190, 30),
 		fuelCapacity = 120, fuelPerSecond = 0.3, wearPerSecond = 0.02, maxSpeed = 18, turnRate = 1.0, construction = true },
 }
-]]></ProtectedString></Properties></Item></Item></Item><Item class="ServerScriptService" referent="RBX35"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Folder" referent="RBX33"><Properties><string name="Name">Systems</string></Properties><Item class="ModuleScript" referent="RBX15"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[local DataStoreService = game:GetService("DataStoreService")
+]]></ProtectedString></Properties></Item></Item></Item><Item class="ServerScriptService" referent="RBX37"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Folder" referent="RBX35"><Properties><string name="Name">Systems</string></Properties><Item class="ModuleScript" referent="RBX16"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
@@ -515,7 +546,7 @@ end
 
 function DataService.Push(player: Player)
 	local d = profiles[player]
-	if d then Remotes.DataChanged:FireClient(player, { cash = d.cash, bank = d.bank, inventory = d.inventory, xp = d.xp, level = d.level, job = d.job, skills = d.skills, reputation = d.reputation }) end
+	if d then Remotes.DataChanged:FireClient(player, { cash = d.cash, bank = d.bank, inventory = d.inventory, xp = d.xp, level = d.level, job = d.job, skills = d.skills, reputation = d.reputation, vehicles = d.vehicles }) end
 end
 
 function DataService.Save(player: Player)
@@ -566,7 +597,7 @@ function DataService.Start()
 end
 
 return DataService
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX16"><Properties><string name="Name">EconomyService</string><ProtectedString name="Source"><![CDATA[local DataService = require(script.Parent.DataService)
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX17"><Properties><string name="Name">EconomyService</string><ProtectedString name="Source"><![CDATA[local DataService = require(script.Parent.DataService)
 
 local Economy = {}
 
@@ -605,7 +636,7 @@ function Economy.Withdraw(player: Player, amount: number): boolean
 end
 
 return Economy
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX17"><Properties><string name="Name">ExcavatorService</string><ProtectedString name="Source"><![CDATA[-- Server-validated digging. The client only asks ("dig" / "dump"); the server checks the
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX18"><Properties><string name="Name">ExcavatorService</string><ProtectedString name="Source"><![CDATA[-- Server-validated digging. The client only asks ("dig" / "dump"); the server checks the
 -- driver, cooldown, reach and the real bucket position before editing terrain.
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Defs = require(game.ReplicatedStorage.Shared.VehicleDefinitions)
@@ -693,7 +724,7 @@ function E.Start()
 end
 
 return E
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX18"><Properties><string name="Name">FoodService</string><ProtectedString name="Source"><![CDATA[-- Food businesses (Phase 5): café, bakery, restaurant, fast food. One data-driven loop for all of them:
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX19"><Properties><string name="Name">FoodService</string><ProtectedString name="Source"><![CDATA[-- Food businesses (Phase 5): café, bakery, restaurant, fast food. One data-driven loop for all of them:
 -- Food Wholesaler (a shop) -> ingredients -> station cooks a menu recipe -> counter serves a customer order
 -- -> payment, job pay, XP, reputation. Definitions live in BusinessDefinitions (entries with food = true).
 -- Workspace markers per business, e.g. the café:
@@ -926,7 +957,7 @@ end
 function F._orders(bizId: string) return orders[bizId] end
 
 return F
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX19"><Properties><string name="Name">InteractionService</string><ProtectedString name="Source"><![CDATA[-- Single place that turns world objects into interactable prompts.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX20"><Properties><string name="Name">InteractionService</string><ProtectedString name="Source"><![CDATA[-- Single place that turns world objects into interactable prompts.
 -- The server owns the ProximityPrompt, so distance is enforced by Roblox and the
 -- callback only ever runs on the server, with a per-player cooldown.
 local Config = require(game.ReplicatedStorage.Shared.Config)
@@ -954,7 +985,7 @@ end
 game.Players.PlayerRemoving:Connect(function(p) last[p] = nil end)
 
 return I
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX20"><Properties><string name="Name">InventoryService</string><ProtectedString name="Source"><![CDATA[local Config = require(game.ReplicatedStorage.Shared.Config)
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX21"><Properties><string name="Name">InventoryService</string><ProtectedString name="Source"><![CDATA[local Config = require(game.ReplicatedStorage.Shared.Config)
 local Items = require(game.ReplicatedStorage.Shared.ItemDefinitions)
 local DataService = require(script.Parent.DataService)
 local Economy = require(script.Parent.EconomyService)
@@ -1003,7 +1034,7 @@ function Inventory.Buy(player, itemId: string, qty: number): boolean
 end
 
 return Inventory
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX21"><Properties><string name="Name">JobCentre</string><ProtectedString name="Source"><![CDATA[-- Placeholder Job Centre: a pad in Workspace named "JobCentre_<jobId>" becomes a sign-up point.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX22"><Properties><string name="Name">JobCentre</string><ProtectedString name="Source"><![CDATA[-- Placeholder Job Centre: a pad in Workspace named "JobCentre_<jobId>" becomes a sign-up point.
 -- Example: name a Part "JobCentre_pizza_cook". Replace with the real building later.
 local Jobs = require(game.ReplicatedStorage.Shared.JobDefinitions)
 local Interaction = require(script.Parent.InteractionService)
@@ -1028,7 +1059,7 @@ function C.Start()
 end
 
 return C
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX22"><Properties><string name="Name">JobService</string><ProtectedString name="Source"><![CDATA[local Jobs = require(game.ReplicatedStorage.Shared.JobDefinitions)
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX23"><Properties><string name="Name">JobService</string><ProtectedString name="Source"><![CDATA[local Jobs = require(game.ReplicatedStorage.Shared.JobDefinitions)
 local DataService = require(script.Parent.DataService)
 local Economy = require(script.Parent.EconomyService)
 local Progression = require(script.Parent.ProgressionService)
@@ -1061,7 +1092,7 @@ function J.CompleteTask(player: Player, jobId: string): boolean
 end
 
 return J
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX23"><Properties><string name="Name">MallBuilder</string><ProtectedString name="Source"><![CDATA[-- Builds Harbour Mall on the Part named "MallSite" and the multi-storey car park on "CarParkSite".
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">MallBuilder</string><ProtectedString name="Source"><![CDATA[-- Builds Harbour Mall on the Part named "MallSite" and the multi-storey car park on "CarParkSite".
 -- Two retail levels around a skylit atrium with escalators and glass lifts; every unit is a full store
 -- (themed shop floor, till, stockroom with racking, staff room, loading door). See MallDefinitions.
 -- MallService runs this at server start when no "HarbourMall" model exists. To bake the mall into the
@@ -2455,7 +2486,7 @@ function MallBuilder.Build(rebuild: boolean?)
 end
 
 return MallBuilder
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">MallJobService</string><ProtectedString name="Source"><![CDATA[-- Mall jobs (sign up at Mall Management, south arm):
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX25"><Properties><string name="Name">MallJobService</string><ProtectedString name="Source"><![CDATA[-- Mall jobs (sign up at Mall Management, south arm):
 --   Mall Cleaner   litter builds up at the mall's LitterSpot nodes while a cleaner is on shift; clear it for pay
 --   Mall Security  patrol the SecurityPoint_<n> checkpoints in order; each correct check-in pays
 -- Pay and XP come from JobDefinitions via JobService.CompleteTask.
@@ -2570,7 +2601,7 @@ function MallJobService.Start()
 end
 
 return MallJobService
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX25"><Properties><string name="Name">MallService</string><ProtectedString name="Source"><![CDATA[-- Harbour Mall at runtime: builds the mall if the place has a MallSite but no baked "HarbourMall",
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX26"><Properties><string name="Name">MallService</string><ProtectedString name="Source"><![CDATA[-- Harbour Mall at runtime: builds the mall if the place has a MallSite but no baked "HarbourMall",
 -- then runs every escalator (conveyor steps), lift (server-owned prismatic car with floor gates),
 -- automatic door and ATM. Works the same for a mall built at runtime or baked into the place.
 local CollectionService = game:GetService("CollectionService")
@@ -2715,13 +2746,55 @@ function MallService.Start()
 end
 
 return MallService
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX26"><Properties><string name="Name">NotificationService</string><ProtectedString name="Source"><![CDATA[local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX27"><Properties><string name="Name">NotificationService</string><ProtectedString name="Source"><![CDATA[local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
 local N = {}
 function N.Send(player: Player, text: string, kind: string?)
 	Remotes.Notify:FireClient(player, tostring(text):sub(1, 120), kind or "info")
 end
 return N
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX27"><Properties><string name="Name">PizzaService</string><ProtectedString name="Source"><![CDATA[-- Pizza Business: supplier -> oven -> orders (counter / delivery) -> payment, XP, reputation.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX28"><Properties><string name="Name">PhoneService</string><ProtectedString name="Source"><![CDATA[-- Server side of the phone apps. The client only asks; amounts and jobs are checked here.
+--   ("deposit" | "withdraw", amount | "all")   Bank app
+--   ("quitJob")                                 Jobs app
+local Players = game:GetService("Players")
+local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
+local DataService = require(script.Parent.DataService)
+local Economy = require(script.Parent.EconomyService)
+local JobService = require(script.Parent.JobService)
+local Notify = require(script.Parent.NotificationService)
+
+local PhoneService = {}
+local last: { [Player]: number } = {}
+
+local function amountFor(d, action: string, arg: any): number?
+	if arg == "all" then return action == "deposit" and d.cash or d.bank end
+	if type(arg) ~= "number" or arg ~= arg or arg % 1 ~= 0 or arg <= 0 or arg > 1e9 then return nil end
+	return arg
+end
+
+local function onAction(player: Player, action: any, arg: any)
+	local now = os.clock()
+	if now - (last[player] or 0) < 0.3 then return end
+	last[player] = now
+	local d = DataService.Get(player)
+	if not d or type(action) ~= "string" then return end
+	if action == "deposit" or action == "withdraw" then
+		local amount = amountFor(d, action, arg)
+		if not amount or amount <= 0 then Notify.Send(player, action == "deposit" and "No cash to deposit" or "Nothing in the bank", "error"); return end
+		local ok = if action == "deposit" then Economy.Deposit(player, amount) else Economy.Withdraw(player, amount)
+		if ok then Notify.Send(player, string.format("%s $%d", action == "deposit" and "Deposited" or "Withdrew", amount), "success")
+		else Notify.Send(player, action == "deposit" and "Not enough cash" or "Not enough in the bank", "error") end
+	elseif action == "quitJob" then
+		if d.job ~= "unemployed" then JobService.SetJob(player, "unemployed") end
+	end
+end
+
+function PhoneService.Start()
+	Remotes.PhoneAction.OnServerEvent:Connect(onAction)
+	Players.PlayerRemoving:Connect(function(p) last[p] = nil end)
+end
+
+return PhoneService
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX29"><Properties><string name="Name">PizzaService</string><ProtectedString name="Source"><![CDATA[-- Pizza Business: supplier -> oven -> orders (counter / delivery) -> payment, XP, reputation.
 -- Workspace markers (rename Parts, no scripts needed):
 --   PizzaSupplier        buys ingredients
 --   PizzaOven_<n>        cooks pizza
@@ -2890,7 +2963,7 @@ end
 function P._orders() return orders end
 
 return P
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX28"><Properties><string name="Name">ProgressionService</string><ProtectedString name="Source"><![CDATA[local Config = require(game.ReplicatedStorage.Shared.Config)
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX30"><Properties><string name="Name">ProgressionService</string><ProtectedString name="Source"><![CDATA[local Config = require(game.ReplicatedStorage.Shared.Config)
 local Skills = require(game.ReplicatedStorage.Shared.SkillDefinitions)
 local DataService = require(script.Parent.DataService)
 local Notify = require(script.Parent.NotificationService)
@@ -2938,7 +3011,7 @@ function P.SkillLevel(player: Player, skillId: string): number
 end
 
 return P
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX29"><Properties><string name="Name">ShopService</string><ProtectedString name="Source"><![CDATA[-- Retail: browse a shop at its counter, buy with server-validated price, range and stock.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX31"><Properties><string name="Name">ShopService</string><ProtectedString name="Source"><![CDATA[-- Retail: browse a shop at its counter, buy with server-validated price, range and stock.
 local Players = game:GetService("Players")
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Items = require(game.ReplicatedStorage.Shared.ItemDefinitions)
@@ -3056,7 +3129,7 @@ function ShopService.Start()
 end
 
 return ShopService
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX30"><Properties><string name="Name">ShopperService</string><ProtectedString name="Source"><![CDATA[-- NPC shoppers for Harbour Mall. Each one arrives at an entrance (ground doors, or the footbridge for the
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX32"><Properties><string name="Name">ShopperService</string><ProtectedString name="Source"><![CDATA[-- NPC shoppers for Harbour Mall. Each one arrives at an entrance (ground doors, or the footbridge for the
 -- upper level), walks to 1-3 stores on that level, buys at the till (real stock comes off the shelf via
 -- ShopService.NpcBuy), then leaves by an entrance on the same level and is removed.
 -- Routes use the mall's Nodes (EntranceOut/In, StoreFront/Inside/Till) with PathfindingService between them.
@@ -3261,7 +3334,7 @@ function ShopperService.Start()
 end
 
 return ShopperService
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX31"><Properties><string name="Name">TestWorld</string><ProtectedString name="Source"><![CDATA[-- Dev-only placeholder test area. Builds labelled, correctly named Parts near the origin
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX33"><Properties><string name="Name">TestWorld</string><ProtectedString name="Source"><![CDATA[-- Dev-only placeholder test area. Builds labelled, correctly named Parts near the origin
 -- so every Phase 1/2 system can be exercised. Delete or set Enabled=false once the real map exists.
 local TestWorld = { Enabled = true }
 
@@ -3367,7 +3440,7 @@ function TestWorld.GrantExcavator(player: Player)
 end
 
 return TestWorld
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX32"><Properties><string name="Name">VehicleService</string><ProtectedString name="Source"><![CDATA[-- Vehicle ownership, spawning, fuel, wear and repair. Server-authoritative.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX34"><Properties><string name="Name">VehicleService</string><ProtectedString name="Source"><![CDATA[-- Vehicle ownership, spawning, fuel, wear and repair. Server-authoritative.
 -- Driving physics run on the driver's client (VehicleDriver.client.luau) via constraints built here.
 -- Workspace markers:
 --   VehicleGarage_<id>   toggle: store current vehicle / take out <id>
@@ -3697,17 +3770,17 @@ function V.Start()
 end
 
 return V
-]]></ProtectedString></Properties></Item></Item><Item class="Script" referent="RBX34"><Properties><string name="Name">Main</string><ProtectedString name="Source"><![CDATA[local Systems = script.Parent:WaitForChild("Systems")
+]]></ProtectedString></Properties></Item></Item><Item class="Script" referent="RBX36"><Properties><string name="Name">Main</string><ProtectedString name="Source"><![CDATA[local Systems = script.Parent:WaitForChild("Systems")
 require(game.ReplicatedStorage.Shared.Remotes) -- create remotes first
 
 -- Start each system on its own so one failure can't stop the rest; failures are named in Output.
-local ORDER = { "DataService", "TestWorld", "MallService", "MallJobService", "JobCentre", "PizzaService", "VehicleService", "ExcavatorService", "ShopService", "FoodService", "ShopperService" }
+local ORDER = { "DataService", "TestWorld", "MallService", "MallJobService", "JobCentre", "PizzaService", "VehicleService", "ExcavatorService", "ShopService", "FoodService", "ShopperService", "PhoneService" }
 for _, name in ORDER do
 	local ok, err = pcall(function() require(Systems[name]).Start() end)
 	if not ok then warn("[Harbourlife] " .. name .. " failed to start: " .. tostring(err)) end
 end
 print("[Harbourlife] server started")
-]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX41"><Properties><string name="Name">StarterPlayer</string></Properties><Item class="StarterPlayerScripts" referent="RBX40"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX36"><Properties><string name="Name">EscalatorVisuals</string><ProtectedString name="Source"><![CDATA[-- Moving step edges on every escalator, drawn locally so the server only runs the conveyor.
+]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX45"><Properties><string name="Name">StarterPlayer</string></Properties><Item class="StarterPlayerScripts" referent="RBX44"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX38"><Properties><string name="Name">EscalatorVisuals</string><ProtectedString name="Source"><![CDATA[-- Moving step edges on every escalator, drawn locally so the server only runs the conveyor.
 -- The steps Part's Conveyor attribute (set by MallBuilder) gives the direction and speed.
 local CollectionService = game:GetService("CollectionService")
 local RunService = game:GetService("RunService")
@@ -3760,7 +3833,7 @@ RunService.RenderStepped:Connect(function()
 	end
 	workspace:BulkMoveTo(parts, cframes, Enum.BulkMoveMode.FireCFrameChanged)
 end)
-]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX37"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[local Players = game:GetService("Players")
+]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX39"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[local Players = game:GetService("Players")
 local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
 
 local gui = Instance.new("ScreenGui")
@@ -3790,33 +3863,7 @@ Remotes.Notify.OnClientEvent:Connect(function(text)
 	task.delay(3, function() if token == mine then toast.Visible = false end end)
 end)
 
--- Inventory panel: press I
-local Items = require(game.ReplicatedStorage.Shared.ItemDefinitions)
-local UIS = game:GetService("UserInputService")
-local panel = Instance.new("TextLabel")
-panel.Size = UDim2.fromOffset(240, 260); panel.Position = UDim2.new(0, 10, 0.5, -130)
-panel.BackgroundTransparency = 0.3; panel.BackgroundColor3 = Color3.new(0, 0, 0)
-panel.TextColor3 = Color3.new(1, 1, 1); panel.Font = Enum.Font.Gotham; panel.TextSize = 16
-panel.TextXAlignment = Enum.TextXAlignment.Left; panel.TextYAlignment = Enum.TextYAlignment.Top
-panel.Visible = false; panel.Parent = gui
-
-local lastData
-local function render()
-	if not lastData then return end
-	local lines = { "INVENTORY (I to close)" }
-	for id, n in lastData.inventory do
-		table.insert(lines, string.format("%s x%d", Items[id] and Items[id].name or id, n))
-	end
-	table.insert(lines, "")
-	table.insert(lines, "SKILLS")
-	for id, s in lastData.skills do table.insert(lines, string.format("%s Lv %d", id, s.level)) end
-	table.insert(lines, string.format("Reputation: %d", lastData.reputation or 0))
-	panel.Text = table.concat(lines, "\n")
-end
-Remotes.DataChanged.OnClientEvent:Connect(function(d) lastData = d; render() end)
-UIS.InputBegan:Connect(function(input, processed)
-	if not processed and input.KeyCode == Enum.KeyCode.I then panel.Visible = not panel.Visible; render() end
-end)
+-- The inventory menu (I) and phone (P) live in InventoryUI and PhoneUI.
 
 -- Vehicle gauge (reads attributes the server keeps on the seat)
 local gauge = Instance.new("TextLabel")
@@ -3838,7 +3885,693 @@ game:GetService("RunService").Heartbeat:Connect(function()
 		gauge.Visible = false
 	end
 end)
-]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX38"><Properties><string name="Name">ShopUI</string><ProtectedString name="Source"><![CDATA[-- Shop window. The server sends the item list; buying only sends a request, the server decides.
+]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX40"><Properties><string name="Name">InventoryUI</string><ProtectedString name="Source"><![CDATA[-- Inventory menu (press I, or the Bag app on the phone). Items are grouped by category, with a tab per
+-- category, a search box and a detail panel, plus a Skills & Stats page. Display only: the server owns
+-- the inventory and sends it with DataChanged.
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
+local Remotes = require(Shared.Remotes)
+local Items = require(Shared.ItemDefinitions)
+local Categories = require(Shared.ItemCategories)
+local Config = require(Shared.Config)
+local SkillDefs = require(Shared.SkillDefinitions)
+local Jobs = require(Shared.JobDefinitions)
+
+local player = Players.LocalPlayer
+local rgb = Color3.fromRGB
+local BG, PANEL, PANEL2, TEXT, DIM, ACCENT = rgb(20, 24, 32), rgb(32, 38, 50), rgb(44, 52, 68), rgb(240, 242, 246), rgb(150, 160, 178), rgb(70, 150, 255)
+local W, H = 720, 470
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "InventoryUI"; gui.ResetOnSpawn = false; gui.Enabled = false
+gui.Parent = player:WaitForChild("PlayerGui")
+local openEvent = Instance.new("BindableEvent") -- fired by the phone's Bag app
+openEvent.Name = "Open"; openEvent.Parent = gui
+
+local function new(class, props, parent)
+	local o = Instance.new(class)
+	for k, v in props do (o :: any)[k] = v end
+	o.Parent = parent
+	return o
+end
+local function corner(o, r) new("UICorner", { CornerRadius = UDim.new(0, r or 8) }, o) end
+local function clear(frame)
+	for _, c in frame:GetChildren() do if c:IsA("GuiObject") then c:Destroy() end end
+end
+local function text(parent, props)
+	local t = new("TextLabel", { BackgroundTransparency = 1, TextColor3 = TEXT, Font = Enum.Font.Gotham, TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left }, parent)
+	for k, v in props do (t :: any)[k] = v end
+	return t
+end
+
+local window = new("Frame", { Size = UDim2.fromOffset(W, H), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+	BackgroundColor3 = BG }, gui)
+corner(window, 14)
+new("UIStroke", { Color = rgb(60, 70, 90), Thickness = 2 }, window)
+local scale = new("UIScale", {}, window)
+local function fit()
+	local vp = workspace.CurrentCamera.ViewportSize
+	scale.Scale = math.min(1, (vp.X - 20) / W, (vp.Y - 20) / H)
+end
+workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(fit)
+fit()
+
+text(window, { Text = "🎒  INVENTORY", Font = Enum.Font.GothamBlack, TextSize = 20, Position = UDim2.fromOffset(18, 12), Size = UDim2.fromOffset(200, 30) })
+local slots = text(window, { TextColor3 = DIM, Position = UDim2.new(1, -250, 0, 12), Size = UDim2.fromOffset(190, 30), TextXAlignment = Enum.TextXAlignment.Right })
+local search = new("TextBox", { PlaceholderText = "🔍  Search items…", Text = "", ClearTextOnFocus = false, Font = Enum.Font.Gotham, TextSize = 14,
+	TextColor3 = TEXT, PlaceholderColor3 = DIM, BackgroundColor3 = PANEL, Position = UDim2.fromOffset(200, 13), Size = UDim2.fromOffset(240, 28),
+	TextXAlignment = Enum.TextXAlignment.Left }, window)
+corner(search, 6)
+new("UIPadding", { PaddingLeft = UDim.new(0, 8) }, search)
+local close = new("TextButton", { Text = "✕", Font = Enum.Font.GothamBold, TextSize = 18, TextColor3 = TEXT, BackgroundColor3 = rgb(170, 50, 55),
+	Position = UDim2.new(1, -46, 0, 10), Size = UDim2.fromOffset(34, 34) }, window)
+corner(close, 8)
+
+local sidebar = new("ScrollingFrame", { Position = UDim2.fromOffset(12, 54), Size = UDim2.new(0, 160, 1, -66), BackgroundTransparency = 1,
+	ScrollBarThickness = 4, AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new() }, window)
+new("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }, sidebar)
+local content = new("ScrollingFrame", { Position = UDim2.fromOffset(182, 54), Size = UDim2.new(1, -182 - 200, 1, -66), BackgroundColor3 = PANEL,
+	ScrollBarThickness = 6, AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new() }, window)
+corner(content, 10)
+new("UIListLayout", { Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder }, content)
+new("UIPadding", { PaddingTop = UDim.new(0, 10), PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10) }, content)
+local detail = new("Frame", { Position = UDim2.new(1, -190, 0, 54), Size = UDim2.new(0, 178, 1, -66), BackgroundColor3 = PANEL }, window)
+corner(detail, 10)
+
+local data
+local tab = "all"
+local selected: string? = nil
+
+local function categoryOf(id: string): string
+	local c = Items[id] and Items[id].category
+	return (c and Categories.info[c]) and c or "general"
+end
+
+local function itemName(id) return Items[id] and Items[id].name or id end
+
+-- items the player holds, filtered by the search box, grouped by category
+local function grouped()
+	local q = string.lower(search.Text)
+	local groups, total = {}, 0
+	for id, n in (data and data.inventory or {}) do
+		if q == "" or string.find(string.lower(itemName(id)), q, 1, true) then
+			local c = categoryOf(id)
+			groups[c] = groups[c] or {}
+			table.insert(groups[c], { id = id, n = n })
+			total += 1
+		end
+	end
+	for _, list in groups do table.sort(list, function(a, b) return itemName(a.id) < itemName(b.id) end) end
+	return groups, total
+end
+
+local render
+
+local function tabButton(id, label, count, order)
+	local active = tab == id
+	local b = new("TextButton", { Text = "", AutoButtonColor = true, BackgroundColor3 = active and ACCENT or PANEL,
+		Size = UDim2.new(1, -6, 0, 34), LayoutOrder = order }, sidebar)
+	corner(b, 8)
+	text(b, { Text = label, Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -44, 1, 0), TextSize = 13, TextTruncate = Enum.TextTruncate.AtEnd,
+		Font = active and Enum.Font.GothamBold or Enum.Font.Gotham })
+	if count then
+		text(b, { Text = tostring(count), TextColor3 = active and TEXT or DIM, Position = UDim2.new(1, -40, 0, 0), Size = UDim2.fromOffset(32, 34),
+			TextXAlignment = Enum.TextXAlignment.Right, TextSize = 12 })
+	end
+	b.MouseButton1Click:Connect(function() tab = id; render() end)
+end
+
+local function tile(parent, id, n)
+	local cat = Categories.get(categoryOf(id))
+	local b = new("TextButton", { Text = "", BackgroundColor3 = PANEL2, AutoButtonColor = true }, parent)
+	corner(b, 8)
+	if selected == id then new("UIStroke", { Color = ACCENT, Thickness = 2 }, b) end
+	local icon = new("TextLabel", { Text = cat.icon, TextSize = 26, BackgroundColor3 = cat.color, Position = UDim2.fromOffset(6, 6),
+		Size = UDim2.new(1, -12, 0, 46), Font = Enum.Font.GothamBold, TextColor3 = TEXT }, b)
+	corner(icon, 6)
+	text(b, { Text = itemName(id), Position = UDim2.fromOffset(6, 54), Size = UDim2.new(1, -12, 0, 30), TextSize = 11, TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Center, TextYAlignment = Enum.TextYAlignment.Top })
+	local badge = text(b, { Text = "x" .. n, Font = Enum.Font.GothamBold, TextSize = 12, BackgroundTransparency = 0.2, BackgroundColor3 = rgb(0, 0, 0),
+		Position = UDim2.new(1, -36, 0, 8), Size = UDim2.fromOffset(30, 18), TextXAlignment = Enum.TextXAlignment.Center })
+	corner(badge, 9)
+	b.MouseButton1Click:Connect(function() selected = id; render() end)
+end
+
+local function section(cat: string, list, order)
+	local info = Categories.get(cat)
+	local s = new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = order }, content)
+	new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, s)
+	local head = new("Frame", { BackgroundColor3 = info.color, BackgroundTransparency = 0.75, Size = UDim2.new(1, 0, 0, 26), LayoutOrder = 1 }, s)
+	corner(head, 6)
+	text(head, { Text = string.format("%s  %s  (%d)", info.icon, string.upper(info.name), #list), Font = Enum.Font.GothamBold, TextSize = 13,
+		Position = UDim2.fromOffset(8, 0), Size = UDim2.new(1, -16, 1, 0) })
+	local grid = new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 2 }, s)
+	new("UIGridLayout", { CellSize = UDim2.fromOffset(92, 92), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder }, grid)
+	for _, e in list do tile(grid, e.id, e.n) end
+end
+
+local function statsPage()
+	local d = data
+	local need = math.floor(Config.XpBase * d.level ^ Config.XpExponent)
+	local function line(t, size, color, bold)
+		text(content, { Text = t, TextSize = size or 14, TextColor3 = color or TEXT, Font = bold and Enum.Font.GothamBold or Enum.Font.Gotham,
+			Size = UDim2.new(1, 0, 0, (size or 14) + 8), TextWrapped = true })
+	end
+	line("📊  SKILLS & STATS", 16, TEXT, true)
+	line(string.format("Level %d   (%d / %d XP)", d.level, d.xp, need), 15, TEXT, true)
+	local bar = new("Frame", { BackgroundColor3 = PANEL2, Size = UDim2.new(1, 0, 0, 10) }, content)
+	corner(bar, 5)
+	local fill = new("Frame", { BackgroundColor3 = ACCENT, Size = UDim2.new(math.clamp(d.xp / math.max(need, 1), 0, 1), 0, 1, 0) }, bar)
+	corner(fill, 5)
+	line(string.format("Job: %s", Jobs[d.job] and Jobs[d.job].name or d.job))
+	line(string.format("Cash $%d    Bank $%d", d.cash, d.bank))
+	line(string.format("Reputation: %d", d.reputation or 0))
+	line("SKILLS", 14, DIM, true)
+	local any = false
+	for id, def in SkillDefs do
+		local s = d.skills and d.skills[id]
+		if s then any = true; line(string.format("%s   Lv %d", def.name, s.level or 0)) end
+	end
+	if not any then line("No skills trained yet. Jobs train skills.", 13, DIM) end
+end
+
+local function renderDetail()
+	clear(detail)
+	local n = selected and data and data.inventory[selected]
+	if not n then
+		text(detail, { Text = "Select an item to see its details.", TextColor3 = DIM, TextWrapped = true, Position = UDim2.fromOffset(12, 12),
+			Size = UDim2.new(1, -24, 0, 60), TextYAlignment = Enum.TextYAlignment.Top })
+		return
+	end
+	local id = selected :: string
+	local def = Items[id]
+	local cat = Categories.get(categoryOf(id))
+	local icon = new("TextLabel", { Text = cat.icon, TextSize = 48, BackgroundColor3 = cat.color, Position = UDim2.fromOffset(12, 12),
+		Size = UDim2.new(1, -24, 0, 96), TextColor3 = TEXT, Font = Enum.Font.GothamBold }, detail)
+	corner(icon, 10)
+	local y = 116
+	local function line(t, size, color, bold)
+		text(detail, { Text = t, TextSize = size, TextColor3 = color, Font = bold and Enum.Font.GothamBold or Enum.Font.Gotham,
+			Position = UDim2.fromOffset(12, y), Size = UDim2.new(1, -24, 0, size + 10), TextWrapped = true })
+		y += size + 12
+	end
+	line(def and def.name or id, 16, TEXT, true)
+	line(cat.name, 13, cat.color, true)
+	line("Quantity: " .. n, 13, TEXT)
+	if def then
+		line(string.format("Value: $%d each", def.price), 13, TEXT)
+		line(string.format("Total: $%d", def.price * n), 13, TEXT)
+		line(string.format("Max stack: %d", def.stack or Config.MaxStack), 12, DIM)
+	end
+end
+
+function render()
+	if not data then return end
+	local groups, total = grouped()
+	local used = 0
+	for _ in data.inventory do used += 1 end
+	slots.Text = string.format("%d / %d slots", used, Config.InventorySlots)
+
+	clear(sidebar)
+	tabButton("all", "🗂  All items", total, 0)
+	for i, cat in Categories.order do
+		if groups[cat] then tabButton(cat, Categories.info[cat].icon .. "  " .. Categories.info[cat].name, #groups[cat], i) end
+	end
+	tabButton("stats", "📊  Skills & Stats", nil, 100)
+	if tab ~= "all" and tab ~= "stats" and not groups[tab] then tab = "all" end
+
+	clear(content)
+	if tab == "stats" then
+		statsPage()
+	else
+		local order = 0
+		for _, cat in Categories.order do
+			if groups[cat] and (tab == "all" or tab == cat) then
+				order += 1
+				section(cat, groups[cat], order)
+			end
+		end
+		if order == 0 then
+			text(content, { Text = search.Text ~= "" and "No items match your search." or "Your inventory is empty. Visit the shops in Harbour Mall!",
+				TextColor3 = DIM, TextWrapped = true, Size = UDim2.new(1, 0, 0, 40) })
+		end
+	end
+	renderDetail()
+end
+
+local function setOpen(open: boolean)
+	gui.Enabled = open
+	if open then render() end
+end
+
+Remotes.DataChanged.OnClientEvent:Connect(function(d)
+	data = d
+	if gui.Enabled then render() end
+end)
+search:GetPropertyChangedSignal("Text"):Connect(function() if gui.Enabled then render() end end)
+close.MouseButton1Click:Connect(function() setOpen(false) end)
+openEvent.Event:Connect(function() setOpen(true) end)
+UIS.InputBegan:Connect(function(input, processed)
+	if not processed and input.KeyCode == Enum.KeyCode.I then setOpen(not gui.Enabled) end
+end)
+]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX41"><Properties><string name="Name">PhoneUI</string><ProtectedString name="Source"><![CDATA[-- Mobile phone (press P, or tap the phone button): slides up in the bottom-right corner like a real
+-- handset, with a status bar, home screen of apps and a home bar. Apps:
+--   Bank (deposit / withdraw, server-checked)   Jobs (current job, quit, job list)   Bag (inventory)
+--   GPS (waypoint to places in the world)       Messages (notification history)       Stats
+--   Garage (owned vehicles)                     Settings (wallpaper)
+-- Money and job changes go to PhoneService on the server; everything else is display only.
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
+local Remotes = require(Shared.Remotes)
+local Items = require(Shared.ItemDefinitions)
+local Categories = require(Shared.ItemCategories)
+local Config = require(Shared.Config)
+local SkillDefs = require(Shared.SkillDefinitions)
+local Jobs = require(Shared.JobDefinitions)
+local Vehicles = require(Shared.VehicleDefinitions)
+
+local player = Players.LocalPlayer
+local rgb = Color3.fromRGB
+local TEXT, DIM, CARD = rgb(255, 255, 255), rgb(200, 205, 215), rgb(255, 255, 255)
+local PW, PH = 250, 500 -- phone body size
+local WALLPAPERS = {
+	{ name = "Harbour", a = rgb(20, 60, 120), b = rgb(10, 150, 170) },
+	{ name = "Sunset", a = rgb(120, 40, 90), b = rgb(250, 140, 60) },
+	{ name = "Forest", a = rgb(20, 60, 40), b = rgb(90, 160, 90) },
+	{ name = "Night", a = rgb(15, 15, 30), b = rgb(60, 50, 110) },
+}
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "PhoneUI"; gui.ResetOnSpawn = false; gui.DisplayOrder = 5
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local function new(class, props, parent)
+	local o = Instance.new(class)
+	for k, v in props do (o :: any)[k] = v end
+	o.Parent = parent
+	return o
+end
+local function corner(o, r) new("UICorner", { CornerRadius = UDim.new(0, r or 8) }, o) end
+local function clear(frame)
+	for _, c in frame:GetChildren() do if c:IsA("GuiObject") then c:Destroy() end end
+end
+
+-- phone body, screen and wallpaper
+local OPEN_POS, CLOSED_POS = UDim2.new(1, -PW - 18, 1, -PH - 18), UDim2.new(1, -PW - 18, 1, 40)
+local phone = new("Frame", { Size = UDim2.fromOffset(PW, PH), Position = CLOSED_POS, BackgroundColor3 = rgb(18, 18, 22), Visible = false }, gui)
+corner(phone, 34)
+new("UIStroke", { Color = rgb(90, 90, 100), Thickness = 3 }, phone)
+local phoneScale = new("UIScale", {}, phone)
+local function fit()
+	local vp = workspace.CurrentCamera.ViewportSize
+	phoneScale.Scale = math.min(1, (vp.Y - 40) / PH)
+end
+workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(fit)
+fit()
+for _, y in { 90, 140 } do -- side buttons
+	new("Frame", { BackgroundColor3 = rgb(70, 70, 80), Position = UDim2.fromOffset(-4, y), Size = UDim2.fromOffset(4, 36) }, phone)
+end
+local screen = new("Frame", { Position = UDim2.fromOffset(9, 9), Size = UDim2.new(1, -18, 1, -18), BackgroundColor3 = TEXT, ClipsDescendants = true }, phone)
+corner(screen, 26)
+local wallpaper = new("UIGradient", { Rotation = 120 }, screen)
+local wallpaperIndex = 1
+local function applyWallpaper()
+	local w = WALLPAPERS[wallpaperIndex]
+	wallpaper.Color = ColorSequence.new(w.a, w.b)
+end
+applyWallpaper()
+local notch = new("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 8), Size = UDim2.fromOffset(76, 20),
+	BackgroundColor3 = rgb(0, 0, 0), ZIndex = 10 }, screen)
+corner(notch, 10)
+
+local status = new("Frame", { Size = UDim2.new(1, 0, 0, 32), BackgroundTransparency = 1, ZIndex = 5 }, screen)
+local clockSmall = new("TextLabel", { Text = "12:00", Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = TEXT, BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(18, 8), Size = UDim2.fromOffset(50, 18), TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 5 }, status)
+new("TextLabel", { Text = "5G ▮▮▮ 🔋", Font = Enum.Font.GothamBold, TextSize = 11, TextColor3 = TEXT, BackgroundTransparency = 1,
+	Position = UDim2.new(1, -86, 0, 8), Size = UDim2.fromOffset(70, 18), TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 5 }, status)
+
+local homeBar = new("TextButton", { Text = "", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -6), Size = UDim2.fromOffset(100, 5),
+	BackgroundColor3 = TEXT, AutoButtonColor = false, ZIndex = 10 }, screen)
+corner(homeBar, 3)
+
+-- home screen
+local home = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1 }, screen)
+local bigClock = new("TextLabel", { Text = "12:00", Font = Enum.Font.GothamBold, TextSize = 46, TextColor3 = TEXT, BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(0, 40), Size = UDim2.new(1, 0, 0, 52) }, home)
+new("TextLabel", { Text = "Harbourlife", Font = Enum.Font.Gotham, TextSize = 14, TextColor3 = DIM, BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(0, 92), Size = UDim2.new(1, 0, 0, 18) }, home)
+local grid = new("Frame", { Position = UDim2.fromOffset(12, 130), Size = UDim2.new(1, -24, 1, -150), BackgroundTransparency = 1 }, home)
+new("UIGridLayout", { CellSize = UDim2.fromOffset(48, 70), CellPadding = UDim2.fromOffset(4, 10), SortOrder = Enum.SortOrder.LayoutOrder,
+	HorizontalAlignment = Enum.HorizontalAlignment.Center }, grid)
+
+-- app screen: header with back button and a scrolling body
+local appPage = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = rgb(245, 246, 250), Visible = false }, screen)
+local header = new("Frame", { Size = UDim2.new(1, 0, 0, 72), BackgroundColor3 = rgb(40, 110, 220) }, appPage)
+local back = new("TextButton", { Text = "‹", Font = Enum.Font.GothamBold, TextSize = 30, TextColor3 = TEXT, BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(8, 32), Size = UDim2.fromOffset(30, 34) }, header)
+local appTitle = new("TextLabel", { Text = "", Font = Enum.Font.GothamBold, TextSize = 18, TextColor3 = TEXT, BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(40, 34), Size = UDim2.new(1, -50, 0, 30), TextXAlignment = Enum.TextXAlignment.Left }, header)
+local body = new("ScrollingFrame", { Position = UDim2.fromOffset(0, 72), Size = UDim2.new(1, 0, 1, -90), BackgroundTransparency = 1,
+	ScrollBarThickness = 3, AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(), ScrollBarImageColor3 = rgb(120, 120, 130) }, appPage)
+new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, body)
+new("UIPadding", { PaddingTop = UDim.new(0, 10), PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10) }, body)
+
+-- body helpers
+local order = 0
+local function nextOrder() order += 1; return order end
+local function label(t, size, color, bold)
+	return new("TextLabel", { Text = t, TextSize = size or 13, TextColor3 = color or rgb(30, 34, 44), BackgroundTransparency = 1, TextWrapped = true,
+		Font = bold and Enum.Font.GothamBold or Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = nextOrder() }, body)
+end
+local function card(height)
+	local c = new("Frame", { BackgroundColor3 = CARD, Size = UDim2.new(1, 0, 0, height), LayoutOrder = nextOrder() }, body)
+	corner(c, 12)
+	return c
+end
+local function buttonRow(buttons)
+	local r = new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 34), LayoutOrder = nextOrder() }, body)
+	new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6) }, r)
+	local w = 1 / #buttons
+	for _, b in buttons do
+		local btn = new("TextButton", { Text = b[1], Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = TEXT, BackgroundColor3 = b[2],
+			Size = UDim2.new(w, -6 + 6 / #buttons, 1, 0) }, r)
+		corner(btn, 8)
+		btn.MouseButton1Click:Connect(b[3])
+	end
+	return r
+end
+
+local data
+local messages = {}
+local currentApp
+local waypoint -- { part, gui, name }
+
+local function fmtTime()
+	local t = Lighting.ClockTime
+	return string.format("%02d:%02d", math.floor(t), math.floor((t % 1) * 60))
+end
+
+-- GPS: places found in the world by Part name
+local function firstPart(match)
+	for _, d in workspace:GetDescendants() do
+		if d:IsA("BasePart") and match(d.Name) then return d.Position end
+	end
+	return nil
+end
+local PLACES = {
+	{ "🛍️ Harbour Mall", function()
+		local m = workspace:FindFirstChild("HarbourMall")
+		local site = workspace:FindFirstChild("MallSite", true)
+		return (site and site:IsA("BasePart") and site.Position) or (m and m:GetBoundingBox().Position)
+	end },
+	{ "💼 Job Centre", function() return firstPart(function(n) return n:match("^JobCentre_") ~= nil end) end },
+	{ "🍕 Harbour Pizza", function() return firstPart(function(n) return n == "PizzaCounter" end) end },
+	{ "☕ Harbour Café", function() return firstPart(function(n) return n == "CafeCounter" end) end },
+	{ "🥐 Bakery", function() return firstPart(function(n) return n == "BakeryCounter" end) end },
+	{ "🍽️ Restaurant", function() return firstPart(function(n) return n == "RestaurantCounter" end) end },
+	{ "🍔 Dockside Burgers", function() return firstPart(function(n) return n == "FastFoodCounter" end) end },
+	{ "📦 Food Wholesaler", function() return firstPart(function(n) return n == "Shop_food_wholesale" end) end },
+	{ "⛽ Fuel Station", function() return firstPart(function(n) return n == "FuelStation" end) end },
+	{ "🔧 Repair Garage", function() return firstPart(function(n) return n == "Garage_Repair" end) end },
+	{ "🚗 Vehicle Garage", function() return firstPart(function(n) return n:match("^VehicleGarage_") ~= nil end) end },
+}
+
+local function clearWaypoint()
+	if waypoint then waypoint.part:Destroy(); waypoint = nil end
+end
+local function setWaypoint(name, pos)
+	clearWaypoint()
+	local p = new("Part", { Name = "PhoneWaypoint", Anchored = true, CanCollide = false, CanQuery = false, Transparency = 1,
+		Size = Vector3.new(1, 1, 1), Position = pos + Vector3.new(0, 6, 0) }, workspace)
+	local bb = new("BillboardGui", { Size = UDim2.fromOffset(180, 50), AlwaysOnTop = true, LightInfluence = 0 }, p)
+	local t = new("TextLabel", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 0.3, BackgroundColor3 = rgb(20, 90, 220), TextColor3 = TEXT,
+		Font = Enum.Font.GothamBold, TextScaled = true, Text = "📍 " .. name }, bb)
+	corner(t, 10)
+	waypoint = { part = p, label = t, name = name }
+end
+RunService.RenderStepped:Connect(function()
+	if not waypoint then return end
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+	local dist = (waypoint.part.Position - hrp.Position).Magnitude
+	if dist < 20 then
+		table.insert(messages, 1, { time = fmtTime(), text = "Arrived: " .. waypoint.name, kind = "success" })
+		clearWaypoint()
+	else
+		waypoint.label.Text = string.format("📍 %s\n%d m", waypoint.name, math.floor(dist / 3.57)) -- ~3.57 studs per metre
+	end
+end)
+
+local function money(n) return "$" .. tostring(n) end
+local function phoneAction(action, arg) Remotes.PhoneAction:FireServer(action, arg) end
+
+local APPS
+APPS = {
+	{ id = "bank", name = "Bank", icon = "🏦", color = rgb(30, 140, 90), render = function()
+		local c = card(86)
+		new("TextLabel", { Text = "Harbour Bank", Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = rgb(30, 140, 90), BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -24, 0, 16), TextXAlignment = Enum.TextXAlignment.Left }, c)
+		new("TextLabel", { Text = money(data.bank), Font = Enum.Font.GothamBlack, TextSize = 28, TextColor3 = rgb(30, 34, 44), BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(12, 26), Size = UDim2.new(1, -24, 0, 32), TextXAlignment = Enum.TextXAlignment.Left }, c)
+		new("TextLabel", { Text = "Cash in hand: " .. money(data.cash), Font = Enum.Font.Gotham, TextSize = 13, TextColor3 = rgb(90, 95, 110),
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 60), Size = UDim2.new(1, -24, 0, 18), TextXAlignment = Enum.TextXAlignment.Left }, c)
+		local green, blue = rgb(30, 140, 90), rgb(40, 110, 220)
+		label("Deposit cash", 13, nil, true)
+		buttonRow({ { "$50", green, function() phoneAction("deposit", 50) end }, { "$100", green, function() phoneAction("deposit", 100) end },
+			{ "$500", green, function() phoneAction("deposit", 500) end }, { "All", green, function() phoneAction("deposit", "all") end } })
+		label("Withdraw cash", 13, nil, true)
+		buttonRow({ { "$50", blue, function() phoneAction("withdraw", 50) end }, { "$100", blue, function() phoneAction("withdraw", 100) end },
+			{ "$500", blue, function() phoneAction("withdraw", 500) end }, { "All", blue, function() phoneAction("withdraw", "all") end } })
+		label("Mall ATMs work too.", 11, rgb(120, 125, 140))
+	end },
+	{ id = "jobs", name = "Jobs", icon = "💼", color = rgb(230, 140, 30), render = function()
+		local job = Jobs[data.job]
+		label("Current job", 12, rgb(120, 125, 140), true)
+		label(job and job.name or data.job, 18, nil, true)
+		if data.job ~= "unemployed" then
+			buttonRow({ { "Quit job", rgb(200, 60, 60), function() phoneAction("quitJob") end } })
+		end
+		label("Sign up at a Job Centre, or at Mall Management for mall jobs.", 11, rgb(120, 125, 140))
+		label("All jobs", 13, nil, true)
+		local list = {}
+		for id, j in Jobs do if id ~= "unemployed" then table.insert(list, j) end end
+		table.sort(list, function(a, b) return a.pay > b.pay end)
+		for _, j in list do
+			local locked = data.level < j.minLevel
+			local c = card(40)
+			new("TextLabel", { Text = j.name, Font = Enum.Font.GothamBold, TextSize = 13, BackgroundTransparency = 1,
+				TextColor3 = locked and rgb(160, 160, 170) or rgb(30, 34, 44), Position = UDim2.fromOffset(10, 0), Size = UDim2.new(0.6, 0, 1, 0),
+				TextXAlignment = Enum.TextXAlignment.Left }, c)
+			new("TextLabel", { Text = string.format("$%d/task · Lv %d", j.pay, j.minLevel), Font = Enum.Font.Gotham, TextSize = 11,
+				BackgroundTransparency = 1, TextColor3 = rgb(110, 115, 130), Position = UDim2.new(0.55, 0, 0, 0), Size = UDim2.new(0.45, -10, 1, 0),
+				TextXAlignment = Enum.TextXAlignment.Right }, c)
+		end
+	end },
+	{ id = "bag", name = "Bag", icon = "🎒", color = rgb(150, 90, 220), render = function()
+		local used, counts = 0, {}
+		for id, n in data.inventory do
+			used += 1
+			local c = Items[id] and Items[id].category or "general"
+			if not Categories.info[c] then c = "general" end
+			counts[c] = (counts[c] or 0) + n
+		end
+		label(string.format("%d / %d slots used", used, Config.InventorySlots), 15, nil, true)
+		buttonRow({ { "Open inventory", rgb(150, 90, 220), function()
+			local inv = player.PlayerGui:FindFirstChild("InventoryUI")
+			local ev = inv and inv:FindFirstChild("Open")
+			if ev then ev:Fire() end
+		end } })
+		for _, cat in Categories.order do
+			if counts[cat] then
+				local info = Categories.info[cat]
+				label(string.format("%s  %s: %d", info.icon, info.name, counts[cat]), 13)
+			end
+		end
+		if used == 0 then label("Your bag is empty.", 13, rgb(120, 125, 140)) end
+	end },
+	{ id = "gps", name = "GPS", icon = "🗺️", color = rgb(40, 110, 220), render = function()
+		if waypoint then
+			label("Heading to " .. waypoint.name, 13, nil, true)
+			buttonRow({ { "Clear waypoint", rgb(200, 60, 60), function() clearWaypoint(); APPS.open("gps") end } })
+		end
+		label("Tap a place to set a waypoint", 12, rgb(120, 125, 140))
+		local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		local found = 0
+		for _, place in PLACES do
+			local pos = place[2]()
+			if pos then
+				found += 1
+				local dist = hrp and math.floor((pos - hrp.Position).Magnitude / 3.57) or 0
+				local c = card(40)
+				local b = new("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1) }, c)
+				new("TextLabel", { Text = place[1], Font = Enum.Font.GothamBold, TextSize = 13, BackgroundTransparency = 1, TextColor3 = rgb(30, 34, 44),
+					Position = UDim2.fromOffset(10, 0), Size = UDim2.new(0.7, 0, 1, 0), TextXAlignment = Enum.TextXAlignment.Left }, b)
+				new("TextLabel", { Text = dist .. " m", Font = Enum.Font.Gotham, TextSize = 12, BackgroundTransparency = 1, TextColor3 = rgb(110, 115, 130),
+					Position = UDim2.new(0.7, 0, 0, 0), Size = UDim2.new(0.3, -10, 1, 0), TextXAlignment = Enum.TextXAlignment.Right }, b)
+				b.MouseButton1Click:Connect(function() setWaypoint(place[1], pos); APPS.open("gps") end)
+			end
+		end
+		if found == 0 then label("No places found nearby.", 13, rgb(120, 125, 140)) end
+	end },
+	{ id = "messages", name = "Messages", icon = "💬", color = rgb(50, 190, 90), render = function()
+		if #messages == 0 then label("No messages yet.", 13, rgb(120, 125, 140)) end
+		local colors = { success = rgb(30, 140, 90), error = rgb(200, 60, 60), info = rgb(40, 110, 220) }
+		for _, m in messages do
+			local c = card(0)
+			c.AutomaticSize = Enum.AutomaticSize.Y
+			new("UIPadding", { PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6), PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }, c)
+			new("UIListLayout", { Padding = UDim.new(0, 2) }, c)
+			new("TextLabel", { Text = m.time, Font = Enum.Font.GothamBold, TextSize = 10, TextColor3 = colors[m.kind] or colors.info,
+				BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 12), TextXAlignment = Enum.TextXAlignment.Left }, c)
+			new("TextLabel", { Text = m.text, Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = rgb(30, 34, 44), BackgroundTransparency = 1,
+				TextWrapped = true, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, TextXAlignment = Enum.TextXAlignment.Left }, c)
+		end
+	end },
+	{ id = "stats", name = "Stats", icon = "📊", color = rgb(220, 70, 110), render = function()
+		local need = math.floor(Config.XpBase * data.level ^ Config.XpExponent)
+		label("Level " .. data.level, 22, nil, true)
+		local bar = new("Frame", { BackgroundColor3 = rgb(220, 222, 230), Size = UDim2.new(1, 0, 0, 10), LayoutOrder = nextOrder() }, body)
+		corner(bar, 5)
+		corner(new("Frame", { BackgroundColor3 = rgb(220, 70, 110), Size = UDim2.new(math.clamp(data.xp / math.max(need, 1), 0, 1), 0, 1, 0) }, bar), 5)
+		label(string.format("%d / %d XP to next level", data.xp, need), 11, rgb(120, 125, 140))
+		label("Reputation: " .. (data.reputation or 0), 13)
+		label("Skills", 13, nil, true)
+		local any = false
+		for id, def in SkillDefs do
+			local s = data.skills and data.skills[id]
+			if s then any = true; label(string.format("%s  ·  Lv %d", def.name, s.level), 13) end
+		end
+		if not any then label("No skills yet. Working jobs trains them.", 12, rgb(120, 125, 140)) end
+	end },
+	{ id = "garage", name = "Garage", icon = "🚗", color = rgb(70, 80, 100), render = function()
+		local any = false
+		for id, v in data.vehicles or {} do
+			local def = Vehicles[id]
+			if def then
+				any = true
+				local c = card(54)
+				new("TextLabel", { Text = def.name, Font = Enum.Font.GothamBold, TextSize = 14, BackgroundTransparency = 1, TextColor3 = rgb(30, 34, 44),
+					Position = UDim2.fromOffset(10, 6), Size = UDim2.new(1, -20, 0, 18), TextXAlignment = Enum.TextXAlignment.Left }, c)
+				new("TextLabel", { Text = string.format("Fuel %d/%d  ·  Condition %d%%", math.floor(v.fuel or 0), def.fuelCapacity, math.floor(v.condition or 0)),
+					Font = Enum.Font.Gotham, TextSize = 12, BackgroundTransparency = 1, TextColor3 = rgb(110, 115, 130),
+					Position = UDim2.fromOffset(10, 28), Size = UDim2.new(1, -20, 0, 16), TextXAlignment = Enum.TextXAlignment.Left }, c)
+			end
+		end
+		if not any then label("You don't own any vehicles.", 13, rgb(120, 125, 140)) end
+		label("Take a vehicle out at its garage pad. Use GPS to find one.", 11, rgb(120, 125, 140))
+	end },
+	{ id = "settings", name = "Settings", icon = "⚙️", color = rgb(120, 125, 140), render = function()
+		label("Wallpaper", 13, nil, true)
+		for i, w in WALLPAPERS do
+			buttonRow({ { (i == wallpaperIndex and "✓ " or "") .. w.name, w.a, function()
+				wallpaperIndex = i; applyWallpaper(); APPS.open("settings")
+			end } })
+		end
+		label("Keys: P phone · I inventory · Backspace back", 11, rgb(120, 125, 140))
+	end },
+}
+
+function APPS.open(id)
+	for _, app in APPS do
+		if type(app) == "table" and app.id == id then
+			currentApp = app
+			home.Visible, appPage.Visible = false, true
+			appTitle.Text = app.name
+			header.BackgroundColor3 = app.color
+			clear(body)
+			order = 0
+			if data then app.render() else label("Loading…", 13) end
+			return
+		end
+	end
+end
+
+local function goHome()
+	currentApp = nil
+	home.Visible, appPage.Visible = true, false
+end
+
+for i, app in APPS do
+	if type(app) ~= "table" then continue end
+	local cell = new("Frame", { BackgroundTransparency = 1, LayoutOrder = i }, grid)
+	local icon = new("TextButton", { Text = app.icon, TextSize = 24, Font = Enum.Font.GothamBold, BackgroundColor3 = app.color,
+		Size = UDim2.fromOffset(48, 48), AutoButtonColor = true }, cell)
+	corner(icon, 13)
+	new("TextLabel", { Text = app.name, Font = Enum.Font.Gotham, TextSize = 10, TextColor3 = TEXT, BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(-6, 50), Size = UDim2.fromOffset(60, 14) }, cell)
+	icon.MouseButton1Click:Connect(function() APPS.open(app.id) end)
+end
+
+-- open / close
+local isOpen = false
+local tween = TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+local function setOpen(open: boolean)
+	isOpen = open
+	if open then
+		phone.Visible = true
+		goHome()
+		TweenService:Create(phone, tween, { Position = OPEN_POS }):Play()
+	else
+		local t = TweenService:Create(phone, tween, { Position = CLOSED_POS })
+		t.Completed:Connect(function() if not isOpen then phone.Visible = false end end)
+		t:Play()
+	end
+end
+
+local phoneButton = new("TextButton", { Text = "📱", TextSize = 26, Font = Enum.Font.GothamBold, BackgroundColor3 = rgb(25, 28, 36),
+	AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -18, 1, -18), Size = UDim2.fromOffset(52, 52) }, gui)
+corner(phoneButton, 26)
+new("UIStroke", { Color = rgb(90, 90, 100), Thickness = 2 }, phoneButton)
+phoneButton.MouseButton1Click:Connect(function() setOpen(not isOpen) end)
+local bagButton = new("TextButton", { Text = "🎒", TextSize = 24, Font = Enum.Font.GothamBold, BackgroundColor3 = rgb(25, 28, 36),
+	AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -78, 1, -18), Size = UDim2.fromOffset(52, 52) }, gui)
+corner(bagButton, 26)
+new("UIStroke", { Color = rgb(90, 90, 100), Thickness = 2 }, bagButton)
+bagButton.MouseButton1Click:Connect(function()
+	local inv = player.PlayerGui:FindFirstChild("InventoryUI")
+	local ev = inv and inv:FindFirstChild("Open")
+	if ev then ev:Fire() end
+end)
+RunService.Heartbeat:Connect(function()
+	phoneButton.Visible = not isOpen
+	bagButton.Visible = not isOpen
+end)
+
+back.MouseButton1Click:Connect(goHome)
+homeBar.MouseButton1Click:Connect(goHome)
+UIS.InputBegan:Connect(function(input, processed)
+	if processed then return end
+	if input.KeyCode == Enum.KeyCode.P then setOpen(not isOpen)
+	elseif input.KeyCode == Enum.KeyCode.Backspace and isOpen then
+		if currentApp then goHome() else setOpen(false) end
+	end
+end)
+
+-- live data
+task.spawn(function()
+	while true do
+		local t = fmtTime()
+		clockSmall.Text, bigClock.Text = t, t
+		task.wait(1)
+	end
+end)
+Remotes.DataChanged.OnClientEvent:Connect(function(d)
+	data = d
+	if isOpen and currentApp and currentApp.id ~= "gps" then APPS.open(currentApp.id) end
+end)
+Remotes.Notify.OnClientEvent:Connect(function(t, kind)
+	table.insert(messages, 1, { time = fmtTime(), text = t, kind = kind })
+	if #messages > 40 then table.remove(messages) end
+	if isOpen and currentApp and currentApp.id == "messages" then APPS.open("messages") end
+end)
+]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX42"><Properties><string name="Name">ShopUI</string><ProtectedString name="Source"><![CDATA[-- Shop window. The server sends the item list; buying only sends a request, the server decides.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
@@ -3913,7 +4646,7 @@ RunService.Heartbeat:Connect(function()
 	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 	if not hrp or (hrp.Position - openedAt).Magnitude > 18 then gui.Enabled = false; current = nil end
 end)
-]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX39"><Properties><string name="Name">VehicleDriver</string><ProtectedString name="Source"><![CDATA[-- Drives the vehicle the local player is seated in. The server built the constraints
+]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX43"><Properties><string name="Name">VehicleDriver</string><ProtectedString name="Source"><![CDATA[-- Drives the vehicle the local player is seated in. The server built the constraints
 -- (Drive / Turn); the driver's client owns the physics so steering feels instant.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
