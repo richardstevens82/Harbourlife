@@ -12,3 +12,5 @@
 | 8 | Lift car and escalator conveyors use physics (prismatic servo, anchored-part velocity); need Play Mode checks with several riders | Open |
 | 9 | Skylight gable wedges may face the wrong way (WedgePart orientation unverified without Studio) | Open |
 | 10 | Upper-floor stores have no goods lift yet (a GoodsLift_<id> marker only) | Open |
+| 11 | Automatic doors only react to players; NPCs (Phase 19) need adding to the door check in MallService | Open |
+| 12 | ATMs use a fixed $100 amount; a proper amount UI belongs with the phone bank app | Open |

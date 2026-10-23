@@ -585,6 +585,50 @@ function Features.readingArea(ctx)
 end
 
 --------------------------------------------------------------------------------------------------
+-- fittings shared by the stores and the mall
+
+-- Automatic sliding glass doors filling x0..x1 at z = zc in frame f. Each panel stores the world offset it
+-- slides by when open; MallService opens the pair while a player is near the Centre attribute.
+local function autoDoor(f, parent, x0, x1, y0, y1, zc, frameColor)
+	local m = Instance.new("Model")
+	m.Name = "AutoDoor"
+	local half, mid = (x1 - x0) / 2, (x0 + x1) / 2
+	box(f, m, "DoorTrack", x0 - half, y1, zc - 0.3, x1 + half, y1 + 0.6, zc + 0.3, frameColor, Mat.Metal)
+	for _, s in { -1, 1 } do
+		local a, b = s < 0 and x0 or mid, s < 0 and mid or x1
+		local panel = box(f, m, s < 0 and "DoorLeft" or "DoorRight", a, y0, zc - 0.15, b, y1, zc + 0.15, C.glass, Mat.Glass, { Transparency = 0.5, Reflectance = 0.2 })
+		panel:SetAttribute("OpenOffset", f:VectorToWorldSpace(Vector3.new(s * (half - 0.4), 0, 0)))
+	end
+	m:SetAttribute("Centre", (f * CFrame.new(mid, y0, zc)).Position)
+	CollectionService:AddTag(m, "HarbourAutoDoor")
+	m.Parent = parent
+	return m
+end
+
+-- Free-standing board listing text on its -Z face.
+local function board(f, parent, name, x0, y0, z0, x1, y1, text, title)
+	local b = box(f, parent, name, x0, y0, z0, x1, y1, z0 + 0.6, C.dark, Mat.SmoothPlastic)
+	box(f, parent, name .. "Frame", x0 - 0.3, y0, z0 + 0.1, x1 + 0.3, y1 + 0.3, z0 + 0.5, C.bronze, Mat.Metal)
+	local g = Instance.new("SurfaceGui")
+	g.Face = Enum.NormalId.Front
+	g.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	g.PixelsPerStud = 40
+	g.LightInfluence = 0
+	g.Parent = b
+	local head = Instance.new("TextLabel")
+	head.Size = UDim2.fromScale(1, 0.12); head.BackgroundColor3 = C.bronze; head.TextScaled = true
+	head.TextColor3 = Color3.new(1, 1, 1); head.Font = Enum.Font.GothamBlack; head.Text = title
+	head.Parent = g
+	local body = Instance.new("TextLabel")
+	body.Position = UDim2.fromScale(0.05, 0.14); body.Size = UDim2.fromScale(0.9, 0.84)
+	body.BackgroundTransparency = 1; body.TextScaled = true; body.TextWrapped = true
+	body.TextXAlignment = Enum.TextXAlignment.Left; body.TextYAlignment = Enum.TextYAlignment.Top
+	body.TextColor3 = Color3.fromRGB(235, 235, 235); body.Font = Enum.Font.Gotham; body.Text = text
+	body.Parent = g
+	return b
+end
+
+--------------------------------------------------------------------------------------------------
 -- a store unit: frame fr has origin at the shopfront centre on the floor, +Z pointing into the store
 
 local function hashSeed(s)
@@ -625,6 +669,8 @@ local function buildStore(parent, fr, uw, ud, hc, def, groundFloor)
 		if math.abs(x) > 8.5 then box(fr, m, "Mullion", x - 0.2, 0, -0.1, x + 0.2, doorH, 0.5, C.dark, Mat.Metal) end
 	end
 	for _, x in { -8, 8 } do box(fr, m, "DoorFrame", x - 0.4, 0, -0.2, x + 0.4, doorH, 0.6, def.accent, Mat.Metal) end
+	box(fr, m, "Transom", -8, 10.6, 0, 8, doorH, 0.4, C.glass, Mat.Glass, GLASS)
+	autoDoor(fr, m, -8, 8, 0, 10, 0.85, def.accent) -- slides behind the fixed glass
 	box(fr, m, "Fascia", -hw + 1, doorH, -0.3, hw - 1, hc, 0.6, def.wall, Mat.SmoothPlastic)
 	box(fr, m, "FasciaLED", -hw + 1, doorH, -0.6, hw - 1, doorH + 0.4, -0.3, def.accent, Mat.Neon, DECOR)
 	local sg = box(fr, m, "StoreSign", -hw * 0.55, doorH + 1.6, -1, hw * 0.55, hc - 1.6, -0.3, def.accent, Mat.SmoothPlastic, DECOR)
@@ -826,7 +872,12 @@ local function buildMall(M, siteW, siteD, root)
 		box(M, structure, "Inlay", s * (CW / 2 - 4) - 0.5, 0, -D / 2 + T, s * (CW / 2 - 4) + 0.5, 0.05, -CW / 2 + 4, C.inlay, Mat.Marble, DECOR)
 		box(M, structure, "Inlay", s * (CW / 2 - 4) - 0.5, 0, CW / 2 - 4, s * (CW / 2 - 4) + 0.5, 0.05, D / 2 - T, C.inlay, Mat.Marble, DECOR)
 	end
+	-- stairs in the north and south arms (24 steps, 1 stud rise, 1.4 tread); south is the north one turned round
+	local stairX0, stairX1, stairZ0, stairRun = 10, 16, 48, 24 * 1.4
+	local stairFrames = { M, M * CFrame.Angles(0, math.pi, 0) }
 	local l2holes = table.clone(shafts)
+	table.insert(l2holes, { stairX0, stairZ0, stairX1, stairZ0 + stairRun })
+	table.insert(l2holes, { -stairX1, -stairZ0 - stairRun, -stairX0, -stairZ0 })
 	for _, v in voids do table.insert(l2holes, v) end
 	slab(M, structure, "Level1Floor", -W / 2 + T, -D / 2 + T, W / 2 - T, D / 2 - T, H - ST, H, l2holes, C.gallery, Mat.Marble)
 	local sky = hasAtrium and { -VL, -CW / 2, VL, CW / 2 } or nil
@@ -866,6 +917,47 @@ local function buildMall(M, siteW, siteD, root)
 			buildEscalator(M, moving, Vector3.new(so * (6 + R), 0, -6), Vector3.new(so * 6, H, -6), false)
 			planter(M, structure, so * (6 + R + 14), 0, 0, 8, 8, true)
 		end
+	end
+
+	for _, sf in stairFrames do
+		for i = 1, 24 do
+			local z = stairZ0 + (i - 1) * 1.4
+			box(sf, structure, "Stair", stairX0, 0, z, stairX1, i, z + 1.4, C.gallery, Mat.Marble)
+			box(sf, structure, "StairNosing", stairX0, i - 0.05, z, stairX1, i + 0.02, z + 0.25, C.inlay, Mat.Metal, DECOR)
+		end
+		for _, x in { stairX0 - 0.15, stairX1 + 0.15 } do
+			ramp(sf, structure, "StairRail", Vector3.new(x, 1 + 3.5, stairZ0), Vector3.new(x, 24 + 3.5, stairZ0 + stairRun), 0.3, 3.5, C.glass, Mat.Glass, CLEAR)
+			ramp(sf, structure, "StairHandrail", Vector3.new(x, 1 + 3.85, stairZ0), Vector3.new(x, 24 + 3.85, stairZ0 + stairRun), 0.5, 0.35, C.metal, Mat.Metal)
+		end
+		railing(sf, structure, stairX0 - 0.2, stairZ0, stairX0 - 0.2, stairZ0 + stairRun, H)
+		railing(sf, structure, stairX1 + 0.2, stairZ0, stairX1 + 0.2, stairZ0 + stairRun, H)
+		railing(sf, structure, stairX0, stairZ0 - 0.2, stairX1, stairZ0 - 0.2, H)
+		local sg = box(sf, structure, "StairSign", stairX0, H - 4, stairZ0 - 0.7, stairX1, H - 2.4, stairZ0 - 0.4, C.dark, Mat.SmoothPlastic, DECOR)
+		sign(sg, Enum.NormalId.Front, "STAIRS  LEVEL 1", Color3.new(1, 1, 1), "GothamBold")
+
+		-- toilets at the end of each upper arm
+		local tz0, tz1 = D / 2 - T - 34, D / 2 - T
+		wall(sf, structure, "ToiletWall", -CW / 2, -4, H, 2 * H - ST, tz0, 0.6, { { -14, -9, H, H + 9 } }, C.ceiling, Mat.SmoothPlastic)
+		box(sf, structure, "ToiletWall", -4.6, H, tz0, -4, 2 * H - ST, tz1, C.ceiling, Mat.SmoothPlastic)
+		box(sf, structure, "ToiletFloor", -CW / 2, H, tz0, -4.6, H + 0.06, tz1, Color3.fromRGB(200, 215, 225), Mat.Slate)
+		local ts = box(sf, structure, "ToiletSign", -15, H + 9.4, tz0 - 0.4, -8, H + 11, tz0 - 0.3, C.dark, Mat.SmoothPlastic, DECOR)
+		sign(ts, Enum.NormalId.Front, "TOILETS", Color3.new(1, 1, 1), "GothamBold")
+		for i = 0, 3 do
+			local x = -CW / 2 + 1 + i * 4.6
+			box(sf, structure, "Cubicle", x, H, tz1 - 7, x + 0.2, H + 7, tz1, C.metal, Mat.SmoothPlastic)
+			box(sf, structure, "CubicleDoor", x + 0.2, H + 0.5, tz1 - 7, x + 4.6, H + 7, tz1 - 6.8, C.bronze, Mat.SmoothPlastic)
+			box(sf, structure, "Toilet", x + 1.6, H, tz1 - 2.6, x + 3.2, H + 1.6, tz1 - 0.2, Color3.new(1, 1, 1), Mat.SmoothPlastic)
+		end
+		box(sf, structure, "Basins", -9.6, H, tz0 + 4, -5, H + 3.4, tz0 + 20, Color3.fromRGB(240, 240, 240), Mat.Marble)
+		box(sf, structure, "Mirror", -5.2, H + 4, tz0 + 4, -4.9, H + 8, tz0 + 20, C.glass, Mat.Glass, { Reflectance = 0.6 })
+	end
+
+	-- ATMs in each arm (MallService turns parts named ATM_<n> into deposit / withdraw points)
+	for i, sf in stairFrames do
+		box(sf, structure, "ATM_" .. i, -23, 0, 28, -20, 7, 31, C.dark, Mat.Metal)
+		box(sf, structure, "ATMScreen", -20, 3.5, 28.4, -19.9, 6, 30.6, Color3.fromRGB(60, 160, 255), Mat.Neon, DECOR)
+		local as = box(sf, structure, "ATMSign", -23, 7, 28, -20, 8.2, 31, C.led, Mat.SmoothPlastic, DECOR)
+		sign(as, Enum.NormalId.Right, "CASH", Color3.new(1, 1, 1), "GothamBold")
 	end
 
 	-- lifts in the north and south arms
@@ -923,6 +1015,17 @@ local function buildMall(M, siteW, siteD, root)
 		wall(f, structure, "CurtainWall", -TW / 2, TW / 2, 0, TH, TD, 0.4, tops, C.glass, Mat.Glass, { Transparency = 0.25, Reflectance = 0.35 })
 		for _, s in { -1, 1 } do box(f, structure, "CurtainWall", s * TW / 2 - 0.2, 0, 0, s * TW / 2 + 0.2, TH, TD, C.glass, Mat.Glass, { Transparency = 0.25, Reflectance = 0.35 }) end
 		for u = -TW / 2, TW / 2 + 0.1, 8 do wall(f, structure, "Mullion", u - 0.3, u + 0.3, 0, TH, TD + 0.3, 0.4, tops, C.bronze, Mat.Metal) end
+		-- entrance: fixed side lights and transom with a pair of automatic doors behind them
+		for _, s in { -1, 1 } do
+			box(f, structure, "SideLight", s * 8, 0, TD - 0.2, s * doorW, 12, TD + 0.2, C.glass, Mat.Glass, GLASS)
+			box(f, structure, "Mullion", s * 8 - 0.3, 0, TD + 0.2, s * 8 + 0.3, doorH, TD + 0.6, C.bronze, Mat.Metal)
+		end
+		box(f, structure, "Transom", -doorW, 12.6, TD - 0.2, doorW, doorH, TD + 0.2, C.glass, Mat.Glass, GLASS)
+		autoDoor(f, structure, -8, 8, 0, 12, TD - 0.6, C.bronze)
+		if sd.name == "East" then -- footbridge doors on the upper level
+			box(f, structure, "Transom", -8, H + 10.6, TD - 0.2, 8, H + 12, TD + 0.2, C.glass, Mat.Glass, GLASS)
+			autoDoor(f, structure, -8, 8, H, H + 10, TD - 0.6, C.bronze)
+		end
 		for y = doorH, TH, 12 do wall(f, structure, "Transom", -TW / 2, TW / 2, y - 0.3, y + 0.3, TD + 0.3, 0.4, tops, C.bronze, Mat.Metal) end
 		box(f, structure, "TowerRoof", -TW / 2 - 1, TH, -T, TW / 2 + 1, TH + 1.5, TD + 1, C.bronze, Mat.Metal)
 		box(f, structure, "TowerFloor", -TW / 2, -1, 0, TW / 2, 0, TD, C.floor, Mat.Marble)
@@ -982,6 +1085,21 @@ local function buildMall(M, siteW, siteD, root)
 			end
 		end
 	end
+	local lines = { "GROUND FLOOR" }
+	for i, u in units do
+		if i == #units / 2 + 1 then table.insert(lines, ""); table.insert(lines, "LEVEL 1") end
+		local def = Def.stores[i]
+		if def and Shops[def.shop] then table.insert(lines, "  " .. Shops[def.shop].name) end
+	end
+	table.insert(lines, ""); table.insert(lines, "Lifts and stairs: north and south arms")
+	local listing = table.concat(lines, "\n")
+	for _, sd in sides do -- inside each entrance, beside the doors
+		board(sd.f, structure, "Directory", doorW - 4, 0, -T - 10.6, doorW + 2, 9, listing, Def.name)
+	end
+	for _, sf in stairFrames do -- upper level, at the top of the stairs
+		board(sf, structure, "Directory", 18, H, stairZ0 + stairRun + 6, 23, H + 8, listing, Def.name)
+	end
+
 	for _, s in Def.stores do
 		if not placed[s.shop] then warn("[MallBuilder] no room for " .. s.shop .. "; enlarge MallSite or lower unitWidth") end
 	end

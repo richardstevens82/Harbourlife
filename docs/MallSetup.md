@@ -29,7 +29,12 @@ The builder turns the mall so its car park entrance and footbridge face `CarPark
 | Building | Two levels (24 studs each). Stone cladding, blue LED band, bronze-framed glass entrance towers on all four sides with canopies, planters and lamp posts. Roller-door loading bays on the back walls |
 | Concourse | Cross-shaped. Cream marble floor with dark inlay bands. Benches, planters and lighting |
 | Atrium | Two open voids under a pitched glass skylight with a steel grid, with glass balustrades. A central bridge links the north and south galleries |
-| Escalators | 4 (an up and a down pair in each void), meeting at the central bridge. The steps are conveyors |
+| Escalators | 4 (an up and a down pair in each void), meeting at the central bridge. The steps are conveyors that carry players, with moving step edges drawn on each player's screen |
+| Automatic doors | Glass sliding doors on all 4 entrances, the footbridge entrance and every store. They open when a player comes within 11 studs and close behind them |
+| Stairs | A marble staircase in each of the north and south arms, with glass balustrades |
+| Directories | Store directory boards inside every entrance and at the top of each staircase, listing the stores by floor |
+| ATMs | One in each arm: deposit or withdraw $100 to and from the bank (E / F) |
+| Toilets | At the end of each upper arm, with cubicles, basins and mirrors |
 | Lifts | 2 glass lifts in the north and south arms. Click CALL outside, or a floor button inside. The doors only open when the car is at that floor |
 | Stores | 16 units (8 per level), each about 100 x 190 studs. Each has: its own colours, floor material, sign font, layout and feature pieces; a glass shopfront and LED fascia sign; a till counter (`Shop_<id>`, the Browse prompt); stocked fixtures; a STAFF ONLY door to a stockroom with pallet racking; a staff room (table, lockers, kitchenette); and a loading door (`LoadingDoor_<id>`, or `GoodsLift_<id>` upstairs) |
 | Car park | Ground plus 3 decks (12 studs each), painted bays, columns and a green pedestrian walkway. Stacked two-way ramps (7 degrees) with walls and barriers, and height bars at both entrances. A big P sign tower, lamp posts on the roof deck, and a lift to every deck |
