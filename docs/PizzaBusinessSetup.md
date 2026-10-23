@@ -28,3 +28,18 @@ Take it out at `VehicleGarage_excavator`, drive with WASD. Hold Q/E swing, R/F b
 
 TestWorld builds a row of purple pads along the south edge: `Shop_grocery`, `Shop_general_store`, `Shop_clothing`, `Shop_electronics`, `Shop_hardware`, `Shop_fishing_shop`, `Shop_furniture`, `Shop_pet_store`, `Shop_gun_shop`.
 Use Browse, click Buy. Stock goes down per server and restocks over time. Walking away closes the window. Any Part named `Shop_<id>` in your own map works the same way.
+
+## Food businesses (Phase 5)
+
+Same idea as the pizza shop, for four businesses. Part names:
+
+| Business | Counter | Stations |
+|---|---|---|
+| Café | `CafeCounter` | `CafeCoffeeMachine_<n>` (coffee, tea), `CafeToaster_<n>` (cheese toastie) |
+| Bakery | `BakeryCounter` | `BakeryOven_<n>` (bread, croissant, cupcake) |
+| Restaurant | `RestaurantCounter` | `RestaurantStove_<n>` (roast chicken, curry, soup) |
+| Fast food | `FastFoodCounter` | `FastFoodGrill_<n>` (burger), `FastFoodFryer_<n>` (fries, nuggets) |
+
+Ingredients come from `Shop_food_wholesale`. Jobs: `JobCentre_barista`, `_baker`, `_chef` (level 3), `_waiter`, `_fast_food_worker`.
+Test loop: take a job, buy ingredients, use a station (it picks the recipe for the oldest open order you can make), use it again to collect, then serve at the counter. The board above the counter lists open orders. Orders only appear while someone holds one of that business's jobs.
+TestWorld builds all of these in four rows east of the pizza shop.

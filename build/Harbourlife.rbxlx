@@ -10,6 +10,37 @@
 		reputationOnExpire = -2,
 		minCookSeconds = 4,
 	},
+	-- Phase 5 food businesses, all run by FoodService.
+	-- counter = Part name that serves orders; stations = Part name prefix -> appliance type
+	-- (e.g. a Part "CafeCoffeeMachine_1"); jobs = jobs that count as staff; menu = recipes customers order.
+	cafe = {
+		food = true, name = "Harbour Café", counter = "CafeCounter", jobs = { "barista" },
+		stations = { CafeCoffeeMachine = "coffee_machine", CafeToaster = "toaster" },
+		menu = { "coffee", "tea", "toastie" },
+		maxOpenOrders = 4, orderIntervalSeconds = 18, orderLifetimeSeconds = 120,
+		counterMultiplier = 1.5, reputationOnServe = 1, reputationOnExpire = -2, minCookSeconds = 2,
+	},
+	bakery = {
+		food = true, name = "Harbour Bakery", counter = "BakeryCounter", jobs = { "baker" },
+		stations = { BakeryOven = "bakery_oven" },
+		menu = { "bread", "croissant", "cupcake" },
+		maxOpenOrders = 4, orderIntervalSeconds = 22, orderLifetimeSeconds = 150,
+		counterMultiplier = 1.6, reputationOnServe = 1, reputationOnExpire = -2, minCookSeconds = 3,
+	},
+	restaurant = {
+		food = true, name = "Quayside Restaurant", counter = "RestaurantCounter", jobs = { "chef", "waiter" },
+		stations = { RestaurantStove = "stove" },
+		menu = { "roast_chicken", "chicken_curry", "vegetable_soup" },
+		maxOpenOrders = 5, orderIntervalSeconds = 25, orderLifetimeSeconds = 180,
+		counterMultiplier = 1.8, reputationOnServe = 2, reputationOnExpire = -3, minCookSeconds = 5,
+	},
+	fast_food = {
+		food = true, name = "Dockside Burgers", counter = "FastFoodCounter", jobs = { "fast_food_worker" },
+		stations = { FastFoodGrill = "grill", FastFoodFryer = "fryer" },
+		menu = { "burger", "fries", "nuggets" },
+		maxOpenOrders = 6, orderIntervalSeconds = 12, orderLifetimeSeconds = 90,
+		counterMultiplier = 1.4, reputationOnServe = 1, reputationOnExpire = -1, minCookSeconds = 2,
+	},
 }
 ]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX4"><Properties><string name="Name">Config</string><ProtectedString name="Source"><![CDATA[return {
 	DataStoreName = "HarbourlifePlayerData_v1",
@@ -52,6 +83,33 @@ return {
 	sandwich = item("Sandwich", 5, 10, "food"),
 	water_bottle = item("Water Bottle", 1, 20, "food"),
 	snack_bar = item("Snack Bar", 2, 20, "food"),
+	-- food business ingredients (Phase 5, sold by the Food Wholesaler)
+	coffee_beans = item("Coffee Beans", 2, 99, "ingredient"),
+	tea_leaves = item("Tea Leaves", 1, 99, "ingredient"),
+	flour = item("Flour", 1, 99, "ingredient"),
+	sugar = item("Sugar", 1, 99, "ingredient"),
+	butter = item("Butter", 2, 99, "ingredient"),
+	eggs = item("Eggs", 2, 99, "ingredient"),
+	beef_patty = item("Beef Patty", 3, 99, "ingredient"),
+	burger_bun = item("Burger Bun", 1, 99, "ingredient"),
+	lettuce = item("Lettuce", 1, 99, "ingredient"),
+	potatoes = item("Potatoes", 1, 99, "ingredient"),
+	cooking_oil = item("Cooking Oil", 2, 99, "ingredient"),
+	chicken = item("Chicken", 4, 99, "ingredient"),
+	vegetables = item("Vegetables", 2, 99, "ingredient"),
+	rice = item("Rice", 1, 99, "ingredient"),
+	-- food business products (Phase 5)
+	coffee = item("Coffee", 6, 10, "food"),
+	tea = item("Tea", 4, 10, "food"),
+	toastie = item("Cheese Toastie", 7, 10, "food"),
+	croissant = item("Croissant", 6, 10, "food"),
+	cupcake = item("Cupcake", 8, 10, "food"),
+	roast_chicken = item("Roast Chicken Dinner", 18, 5, "food"),
+	chicken_curry = item("Chicken Curry", 16, 5, "food"),
+	vegetable_soup = item("Vegetable Soup", 11, 5, "food"),
+	burger = item("Burger", 9, 10, "food"),
+	fries = item("Fries", 5, 10, "food"),
+	nuggets = item("Chicken Nuggets", 8, 10, "food"),
 	-- general
 	fuel_can = item("Fuel Can", 15, 5, "general"),
 	torch = item("Torch", 15, 3, "general"),
@@ -112,15 +170,38 @@ return {
 	unemployed = { name = "Unemployed", pay = 0, xp = 0, minLevel = 1 },
 	pizza_cook = { name = "Pizza Cook", pay = 8, xp = 10, skill = "cooking", minLevel = 1 },
 	delivery_driver = { name = "Delivery Driver", pay = 14, xp = 14, skill = "driving", minLevel = 1 },
+	barista = { name = "Barista", pay = 6, xp = 8, skill = "cooking", minLevel = 1 },
+	baker = { name = "Baker", pay = 8, xp = 10, skill = "cooking", minLevel = 1 },
+	fast_food_worker = { name = "Fast Food Worker", pay = 6, xp = 8, skill = "cooking", minLevel = 1 },
+	chef = { name = "Chef", pay = 12, xp = 14, skill = "cooking", minLevel = 3 },
+	waiter = { name = "Waiter", pay = 7, xp = 8, minLevel = 1 },
 	ferry_operator = { name = "Ferry Operator", pay = 40, xp = 30, skill = "seamanship", minLevel = 5 },
 	mechanic = { name = "Mechanic", pay = 18, xp = 16, skill = "repair", minLevel = 3 },
 }
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX7"><Properties><string name="Name">RecipeDefinitions</string><ProtectedString name="Source"><![CDATA[return {
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX7"><Properties><string name="Name">RecipeDefinitions</string><ProtectedString name="Source"><![CDATA[-- station = the appliance type that cooks it (see BusinessDefinitions food businesses).
+-- cookSeconds is reduced by cooking skill down to the business's minCookSeconds.
+return {
 	pizza = {
 		output = "pizza",
 		inputs = { pizza_dough = 1, tomato_sauce = 1, cheese = 1 },
 		cookSeconds = 10, -- reduced by cooking skill, see PizzaService
 	},
+	-- café
+	coffee = { output = "coffee", inputs = { coffee_beans = 1, milk = 1 }, cookSeconds = 5, station = "coffee_machine" },
+	tea = { output = "tea", inputs = { tea_leaves = 1, milk = 1 }, cookSeconds = 4, station = "coffee_machine" },
+	toastie = { output = "toastie", inputs = { bread = 1, cheese = 1, butter = 1 }, cookSeconds = 6, station = "toaster" },
+	-- bakery
+	bread = { output = "bread", inputs = { flour = 2 }, cookSeconds = 8, station = "bakery_oven" },
+	croissant = { output = "croissant", inputs = { flour = 1, butter = 1 }, cookSeconds = 7, station = "bakery_oven" },
+	cupcake = { output = "cupcake", inputs = { flour = 1, sugar = 1, eggs = 1 }, cookSeconds = 7, station = "bakery_oven" },
+	-- restaurant
+	roast_chicken = { output = "roast_chicken", inputs = { chicken = 1, vegetables = 1, potatoes = 1 }, cookSeconds = 14, station = "stove" },
+	chicken_curry = { output = "chicken_curry", inputs = { chicken = 1, rice = 1 }, cookSeconds = 12, station = "stove" },
+	vegetable_soup = { output = "vegetable_soup", inputs = { vegetables = 2 }, cookSeconds = 9, station = "stove" },
+	-- fast food
+	burger = { output = "burger", inputs = { beef_patty = 1, burger_bun = 1, lettuce = 1 }, cookSeconds = 6, station = "grill" },
+	fries = { output = "fries", inputs = { potatoes = 1, cooking_oil = 1 }, cookSeconds = 5, station = "fryer" },
+	nuggets = { output = "nuggets", inputs = { chicken = 1, cooking_oil = 1 }, cookSeconds = 6, station = "fryer" },
 }
 ]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX8"><Properties><string name="Name">Remotes</string><ProtectedString name="Source"><![CDATA[-- Creates (server) or waits for (client) the shared RemoteEvents.
 local RunService = game:GetService("RunService")
@@ -167,6 +248,10 @@ return {
 		items = { "pet_food", "pet_bed", "pet_collar", "pet_jumper", "pet_hat", "pet_toy" } },
 	gun_shop = { name = "Gun Shop (Clothing & Display)", markup = 1.0, stock = 5, restockSeconds = 60,
 		items = { "camo_jacket", "cargo_trousers", "tactical_boots", "range_cap", "ear_defenders", "display_case" } },
+	-- trade supplier for the Phase 5 food businesses (no markup)
+	food_wholesale = { name = "Food Wholesaler", markup = 1.0, stock = 40, restockSeconds = 15,
+		items = { "coffee_beans", "tea_leaves", "milk", "bread", "cheese", "butter", "flour", "sugar", "eggs",
+			"chicken", "vegetables", "rice", "potatoes", "beef_patty", "burger_bun", "lettuce", "cooking_oil" } },
 }
 ]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX10"><Properties><string name="Name">SkillDefinitions</string><ProtectedString name="Source"><![CDATA[return {
 	cooking = { name = "Cooking" },
@@ -187,7 +272,7 @@ return {
 	excavator = { name = "Excavator", price = 8000, size = Vector3.new(10, 3, 12), color = Color3.fromRGB(240, 190, 30),
 		fuelCapacity = 120, fuelPerSecond = 0.3, wearPerSecond = 0.02, maxSpeed = 18, turnRate = 1.0, construction = true },
 }
-]]></ProtectedString></Properties></Item></Item></Item><Item class="ServerScriptService" referent="RBX29"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Folder" referent="RBX27"><Properties><string name="Name">Systems</string></Properties><Item class="ModuleScript" referent="RBX14"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[local DataStoreService = game:GetService("DataStoreService")
+]]></ProtectedString></Properties></Item></Item></Item><Item class="ServerScriptService" referent="RBX30"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Folder" referent="RBX28"><Properties><string name="Name">Systems</string></Properties><Item class="ModuleScript" referent="RBX14"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
@@ -406,7 +491,240 @@ function E.Start()
 end
 
 return E
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX17"><Properties><string name="Name">InteractionService</string><ProtectedString name="Source"><![CDATA[-- Single place that turns world objects into interactable prompts.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX17"><Properties><string name="Name">FoodService</string><ProtectedString name="Source"><![CDATA[-- Food businesses (Phase 5): café, bakery, restaurant, fast food. One data-driven loop for all of them:
+-- Food Wholesaler (a shop) -> ingredients -> station cooks a menu recipe -> counter serves a customer order
+-- -> payment, job pay, XP, reputation. Definitions live in BusinessDefinitions (entries with food = true).
+-- Workspace markers per business, e.g. the café:
+--   CafeCounter              serves orders (shows open orders above it)
+--   CafeCoffeeMachine_<n>    a station; prefix -> appliance type in the definition
+local Players = game:GetService("Players")
+local Items = require(game.ReplicatedStorage.Shared.ItemDefinitions)
+local Recipes = require(game.ReplicatedStorage.Shared.RecipeDefinitions)
+local Businesses = require(game.ReplicatedStorage.Shared.BusinessDefinitions)
+local DataService = require(script.Parent.DataService)
+local Economy = require(script.Parent.EconomyService)
+local Inventory = require(script.Parent.InventoryService)
+local Progression = require(script.Parent.ProgressionService)
+local JobService = require(script.Parent.JobService)
+local Interaction = require(script.Parent.InteractionService)
+local Notify = require(script.Parent.NotificationService)
+
+type Order = { id: number, item: string, expires: number }
+type Station = { biz: string, kind: string, owner: Player?, recipe: string?, doneAt: number?, ready: boolean }
+
+local F = {}
+local foodBiz: { [string]: any } = {}
+local orders: { [string]: { Order } } = {}
+local stations: { [Instance]: Station } = {}
+local boards: { [string]: { TextLabel } } = {}
+local nextId = 1
+
+local function isStaff(player: Player, bizId: string): boolean
+	local d = DataService.Get(player)
+	return d ~= nil and table.find(foodBiz[bizId].jobs, d.job) ~= nil
+end
+
+local function staffOf(bizId: string): { Player }
+	local list = {}
+	for _, p in Players:GetPlayers() do if isStaff(p, bizId) then table.insert(list, p) end end
+	return list
+end
+
+local function reputationChange(player: Player, delta: number)
+	local d = DataService.Get(player)
+	if d then d.reputation += delta; DataService.Push(player) end
+end
+
+local function refreshBoard(bizId: string)
+	local names = {}
+	for _, o in orders[bizId] do table.insert(names, Items[o.item].name) end
+	local text = #names > 0 and ("Orders: " .. table.concat(names, ", ")) or "No orders"
+	for _, label in boards[bizId] or {} do label.Text = text end
+end
+
+local function spawnOrder(bizId: string)
+	local def = foodBiz[bizId]
+	if #orders[bizId] >= def.maxOpenOrders then return end
+	local o = { id = nextId, item = def.menu[math.random(#def.menu)], expires = os.clock() + def.orderLifetimeSeconds }
+	nextId += 1
+	table.insert(orders[bizId], o)
+	refreshBoard(bizId)
+	for _, p in staffOf(bizId) do Notify.Send(p, def.name .. ": new order, " .. Items[o.item].name, "info") end
+end
+
+local function expireOrders(bizId: string)
+	local list, changed = orders[bizId], false
+	for i = #list, 1, -1 do
+		if os.clock() >= list[i].expires then
+			local o = table.remove(list, i)
+			changed = true
+			for _, p in staffOf(bizId) do
+				reputationChange(p, foodBiz[bizId].reputationOnExpire)
+				Notify.Send(p, Items[o.item].name .. " order expired", "error")
+			end
+		end
+	end
+	if changed then refreshBoard(bizId) end
+end
+
+local function hasInputs(player: Player, recipeId: string): boolean
+	for id, n in Recipes[recipeId].inputs do
+		if Inventory.Count(player, id) < n then return false end
+	end
+	return true
+end
+
+-- Recipes this station can make, oldest open order first, then the rest of the menu.
+local function candidates(st: Station): { string }
+	local list = {}
+	local function add(r)
+		if Recipes[r].station == st.kind and not table.find(list, r) then table.insert(list, r) end
+	end
+	for _, o in orders[st.biz] do add(o.item) end
+	for _, r in foodBiz[st.biz].menu do add(r) end
+	return list
+end
+
+local function describeInputs(recipeId: string): string
+	local parts = {}
+	for id, n in Recipes[recipeId].inputs do table.insert(parts, n .. "x " .. Items[id].name) end
+	table.sort(parts)
+	return table.concat(parts, " + ")
+end
+
+local function resetStation(st: Station)
+	st.owner, st.recipe, st.doneAt, st.ready = nil, nil, nil, false
+end
+
+local function stationInteract(player: Player, part: Instance)
+	local st = stations[part]
+	if not DataService.Get(player) then return end
+	if st.owner and not st.owner.Parent then resetStation(st) end -- owner left the game
+	if st.ready and st.owner == player then
+		local out = Recipes[st.recipe].output
+		if not Inventory.Add(player, out, 1) then Notify.Send(player, "Inventory full", "error"); return end
+		resetStation(st)
+		local d = DataService.Get(player)
+		if d and table.find(foodBiz[st.biz].jobs, d.job) then JobService.CompleteTask(player, d.job) end
+		Notify.Send(player, Items[out].name .. " ready", "success")
+	elseif st.owner then
+		if st.owner == player then Notify.Send(player, "Still cooking...", "info")
+		else Notify.Send(player, "In use by " .. st.owner.Name, "error") end
+	else
+		local list = candidates(st)
+		local pick
+		for _, r in list do
+			if hasInputs(player, r) then pick = r; break end
+		end
+		if not pick then
+			Notify.Send(player, "Need " .. describeInputs(list[1]) .. " for " .. Items[Recipes[list[1]].output].name .. " (Food Wholesaler)", "error")
+			return
+		end
+		for id, n in Recipes[pick].inputs do Inventory.Remove(player, id, n) end
+		local secs = math.max(foodBiz[st.biz].minCookSeconds, Recipes[pick].cookSeconds - Progression.SkillLevel(player, "cooking"))
+		st.owner, st.recipe, st.doneAt, st.ready = player, pick, os.clock() + secs, false
+		local token = st.doneAt
+		task.delay(secs, function()
+			if st.owner == player and st.doneAt == token then
+				st.ready, st.doneAt = true, nil
+				Notify.Send(player, Items[Recipes[pick].output].name .. " is ready to collect", "success")
+			end
+		end)
+		Notify.Send(player, "Making " .. Items[Recipes[pick].output].name .. " (" .. secs .. "s)", "info")
+	end
+end
+
+-- Serves the oldest order whose item the player is carrying.
+local function serve(player: Player, bizId: string)
+	if not DataService.Get(player) then return end
+	local def = foodBiz[bizId]
+	for i, o in orders[bizId] do
+		if Inventory.Count(player, o.item) > 0 then
+			if not Inventory.Remove(player, o.item, 1) then return end
+			table.remove(orders[bizId], i)
+			refreshBoard(bizId)
+			local price = math.floor(Items[o.item].price * def.counterMultiplier)
+			Economy.AddCash(player, price)
+			local d = DataService.Get(player)
+			if d and table.find(def.jobs, d.job) then JobService.CompleteTask(player, d.job) end
+			Progression.AddXp(player, 5)
+			reputationChange(player, def.reputationOnServe)
+			Notify.Send(player, "Served " .. Items[o.item].name .. ": +$" .. price, "success")
+			return
+		end
+	end
+	Notify.Send(player, #orders[bizId] > 0 and "You don't have anything that was ordered" or "No orders right now", "error")
+end
+
+local function addBoard(part: BasePart, bizId: string)
+	local gui = Instance.new("BillboardGui")
+	gui.Name = "OrderBoard"
+	gui.Size = UDim2.fromOffset(260, 40)
+	gui.StudsOffset = Vector3.new(0, 7, 0)
+	gui.MaxDistance = 80
+	gui.Parent = part
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 0.3
+	label.BackgroundColor3 = Color3.new(0, 0, 0)
+	label.TextColor3 = Color3.new(1, 1, 1)
+	label.TextScaled = true
+	label.Parent = gui
+	boards[bizId] = boards[bizId] or {}
+	table.insert(boards[bizId], label)
+	refreshBoard(bizId)
+end
+
+local function hook(inst: Instance)
+	if not inst:IsA("BasePart") then return end
+	for bizId, def in foodBiz do
+		if inst.Name == def.counter then
+			addBoard(inst, bizId)
+			Interaction.Register(inst, { action = "Serve order", object = def.name, onTriggered = function(p) serve(p, bizId) end })
+			return
+		end
+		for prefix, kind in def.stations do
+			if inst.Name:match("^" .. prefix .. "_%d+$") then
+				stations[inst] = { biz = bizId, kind = kind, ready = false }
+				Interaction.Register(inst, { action = "Use", object = inst.Name, onTriggered = function(p) stationInteract(p, inst) end })
+				return
+			end
+		end
+	end
+end
+
+function F.Start()
+	for id, def in Businesses do
+		if def.food then
+			for _, r in def.menu do
+				assert(Recipes[r] and Items[Recipes[r].output], "FoodService: bad menu recipe " .. r .. " in " .. id)
+				for ing in Recipes[r].inputs do assert(Items[ing], "FoodService: unknown ingredient " .. ing) end
+			end
+			foodBiz[id] = def
+			orders[id] = {}
+		end
+	end
+	for _, d in workspace:GetDescendants() do hook(d) end
+	workspace.DescendantAdded:Connect(hook)
+	Players.PlayerRemoving:Connect(function(p)
+		for _, st in stations do if st.owner == p then resetStation(st) end end
+	end)
+	for id, def in foodBiz do
+		task.spawn(function()
+			while true do
+				task.wait(def.orderIntervalSeconds)
+				expireOrders(id)
+				if #staffOf(id) > 0 then spawnOrder(id) end
+			end
+		end)
+	end
+end
+
+-- test hooks
+function F._orders(bizId: string) return orders[bizId] end
+
+return F
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX18"><Properties><string name="Name">InteractionService</string><ProtectedString name="Source"><![CDATA[-- Single place that turns world objects into interactable prompts.
 -- The server owns the ProximityPrompt, so distance is enforced by Roblox and the
 -- callback only ever runs on the server, with a per-player cooldown.
 local Config = require(game.ReplicatedStorage.Shared.Config)
@@ -434,7 +752,7 @@ end
 game.Players.PlayerRemoving:Connect(function(p) last[p] = nil end)
 
 return I
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX18"><Properties><string name="Name">InventoryService</string><ProtectedString name="Source"><![CDATA[local Config = require(game.ReplicatedStorage.Shared.Config)
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX19"><Properties><string name="Name">InventoryService</string><ProtectedString name="Source"><![CDATA[local Config = require(game.ReplicatedStorage.Shared.Config)
 local Items = require(game.ReplicatedStorage.Shared.ItemDefinitions)
 local DataService = require(script.Parent.DataService)
 local Economy = require(script.Parent.EconomyService)
@@ -483,7 +801,7 @@ function Inventory.Buy(player, itemId: string, qty: number): boolean
 end
 
 return Inventory
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX19"><Properties><string name="Name">JobCentre</string><ProtectedString name="Source"><![CDATA[-- Placeholder Job Centre: a pad in Workspace named "JobCentre_<jobId>" becomes a sign-up point.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX20"><Properties><string name="Name">JobCentre</string><ProtectedString name="Source"><![CDATA[-- Placeholder Job Centre: a pad in Workspace named "JobCentre_<jobId>" becomes a sign-up point.
 -- Example: name a Part "JobCentre_pizza_cook". Replace with the real building later.
 local Jobs = require(game.ReplicatedStorage.Shared.JobDefinitions)
 local Interaction = require(script.Parent.InteractionService)
@@ -508,7 +826,7 @@ function C.Start()
 end
 
 return C
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX20"><Properties><string name="Name">JobService</string><ProtectedString name="Source"><![CDATA[local Jobs = require(game.ReplicatedStorage.Shared.JobDefinitions)
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX21"><Properties><string name="Name">JobService</string><ProtectedString name="Source"><![CDATA[local Jobs = require(game.ReplicatedStorage.Shared.JobDefinitions)
 local DataService = require(script.Parent.DataService)
 local Economy = require(script.Parent.EconomyService)
 local Progression = require(script.Parent.ProgressionService)
@@ -541,13 +859,13 @@ function J.CompleteTask(player: Player, jobId: string): boolean
 end
 
 return J
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX21"><Properties><string name="Name">NotificationService</string><ProtectedString name="Source"><![CDATA[local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX22"><Properties><string name="Name">NotificationService</string><ProtectedString name="Source"><![CDATA[local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
 local N = {}
 function N.Send(player: Player, text: string, kind: string?)
 	Remotes.Notify:FireClient(player, tostring(text):sub(1, 120), kind or "info")
 end
 return N
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX22"><Properties><string name="Name">PizzaService</string><ProtectedString name="Source"><![CDATA[-- Pizza Business: supplier -> oven -> orders (counter / delivery) -> payment, XP, reputation.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX23"><Properties><string name="Name">PizzaService</string><ProtectedString name="Source"><![CDATA[-- Pizza Business: supplier -> oven -> orders (counter / delivery) -> payment, XP, reputation.
 -- Workspace markers (rename Parts, no scripts needed):
 --   PizzaSupplier        buys ingredients
 --   PizzaOven_<n>        cooks pizza
@@ -716,7 +1034,7 @@ end
 function P._orders() return orders end
 
 return P
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX23"><Properties><string name="Name">ProgressionService</string><ProtectedString name="Source"><![CDATA[local Config = require(game.ReplicatedStorage.Shared.Config)
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">ProgressionService</string><ProtectedString name="Source"><![CDATA[local Config = require(game.ReplicatedStorage.Shared.Config)
 local Skills = require(game.ReplicatedStorage.Shared.SkillDefinitions)
 local DataService = require(script.Parent.DataService)
 local Notify = require(script.Parent.NotificationService)
@@ -764,7 +1082,7 @@ function P.SkillLevel(player: Player, skillId: string): number
 end
 
 return P
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">ShopService</string><ProtectedString name="Source"><![CDATA[-- Retail: browse a shop at its counter, buy with server-validated price, range and stock.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX25"><Properties><string name="Name">ShopService</string><ProtectedString name="Source"><![CDATA[-- Retail: browse a shop at its counter, buy with server-validated price, range and stock.
 local Players = game:GetService("Players")
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Items = require(game.ReplicatedStorage.Shared.ItemDefinitions)
@@ -869,7 +1187,7 @@ function ShopService.Start()
 end
 
 return ShopService
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX25"><Properties><string name="Name">TestWorld</string><ProtectedString name="Source"><![CDATA[-- Dev-only placeholder test area. Builds labelled, correctly named Parts near the origin
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX26"><Properties><string name="Name">TestWorld</string><ProtectedString name="Source"><![CDATA[-- Dev-only placeholder test area. Builds labelled, correctly named Parts near the origin
 -- so every Phase 1/2 system can be exercised. Delete or set Enabled=false once the real map exists.
 local TestWorld = { Enabled = true }
 
@@ -930,6 +1248,23 @@ function TestWorld.Start()
 	for i, id in { "grocery", "general_store", "clothing", "electronics", "hardware", "fishing_shop", "furniture", "pet_store", "gun_shop" } do
 		pad("Shop_" .. id, Vector3.new(-52 + i * 11, 2, 52), Color3.fromRGB(150, 90, 200), Vector3.new(6, 4, 4))
 	end
+	-- food businesses (Phase 5): one row per business, counter then stations
+	for i, job in { "barista", "baker", "chef", "waiter", "fast_food_worker" } do
+		pad("JobCentre_" .. job, Vector3.new(-42, 2, -12 + i * 8), Color3.fromRGB(60, 120, 220))
+	end
+	pad("Shop_food_wholesale", Vector3.new(18, 2, -36), Color3.fromRGB(150, 90, 200))
+	local food = {
+		{ "CafeCounter", "CafeCoffeeMachine_1", "CafeToaster_1" },
+		{ "BakeryCounter", "BakeryOven_1", "BakeryOven_2" },
+		{ "RestaurantCounter", "RestaurantStove_1", "RestaurantStove_2" },
+		{ "FastFoodCounter", "FastFoodGrill_1", "FastFoodFryer_1" },
+	}
+	for row, names in food do
+		for col, name in names do
+			local color = col == 1 and Color3.fromRGB(230, 200, 60) or Color3.fromRGB(200, 60, 40)
+			pad(name, Vector3.new(20 + col * 8, 2, -8 - row * 12), color)
+		end
+	end
 	pad("FuelStation", Vector3.new(-20, 2, -40), Color3.fromRGB(230, 90, 60), Vector3.new(4, 4, 4))
 	pad("Garage_Repair", Vector3.new(-20, 2, -50), Color3.fromRGB(60, 180, 180), Vector3.new(6, 4, 6))
 end
@@ -949,7 +1284,7 @@ function TestWorld.GrantExcavator(player: Player)
 end
 
 return TestWorld
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX26"><Properties><string name="Name">VehicleService</string><ProtectedString name="Source"><![CDATA[-- Vehicle ownership, spawning, fuel, wear and repair. Server-authoritative.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX27"><Properties><string name="Name">VehicleService</string><ProtectedString name="Source"><![CDATA[-- Vehicle ownership, spawning, fuel, wear and repair. Server-authoritative.
 -- Driving physics run on the driver's client (VehicleDriver.client.luau) via constraints built here.
 -- Workspace markers:
 --   VehicleGarage_<id>   toggle: store current vehicle / take out <id>
@@ -1279,17 +1614,17 @@ function V.Start()
 end
 
 return V
-]]></ProtectedString></Properties></Item></Item><Item class="Script" referent="RBX28"><Properties><string name="Name">Main</string><ProtectedString name="Source"><![CDATA[local Systems = script.Parent:WaitForChild("Systems")
+]]></ProtectedString></Properties></Item></Item><Item class="Script" referent="RBX29"><Properties><string name="Name">Main</string><ProtectedString name="Source"><![CDATA[local Systems = script.Parent:WaitForChild("Systems")
 require(game.ReplicatedStorage.Shared.Remotes) -- create remotes first
 
 -- Start each system on its own so one failure can't stop the rest; failures are named in Output.
-local ORDER = { "DataService", "TestWorld", "JobCentre", "PizzaService", "VehicleService", "ExcavatorService", "ShopService" }
+local ORDER = { "DataService", "TestWorld", "JobCentre", "PizzaService", "VehicleService", "ExcavatorService", "ShopService", "FoodService" }
 for _, name in ORDER do
 	local ok, err = pcall(function() require(Systems[name]).Start() end)
 	if not ok then warn("[Harbourlife] " .. name .. " failed to start: " .. tostring(err)) end
 end
 print("[Harbourlife] server started")
-]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX34"><Properties><string name="Name">StarterPlayer</string></Properties><Item class="StarterPlayerScripts" referent="RBX33"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX30"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[local Players = game:GetService("Players")
+]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX35"><Properties><string name="Name">StarterPlayer</string></Properties><Item class="StarterPlayerScripts" referent="RBX34"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX31"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[local Players = game:GetService("Players")
 local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
 
 local gui = Instance.new("ScreenGui")
@@ -1367,7 +1702,7 @@ game:GetService("RunService").Heartbeat:Connect(function()
 		gauge.Visible = false
 	end
 end)
-]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX31"><Properties><string name="Name">ShopUI</string><ProtectedString name="Source"><![CDATA[-- Shop window. The server sends the item list; buying only sends a request, the server decides.
+]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX32"><Properties><string name="Name">ShopUI</string><ProtectedString name="Source"><![CDATA[-- Shop window. The server sends the item list; buying only sends a request, the server decides.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
@@ -1442,7 +1777,7 @@ RunService.Heartbeat:Connect(function()
 	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 	if not hrp or (hrp.Position - openedAt).Magnitude > 18 then gui.Enabled = false; current = nil end
 end)
-]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX32"><Properties><string name="Name">VehicleDriver</string><ProtectedString name="Source"><![CDATA[-- Drives the vehicle the local player is seated in. The server built the constraints
+]]></ProtectedString></Properties></Item><Item class="LocalScript" referent="RBX33"><Properties><string name="Name">VehicleDriver</string><ProtectedString name="Source"><![CDATA[-- Drives the vehicle the local player is seated in. The server built the constraints
 -- (Drive / Turn); the driver's client owns the physics so steering feels instant.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")

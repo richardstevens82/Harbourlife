@@ -19,4 +19,8 @@ return {
 		items = { "pet_food", "pet_bed", "pet_collar", "pet_jumper", "pet_hat", "pet_toy" } },
 	gun_shop = { name = "Gun Shop (Clothing & Display)", markup = 1.0, stock = 5, restockSeconds = 60,
 		items = { "camo_jacket", "cargo_trousers", "tactical_boots", "range_cap", "ear_defenders", "display_case" } },
+	-- trade supplier for the Phase 5 food businesses (no markup)
+	food_wholesale = { name = "Food Wholesaler", markup = 1.0, stock = 40, restockSeconds = 15,
+		items = { "coffee_beans", "tea_leaves", "milk", "bread", "cheese", "butter", "flour", "sugar", "eggs",
+			"chicken", "vegetables", "rice", "potatoes", "beef_patty", "burger_bun", "lettuce", "cooking_oil" } },
 }
