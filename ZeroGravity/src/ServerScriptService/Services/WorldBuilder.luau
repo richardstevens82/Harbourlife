@@ -39,8 +39,9 @@ function WorldBuilder.Start()
 	step("Ship", function() require(Builders.Ship).Build(arena, markers, WorldBuilder.ShipCFrame) end)
 
 	local Debris = require(Builders.Debris)
+	local stationScale = require(Builders.Station).Scale
 	local exclusion = {
-		{ center = Vector3.new(110, 0, 0), radius = 420 }, -- station
+		{ center = Vector3.new(110, 0, 0) * stationScale, radius = 420 * stationScale }, -- station
 		{ center = WorldBuilder.ShipCFrame.Position, radius = 340 }, -- ship
 	}
 	for _, e in Debris.Exclusions() do table.insert(exclusion, e) end

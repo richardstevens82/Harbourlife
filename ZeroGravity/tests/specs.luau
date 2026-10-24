@@ -162,18 +162,36 @@ local corridors, tubes, airlocks = {}, {}, {}
 do
 	local oc, ot, oa = Kit.corridor, Kit.octTube, Kit.airlock
 	Kit.corridor = function(parent, a, b, opts)
-		table.insert(corridors, { a = a, b = b, name = opts and opts.name or "Corridor" })
-		return oc(parent, a, b, opts)
+		local m, cf = oc(parent, a, b, opts)
+		table.insert(corridors, { a = a, b = b, name = opts and opts.name or "Corridor", model = m })
+		return m, cf
 	end
 	Kit.octTube = function(parent, cf, radius, length, opts)
+		local m = ot(parent, cf, radius, length, opts)
 		if opts and opts.caps and opts.caps.front == true then
-			table.insert(tubes, { cf = cf, r = radius, len = length, name = opts.name })
+			table.insert(tubes, { cf = cf, r = radius, len = length, name = opts.name, model = m })
 		end
-		return ot(parent, cf, radius, length, opts)
+		return m
 	end
 	Kit.airlock = function(parent, cf, opts)
-		table.insert(airlocks, cf)
-		return oa(parent, cf, opts)
+		local m = oa(parent, cf, opts)
+		table.insert(airlocks, { cf = cf, model = m })
+		return m
+	end
+end
+-- The station is laid out at base scale and then enlarged; bring recorded geometry along.
+local function rescaleRecorded()
+	local station = Mock.workspace.Arena:FindFirstChild("SpaceStation")
+	local S = builder("Station").Scale
+	local function sc(cf) return CF.new(cf.p * S) * cf.Rotation end
+	for _, c in corridors do
+		if c.model:IsDescendantOf(station) then c.a, c.b = c.a * S, c.b * S end
+	end
+	for _, t in tubes do
+		if t.model:IsDescendantOf(station) then t.cf, t.len = sc(t.cf), t.len * S end
+	end
+	for _, a in airlocks do
+		if a.model:IsDescendantOf(station) then a.cf, a.scale = sc(a.cf), S end
 	end
 end
 local WorldBuilder = svc("WorldBuilder")
@@ -185,6 +203,7 @@ test("world builds without runtime errors", function()
 	WorldBuilder.Start()
 	arena = Mock.workspace:FindFirstChild("Arena")
 	check(arena ~= nil, "Arena missing")
+	rescaleRecorded()
 	check(#Mock.errors == 0, "errors: %s", table.concat(Mock.errors, "; "))
 end)
 
@@ -287,10 +306,11 @@ end)
 test("airlock chambers are clear and open to the outside", function()
 	collectSolids()
 	local bad = {}
-	for _, cf in airlocks do
+	for _, al in airlocks do
 		-- from the inner door plane, through the chamber, 10 studs out into space
-		local a = cf * V3.new(0, 0, 6)
-		local b = cf * V3.new(0, 0, -17)
+		local cf, k = al.cf, al.scale or 1
+		local a = cf * V3.new(0, 0, 6 * k)
+		local b = cf * V3.new(0, 0, -17 * k)
 		local hit, at = passageBlocked(a, b, 0)
 		if hit then table.insert(bad, string.format("airlock at %s blocked by %s at %s", tostring(cf.Position), describe(hit), tostring(at))) end
 	end
@@ -352,9 +372,12 @@ end)
 
 test("pressurised volumes cover interiors but not hangars/airlocks", function()
 	local Oxygen = svc("OxygenService")
+	local S = builder("Station").Scale
 	check(Oxygen.IsPressurized(V3.new(0, 0, 0)), "hub should be pressurised")
-	check(Oxygen.IsPressurized(V3.new(0, 85, 0)), "command module should be pressurised")
-	check(not Oxygen.IsPressurized(V3.new(0, -96, 0)), "docking bay is open to space")
+	check(Oxygen.IsPressurized(V3.new(0, 85, 0) * S), "command module should be pressurised")
+	check(not Oxygen.IsPressurized(V3.new(0, -96, 0) * S), "docking bay is open to space")
+	check(Oxygen.IsPressurized(V3.new(0, 0, -140) * S), "hydroponics pressurised (holo doors keep the air in)")
+	check(#CS:GetTagged("HoloDoor") >= 15, "expected many holo doors, got %d", #CS:GetTagged("HoloDoor"))
 	check(not Oxygen.IsPressurized(V3.new(0, 300, 900)), "open space must not be pressurised")
 	check(Oxygen.IsPressurized(WorldBuilder.ShipCFrame * V3.new(18, 0, 0)), "ship cargo hold pressurised")
 end)

@@ -345,6 +345,34 @@ local function crackleLoop()
 	end
 end
 
+-- Station lighting animation: blinking beacons, a pulse sweeping around the habitat ring, and the
+-- shimmer of holo-door containment fields. Cheap: a few property writes per frame.
+local function lightingLoop()
+	local t0 = os.clock()
+	while true do
+		local t = os.clock() - t0
+		local blinkOn = (t % 1.2) < 0.25
+		for _, b in CollectionService:GetTagged("Blink") do
+			if b:IsA("BasePart") then
+				b.Transparency = blinkOn and 0 or 0.85
+				local l = b:FindFirstChildOfClass("PointLight")
+				if l then l.Enabled = blinkOn end
+			end
+		end
+		local head = (t * 14) % 48
+		for _, c in CollectionService:GetTagged("Chaser") do
+			if c:IsA("BasePart") then
+				local d = (head - (c:GetAttribute("Seq") or 0)) % 48
+				c.Transparency = d < 4 and d * 0.15 or 0.75
+			end
+		end
+		for _, f in CollectionService:GetTagged("HoloDoor") do
+			if f:IsA("BasePart") then f.Transparency = 0.15 + 0.12 * math.sin(t * 3 + f.Position.X * 0.05) end
+		end
+		task.wait(0.05)
+	end
+end
+
 -- Low-oxygen breathing / beeps
 local function oxygenLoop()
 	while true do
@@ -378,6 +406,7 @@ function Effects.Start()
 		updateZone()
 	end)
 	task.spawn(flickerLoop)
+	task.spawn(lightingLoop)
 	task.spawn(crackleLoop)
 	task.spawn(oxygenLoop)
 end

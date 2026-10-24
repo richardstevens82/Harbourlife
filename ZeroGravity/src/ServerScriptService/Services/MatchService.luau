@@ -225,7 +225,11 @@ local function awardAndReport(winner: Player?)
 	for _, p in participants do
 		if p.Parent and not Roster.IsBot(p) then
 			local r = Roster.Get(p)
-			if p == winner then r.placement = 1 end
+			if p == winner then
+				r.placement = 1
+			elseif r.placement == 1 then
+				r.placement = 2 -- simultaneous final eliminations: only the declared winner places first
+			end
 			local survived = (r.eliminatedAt > 0 and r.eliminatedAt or os.clock()) - r.deployedAt
 			-- still alive at a time-limit finish without winning = runner-up
 			local placement = r.placement > 0 and r.placement or (p == winner and 1 or 2)
@@ -347,7 +351,17 @@ local function runMatch()
 	-- ENDING ----------------------------------------------------------------------------------------
 	local winner = nil
 	local aliveNow = Roster.Alive()
-	if #aliveNow == 1 then
+	if #aliveNow == 0 and not solo then
+		-- everyone left died on the same tick (storm, explosion): the last one eliminated wins
+		local best = nil
+		for _, p in participants do
+			local r = p.Parent and Roster.Get(p)
+			if r and (not best or r.eliminatedAt > best.r.eliminatedAt or (r.eliminatedAt == best.r.eliminatedAt and r.kills > best.r.kills)) then
+				best = { p = p, r = r }
+			end
+		end
+		winner = best and best.p
+	elseif #aliveNow == 1 then
 		winner = aliveNow[1]
 	elseif #aliveNow > 1 then
 		-- time limit: highest health wins

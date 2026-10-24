@@ -38,12 +38,25 @@ Every claim below falls into one of three levels, and they are kept separate:
 
 ## What is implemented
 
-**Environment (procedural, `Builders/`).** About 2,800 parts plus terrain asteroids.
+**Environment (procedural, `Builders/`).** About 3,200 parts plus terrain asteroids.
 - *Meridian Station:* central hub. +Y Command Module with observation windows. -Y Docking Bay, an open
   hangar with a parked shuttle. -X Science Labs: a junction plus three labs, one damaged with sparks,
   smoke and a breachable hull. +Z Armoury → Observation Deck. -Z Hydroponics. +X spine → ring junction
   → Engineering with the reactor. An 8-segment Habitat Ring connects through two spokes. Also: 4 solar
   arrays, 5 exterior maintenance platforms, antennae and nav lights.
+  - **Size:** the station is built at base scale and then enlarged 1.5× (`Station.Scale`), to about
+    800 × 500 × 500 studs. Corridors and doors are now 18 studs wide. Furniture such as consoles,
+    lockers, crates, benches and bunks keeps human size (`Kit.scaleBuild`).
+  - **21 holo doors** (`Kit.holoDoor`) on exterior walls. These containment fields keep rooms
+    pressurised, but players, bots and bullets pass straight through, giving fast entry with no airlock
+    cycle. 5 airlocks remain as sealed routes.
+  - **Lighting:**
+    - glowing hull bands on every solid outer wall, and blue floor-edge strips in every room
+    - a ceiling light ring in the hub
+    - floodlights with SpotLights aimed at the hull
+    - 12 blinking beacons, including at the station's extremities
+    - a pulse of 48 "chaser" lights that sweeps around the habitat ring
+    - shimmering holo-door fields. The client animates these, with no network cost.
 - *ESV Long Horizon (exploration ship):* bridge, crew quarters, medical/research, a 120×50×70 cargo
   hold with catwalks, crane and container stacks, engineering with the reactor, engine room, and
   three engines. A dorsal spine on pylons forms a covered hull-traversal channel. Also a ventral keel,
@@ -58,8 +71,8 @@ Every claim below falls into one of three levels, and they are kept separate:
   (equipment previews), a practice range with moving drones, a match status board and a controls board.
 - *Backdrop:* a client-rendered cratered planet that stays at a fixed offset from the camera (always
   huge and distant, never reachable), a night sky with stars, bloom and colour grading.
-- 18 airlocks, 53 pressurised volumes, 15 O2 stations, 94 loot spots, 31 deploy points, and 7
-  final-zone candidates.
+- 15 airlocks, 21 holo doors, 53 pressurised volumes, 15 O2 stations, 93 loot spots, 30 deploy points, and
+  7 final-zone candidates.
 
 **Movement** (`MovementController`). The Humanoid is held in the Physics state with Workspace
 gravity 0. An AlignOrientation turns the body toward the camera. Translation uses a momentum model:
@@ -117,7 +130,16 @@ tactical map that shows the current and next ring plus whether the safe centre i
 barrels with a fuse, which chain. Smoke in damaged rooms. Flickering lights. Interlocked airlocks:
 only one door opens at a time, with a pressure cycle in between.
 
-**UI.** Main menu: Play/queue, Practice, Loadout (4 side-grade kits), Locker (6 suit finishes by
+**UI.** An "orbital HUD" style throughout (`UIKit`):
+- **Look:** deep-space glass panels with light-catching cyan edges and HUD corner brackets.
+- **Type:** Michroma display type, Titillium body text and Sarpanch readouts.
+- **Controls:** segmented telemetry bars, and buttons with an accent rail and animated hover glow.
+- **Main menu:** full screen. A twinkling starfield fades out to the right so the lobby window
+  (station and planet) shows through. Gradient logo, glyph navigation, a pilot card with an XP bar,
+  an orbit status chip (phase, pilots and bots), a big DEPLOY call to action, and slide-in
+  animations.
+
+Main menu pages: Deploy/queue, Practice, Loadout (4 side-grade kits), Locker (6 suit finishes by
 level, titles), Settings (sensitivity, FOV, invert Y, key rebinding, control reference),
 Statistics, Tutorial (8 pages) and Credits. HUD: health, shield, O2, boost, suit status,
 tether/pulse counts, weapon, ammo, slots, phase/timer/survivors, kill feed, tactical map, crosshair,

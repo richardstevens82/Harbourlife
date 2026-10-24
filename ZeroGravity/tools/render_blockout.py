@@ -211,9 +211,9 @@ def main():
     render(arena, balls, markers, "x", "z", "y", "Arena plan (top-down). Purple: storm start radius, red: hard boundary",
            os.path.join(OUT, "arena_plan.png"), labels=True)
     render(arena, balls, markers, "x", "y", "z", "Arena elevation (looking along Z)", os.path.join(OUT, "arena_side.png"), labels=True)
-    render(arena, balls, markers, "x", "z", "y", "Space station plan", os.path.join(OUT, "station_plan.png"), bounds=((-200, 420), (-250, 250)), figsize=11)
+    render(arena, balls, markers, "x", "z", "y", "Space station plan (holo doors in cyan)", os.path.join(OUT, "station_plan.png"), bounds=((-300, 620), (-370, 370)), figsize=12)
     render(arena, balls, markers, "z", "y", "x", "Space station elevation (looking along X): hub stack + habitat ring",
-           os.path.join(OUT, "station_side.png"), bounds=((-250, 250), (-200, 200)), figsize=11, depth_range=(-200, 420))
+           os.path.join(OUT, "station_side.png"), bounds=((-370, 370), (-300, 300)), figsize=12, depth_range=(-300, 620))
     render(arena, balls, markers, "x", "y", "z", "Exploration ship elevation", os.path.join(OUT, "ship_side.png"),
            bounds=((-180, 440), (-60, 130)), figsize=13, depth_range=(-720, -480))
     render(arena, balls, markers, "x", "z", "y", "Exploration ship plan", os.path.join(OUT, "ship_plan.png"), bounds=((-180, 440), (-720, -480)), figsize=13)

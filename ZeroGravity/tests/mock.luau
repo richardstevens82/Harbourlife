@@ -302,13 +302,13 @@ local HIER = {
 	Script = { "BaseScript", "LuaSourceContainer" }, LocalScript = { "Script", "BaseScript" }, ModuleScript = { "LuaSourceContainer" },
 	TextLabel = { "GuiObject", "GuiBase2d" }, Frame = { "GuiObject", "GuiBase2d" },
 	SurfaceGui = { "LayerCollector", "GuiBase2d" }, BillboardGui = { "LayerCollector", "GuiBase2d" },
-	PointLight = { "Light" }, SurfaceLight = { "Light" },
+	PointLight = { "Light" }, SurfaceLight = { "Light" }, SpotLight = { "Light" },
 }
 local EVENTS = {
 	Triggered = true, Changed = true, Died = true, OnServerEvent = true, OnClientEvent = true, PlayerAdded = true,
 	PlayerRemoving = true, CharacterAdded = true, Heartbeat = true, Stepped = true, RenderStepped = true, PreSimulation = true,
 	Destroying = true, ChildAdded = true, StateChanged = true, MouseButton1Click = true, Touched = true,
-	InputBegan = true, InputEnded = true, InputChanged = true,
+	InputBegan = true, InputEnded = true, InputChanged = true, MouseEnter = true, MouseLeave = true,
 }
 
 local function isA(self, cls)

@@ -1,7 +1,13 @@
--- Main menu (opens on join and with M): Play, Practice, Loadout, Locker, Settings, Statistics,
+-- Main menu (opens on join and with M): Deploy, Practice, Loadout, Locker, Settings, Statistics,
 -- Tutorial, Credits. Every option shown is implemented. During a match only Resume, Settings and
 -- Tutorial are offered.
+--
+-- Layout: a full-screen orbital overlay. A twinkling starfield and a left-to-right fade let the
+-- lobby window (station + planet) show through; the logo, navigation and pilot card sit on the
+-- left; the selected page sits in a bracketed glass panel on the right; a status chip shows the
+-- orbit state and how many pilots and bots are ready.
 local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -21,6 +27,18 @@ local gui: ScreenGui
 local root: Frame
 local nav: Frame
 local page: Frame
+local leftCol: Frame
+local content: Frame
+local pageHeader: TextLabel
+local statusText: TextLabel
+local pilotText: TextLabel
+local setXp: (number, string?) -> ()
+local stars: { Frame } = {}
+
+local PAGE_TAGS = {
+	home = "MISSION CONTROL", loadout = "DEPLOYMENT KIT", locker = "SUIT LOCKER", settings = "SYSTEM SETTINGS",
+	stats = "PILOT RECORD", tutorial = "FLIGHT MANUAL", credits = "CREDITS",
+}
 local currentPage = "home"
 local rebinding: string? = nil
 
@@ -36,9 +54,16 @@ local TUTORIAL = {
 }
 
 local function setOpen(open: boolean)
+	local wasOpen = root.Visible
 	root.Visible = open
 	State.SetModal("menu", open)
-	if open then Menu.Show(currentPage) end
+	if open then
+		Menu.Show(currentPage)
+		if not wasOpen then
+			UI.reveal(leftCol, Vector2.new(-60, 0))
+			UI.reveal(content, Vector2.new(80, 0), 0.05)
+		end
+	end
 end
 Menu.SetOpen = setOpen
 
@@ -47,11 +72,11 @@ local function clear(f: Instance)
 end
 
 local function title(text: string)
-	UI.label(page, text, { TextSize = 24, Font = Enum.Font.GothamBlack, Size = UDim2.new(1, 0, 0, 30), LayoutOrder = 0 })
+	pageHeader.Text = text
 end
 
 local function para(text: string, order: number, props)
-	local l = UI.label(page, text, { TextWrapped = true, AutomaticSize = Enum.AutomaticSize.Y, Size = UDim2.new(1, 0, 0, 18), TextSize = 15,
+	local l = UI.label(page, text, { TextWrapped = true, AutomaticSize = Enum.AutomaticSize.Y, Size = UDim2.new(1, 0, 0, 18), TextSize = 17,
 		TextColor3 = C.Text, LayoutOrder = order, TextYAlignment = Enum.TextYAlignment.Top, RichText = true })
 	for k, v in props or {} do (l :: any)[k] = v end
 	return l
@@ -61,28 +86,29 @@ local pages = {}
 
 function pages.home()
 	local inMatch = player:GetAttribute("InMatch") == true and player:GetAttribute("Alive") == true
-	title(Config.GameName)
-	local p = State.Profile
-	para(p and string.format("Level <b>%d</b>   |   %d XP   |   %d credits%s", p.level, p.xp, p.credits,
-		State.TemporaryProfile and "\n<font color=\"#FF9060\">Progress is not saving in this session (DataStores unavailable).</font>" or "") or "Loading profile...", 1)
-	local phase = ReplicatedStorage:FindFirstChild("MatchState") and ReplicatedStorage.MatchState:GetAttribute("Phase") or "Waiting"
-	para("Match status: <b>" .. tostring(phase) .. "</b>", 2, { TextColor3 = C.Dim })
+	title("MISSION CONTROL")
+	para("<font size=\"24\"><b>20 PILOTS. ONE ORBIT. ONE SURVIVOR.</b></font>", 1, { Font = UI.Fonts.Bold, TextColor3 = C.Accent })
+	para("Fly in every direction, loot the station and the exploration ship, manage your oxygen and stay ahead of the radiation storm.", 2,
+		{ TextColor3 = C.Dim })
+	if State.TemporaryProfile then
+		para("<font color=\"#FFB060\">Progress is not saving in this session (DataStores unavailable).</font>", 3)
+	end
 	if inMatch then
-		para("You are in a live match. Close the menu to keep fighting.", 3)
+		para("You are in a live match. Close the menu to keep fighting.", 4)
 		return
 	end
 	local queued = player:GetAttribute("Queued") == true
-	para(queued and "<font color=\"#5ADC8C\">You are queued for the next match.</font> Practise on the range while you wait."
-		or "You are not queued. Press PLAY to join the next match.", 3)
-	local b = UI.button(page, queued and "LEAVE QUEUE" or "PLAY", { LayoutOrder = 4, Size = UDim2.new(1, 0, 0, 52), TextSize = 22,
-		BackgroundColor3 = queued and C.PanelLight or Color3.fromRGB(30, 80, 150) })
+	para(queued and "<font color=\"#46FFAA\">QUEUED</font> - you deploy with the next drop. Practise on the range while you wait."
+		or "Not queued. Hit DEPLOY to join the next drop (bots fill every empty seat).", 4)
+	local b = UI.button(page, queued and "LEAVE QUEUE" or "DEPLOY", { LayoutOrder = 5, Size = UDim2.new(1, 0, 0, 58), TextSize = 22 }, nil,
+		{ primary = not queued })
 	b.MouseButton1Click:Connect(function()
 		Effects.Play("ui")
 		Remotes.Match:FireServer({ action = "queue", value = not queued })
 		task.wait(0.2)
 		if not queued then setOpen(false) else Menu.Show("home") end
 	end)
-	UI.button(page, "PRACTICE RANGE (stay in lobby, not queued)", { LayoutOrder = 5 }, function()
+	UI.button(page, "PRACTICE RANGE  (stay in the lobby)", { LayoutOrder = 6 }, function()
 		Effects.Play("ui")
 		Remotes.Match:FireServer({ action = "queue", value = false })
 		setOpen(false)
@@ -167,7 +193,7 @@ function pages.settings()
 		local key = State.Bindings[action]
 		local text = string.format("%-22s  %s", State.BindingLabels[action], rebinding == action and "press a key..." or key.Name)
 		UI.button(page, text, { LayoutOrder = order, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, 0, 0, 28), TextSize = 14,
-			Font = Enum.Font.Code }, function()
+			Font = UI.Fonts.Mono }, function()
 			rebinding = action
 			Menu.Show("settings")
 		end)
@@ -206,26 +232,36 @@ end
 function Menu.Show(name: string)
 	currentPage = name
 	clear(page)
-	UI.list(page, 8)
+	UI.list(page, 10)
+	pageHeader.Text = ""
 	local fn = pages[name] or pages.home
 	fn()
+	local tagLabel = content:FindFirstChild("PageTag") :: TextLabel?
+	if tagLabel then tagLabel.Text = "// " .. (PAGE_TAGS[name] or "") end
 	-- nav highlights
 	for _, b in nav:GetChildren() do
 		if b:IsA("TextButton") then
-			b.TextColor3 = b.Name == name and C.Accent or C.Text
+			local on = b.Name == name
+			b.TextColor3 = on and C.Accent or C.Text
+			local rail = b:FindFirstChild("Rail") :: Frame?
+			if rail then rail.BackgroundTransparency = on and 0 or 0.6 end
 		end
 	end
 end
 
+local NAV_GLYPH = { home = "\u{25C8}", loadout = "\u{25A3}", locker = "\u{2B21}", settings = "\u{2699}", stats = "\u{25B2}", tutorial = "\u{25CE}",
+	credits = "\u{2726}" }
+
 local function buildNav()
 	local inMatch = player:GetAttribute("InMatch") == true and player:GetAttribute("Alive") == true
 	clear(nav)
-	UI.list(nav, 6)
+	UI.list(nav, 8)
 	local entries = inMatch and { { "home", "RESUME" }, { "settings", "SETTINGS" }, { "tutorial", "TUTORIAL" } }
-		or { { "home", "PLAY" }, { "loadout", "LOADOUT" }, { "locker", "LOCKER" }, { "settings", "SETTINGS" }, { "stats", "STATISTICS" },
+		or { { "home", "MISSION" }, { "loadout", "LOADOUT" }, { "locker", "LOCKER" }, { "settings", "SETTINGS" }, { "stats", "STATISTICS" },
 			{ "tutorial", "TUTORIAL" }, { "credits", "CREDITS" } }
 	for i, e in entries do
-		local b = UI.button(nav, e[2], { Name = e[1], LayoutOrder = i })
+		local b = UI.button(nav, "   " .. (NAV_GLYPH[e[1]] or "") .. "   " .. e[2], { Name = e[1], LayoutOrder = i, Size = UDim2.new(1, 0, 0, 40),
+			TextXAlignment = Enum.TextXAlignment.Left })
 		b.MouseButton1Click:Connect(function()
 			Effects.Play("ui")
 			if inMatch and e[1] == "home" then
@@ -235,7 +271,55 @@ local function buildNav()
 			end
 		end)
 	end
-	UI.button(nav, "CLOSE  [M]", { LayoutOrder = 99, BackgroundColor3 = Color3.fromRGB(40, 20, 24) }, function() setOpen(false) end)
+	UI.button(nav, "   \u{2715}   CLOSE  [M]", { LayoutOrder = 99, TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = C.Dim }, function()
+		setOpen(false)
+	end)
+end
+
+-- Pilot card + status chip, refreshed every half second while the menu is open.
+local function refreshStatus()
+	local p = State.Profile
+	if p then
+		local need = Config.XpForLevel(p.level)
+		local prev = p.level > 1 and Config.XpForLevel(p.level - 1) or 0
+		pilotText.Text = string.format("<font size=\"20\"><b>%s</b></font>\nLEVEL %d   \u{00B7}   %d CREDITS", string.upper(player.Name), p.level, p.credits)
+		setXp((p.xp - prev) / math.max(1, need - prev), string.format("%d / %d XP", p.xp, need))
+	end
+	local ms = ReplicatedStorage:FindFirstChild("MatchState")
+	if ms then
+		local phase = string.upper(tostring(ms:GetAttribute("Phase") or "WAITING"))
+		local bots = ms:GetAttribute("Bots") or 0
+		local queued = ms:GetAttribute("Queued") or 0
+		statusText.Text = string.format("ORBIT STATUS  <font color=\"#00E1FF\">\u{25CF} %s</font>   |   %d PILOT%s + %d BOTS", phase, queued,
+			queued == 1 and "" or "S", bots)
+	end
+end
+
+-- Twinkling starfield behind the menu.
+local function buildStars(parent: Instance)
+	local rng = Random.new(7)
+	for i = 1, 90 do
+		local size = rng:NextNumber() < 0.15 and 3 or (rng:NextNumber() < 0.5 and 2 or 1)
+		local star = new("Frame", { Name = "Star", BackgroundColor3 = i % 7 == 0 and C.Accent or Color3.new(1, 1, 1), BorderSizePixel = 0,
+			Position = UDim2.fromScale(rng:NextNumber(), rng:NextNumber()), Size = UDim2.fromOffset(size, size),
+			BackgroundTransparency = rng:NextNumber(0.1, 0.7) }, parent)
+		UI.corner(star, 2)
+		table.insert(stars, star)
+	end
+	task.spawn(function()
+		local trng = Random.new()
+		while gui and gui.Parent do
+			if root.Visible then
+				for _ = 1, 6 do
+					local s = stars[trng:NextInteger(1, #stars)]
+					TweenService:Create(s, TweenInfo.new(trng:NextNumber(0.6, 1.6), Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, 0, true),
+						{ BackgroundTransparency = trng:NextNumber(0, 0.9) }):Play()
+				end
+				refreshStatus()
+			end
+			task.wait(0.5)
+		end
+	end)
 end
 
 function Menu.Start()
@@ -243,15 +327,46 @@ function Menu.Start()
 	local scale = new("UIScale", {}, gui)
 	local function rescale()
 		local vp = workspace.CurrentCamera.ViewportSize
-		scale.Scale = math.clamp(math.min(vp.X / 1100, vp.Y / 700), 0.55, 1.2)
+		scale.Scale = math.clamp(math.min(vp.X / 1280, vp.Y / 760), 0.5, 1.25)
 	end
 	rescale()
 	workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(rescale)
-	root = UI.panel(gui, { Name = "Menu", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(860, 540),
-		BackgroundTransparency = 0.12 })
-	nav = new("Frame", { BackgroundTransparency = 1, Position = UDim2.fromOffset(16, 16), Size = UDim2.new(0, 200, 1, -32) }, root)
-	page = new("ScrollingFrame", { BackgroundTransparency = 1, BorderSizePixel = 0, Position = UDim2.fromOffset(236, 16), Size = UDim2.new(1, -252, 1, -32),
-		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 4 }, root)
+
+	root = new("Frame", { Name = "Menu", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1) }, gui)
+	-- backdrop: deep space fading out to the right so the lobby window (station, planet) shows through
+	local back = new("Frame", { Name = "Backdrop", BackgroundColor3 = Color3.fromRGB(2, 5, 14), BorderSizePixel = 0, Size = UDim2.fromScale(1, 1) }, root)
+	new("UIGradient", { Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.02), NumberSequenceKeypoint.new(0.45, 0.25),
+		NumberSequenceKeypoint.new(1, 0.55) }) }, back)
+	buildStars(back)
+	-- left column: logo, navigation, pilot card
+	leftCol = new("Frame", { Name = "Left", BackgroundTransparency = 1, Position = UDim2.new(0, 56, 0, 0), Size = UDim2.new(0, 360, 1, 0) }, root)
+	local logo = UI.label(leftCol, "ZERO GRAVITY", { Font = UI.Fonts.Display, TextSize = 40, Position = UDim2.fromOffset(0, 60),
+		Size = UDim2.new(1, 0, 0, 50) })
+	new("UIGradient", { Color = ColorSequence.new(Color3.fromRGB(0, 225, 255), Color3.fromRGB(170, 120, 255)) }, logo)
+	UI.label(leftCol, "L A S T    O R B I T", { Font = UI.Fonts.Display, TextSize = 14, TextColor3 = C.Dim, Position = UDim2.fromOffset(4, 110),
+		Size = UDim2.new(1, 0, 0, 20) })
+	new("Frame", { BackgroundColor3 = C.Accent, BorderSizePixel = 0, Position = UDim2.fromOffset(4, 140), Size = UDim2.fromOffset(120, 2) }, leftCol)
+	nav = new("Frame", { Name = "Nav", BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 170), Size = UDim2.new(1, 0, 0, 400) }, leftCol)
+	local card = UI.panel(leftCol, { Name = "PilotCard", AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, -40), Size = UDim2.new(1, 0, 0, 92) },
+		{ brackets = true })
+	UI.pad(card, 12)
+	pilotText = UI.label(card, "PILOT", { Font = UI.Fonts.Bold, TextSize = 15, RichText = true, Size = UDim2.new(1, 0, 0, 44),
+		TextYAlignment = Enum.TextYAlignment.Top })
+	local _, xpSetter = UI.bar(card, C.Accent, { Position = UDim2.fromOffset(0, 52), Size = UDim2.new(1, 0, 0, 12) }, 20)
+	setXp = xpSetter
+	-- status chip (top right)
+	local chip = UI.panel(root, { Name = "Status", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -56, 0, 40), Size = UDim2.fromOffset(470, 36) })
+	statusText = UI.label(chip, "ORBIT STATUS", { Font = UI.Fonts.Bold, TextSize = 15, RichText = true, Size = UDim2.fromScale(1, 1),
+		TextXAlignment = Enum.TextXAlignment.Center })
+	-- content panel (right)
+	content = UI.panel(root, { Name = "Content", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -56, 0.5, 30),
+		Size = UDim2.new(0.5, 0, 0.72, 0) }, { brackets = true })
+	new("UISizeConstraint", { MinSize = Vector2.new(520, 380), MaxSize = Vector2.new(820, 640) }, content)
+	UI.label(content, "// MISSION CONTROL", { Name = "PageTag", Font = UI.Fonts.Display, TextSize = 10, TextColor3 = C.Accent,
+		Position = UDim2.fromOffset(22, 14), Size = UDim2.new(1, -44, 0, 14) })
+	pageHeader = UI.title(content, "", { Position = UDim2.fromOffset(22, 32), Size = UDim2.new(1, -44, 0, 36) })
+	page = new("ScrollingFrame", { BackgroundTransparency = 1, BorderSizePixel = 0, Position = UDim2.fromOffset(22, 84), Size = UDim2.new(1, -44, 1, -104),
+		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 3, ScrollBarImageColor3 = C.Accent }, content)
 	gui.Parent = player:WaitForChild("PlayerGui")
 	buildNav()
 	setOpen(true)
@@ -270,7 +385,10 @@ function Menu.Start()
 		end
 	end)
 	State.ProfileChanged:Connect(function()
-		if root.Visible then Menu.Show(currentPage) end
+		if root.Visible then
+			Menu.Show(currentPage)
+			refreshStatus()
+		end
 	end)
 	player:GetAttributeChangedSignal("Queued"):Connect(function()
 		if root.Visible and currentPage == "home" then Menu.Show("home") end

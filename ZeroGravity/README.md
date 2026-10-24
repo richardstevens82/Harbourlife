@@ -14,7 +14,7 @@ the repository.
 1. Run `python3 tools/build_place.py`. This writes `build/ZeroGravity.rbxlx`. A prebuilt copy is committed.
 2. Open `build/ZeroGravity.rbxlx` in Roblox Studio.
 3. Press **Play**. When the server starts, it generates the whole environment (station, ship,
-   asteroids, wrecks and lobby) from code. That takes about a second.
+   asteroids, wrecks and lobby) from code. That takes about a second. In the menu, press **DEPLOY**.
 4. Matches are 20 combatants. Bots fill every empty slot, so with just you online there are 19 bots.
    One queued player is enough to start. To test with real players too, use **Test → Clients and
    Servers**; each real player replaces a bot from the next match. Bot settings (count, skill,

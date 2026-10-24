@@ -27,6 +27,7 @@ Kit.Palette = {
 local P = Kit.Palette
 
 Kit.Stats = { parts = 0 }
+Kit.Glow = true -- extra interior/exterior light strips on rooms (see Kit.room)
 -- Navigation registry: every hollow space the kit builds (rooms, corridors, tubes, airlocks), with its
 -- openings. NavGraph turns this into the bot navigation graph after the world is built.
 Kit.NavSpaces = {} :: { any }
@@ -170,6 +171,24 @@ function Kit.room(parent: Instance, cf: CFrame, size: Vector3, opts)
 		for _, sx in { -1, 1 } do
 			Kit.strip(m, cf * CFrame.new(sx * (size.X / 2 - 0.3), size.Y / 2 - 0.3, 0), Vector3.new(0.4, 0.4, stripLen),
 				opts.stripColor, false)
+		end
+	end
+	-- Glow pass (Kit.Glow): blue floor-edge strips inside, and lit hull bands on the outside of every
+	-- solid face, so structures read clearly against space from far away.
+	if Kit.Glow and opts.glow ~= false and size.X >= 10 and size.Z >= 10 then
+		local stripLen = math.max(size.Z - 4, 2)
+		for _, sx in { -1, 1 } do
+			Kit.strip(m, cf * CFrame.new(sx * (size.X / 2 - 0.3), -size.Y / 2 + 0.35, 0), Vector3.new(0.3, 0.3, stripLen), P.Blue, false)
+		end
+		for face in FACE_ROT do
+			if openings[face] == nil and face ~= "+Y" and face ~= "-Y" then
+				local axis = string.sub(face, 2, 2)
+				local width = axis == "X" and size.Z or size.X
+				local fcf = Kit.faceCFrame(cf, size, face, t + 0.12)
+				local warm = (string.len(face) + math.floor(size.Y)) % 2 == 0
+				Kit.part(m, { Name = "HullBand", CFrame = fcf * CFrame.new(0, size.Y / 2 - 1.6, 0), Size = Vector3.new(width - 2, 0.35, 0.2),
+					Material = Enum.Material.Neon, Color = warm and Color3.fromRGB(255, 214, 170) or P.BlueGlow, CanCollide = false, CastShadow = false })
+			end
 		end
 	end
 	if opts.lights ~= false then
@@ -318,6 +337,7 @@ function Kit.antenna(parent: Instance, cf: CFrame, height: number)
 	local tip = Kit.part(m, { Name = "Beacon", Shape = Enum.PartType.Ball, CFrame = cf * CFrame.new(0, height + 1, 0), Size = Vector3.one * 1.4,
 		Material = Enum.Material.Neon, Color = P.Red, CanCollide = false })
 	Kit.light(tip, P.Red, 20, 1.5)
+	CollectionService:AddTag(tip, "Blink")
 	return m
 end
 
@@ -392,6 +412,77 @@ function Kit.airlock(parent: Instance, cf: CFrame, opts)
 end
 
 -- Damaged/flickering light fixture for wreck interiors.
+-- Holo door: an atmosphere-containment field across an opening. Air stays in (the room remains
+-- pressurised) but players, bots and bullets pass straight through. cf: centre of the opening in
+-- the wall plane (local Z = through the door). Tagged "HoloDoor" for the client shimmer.
+function Kit.holoDoor(parent: Instance, cf: CFrame, w: number, h: number, color: Color3?)
+	local col = color or Color3.fromRGB(90, 220, 255)
+	local m = Kit.model("HoloDoor", parent)
+	local pane = Kit.part(m, { Name = "Field", CFrame = cf, Size = Vector3.new(w, h, 0.2), Material = Enum.Material.ForceField, Color = col,
+		Transparency = 0.2, CanCollide = false, CanQuery = false, CanTouch = false, CastShadow = false })
+	Kit.light(pane, col, math.max(w, h) * 1.4, 1.2)
+	for _, e in { { 0, h / 2, w + 0.8, 0.4 }, { 0, -h / 2, w + 0.8, 0.4 }, { w / 2, 0, 0.4, h }, { -w / 2, 0, 0.4, h } } do
+		Kit.part(m, { Name = "Emitter", CFrame = cf * CFrame.new(e[1], e[2], 0), Size = Vector3.new(e[3], e[4], 0.6), Material = Enum.Material.Neon,
+			Color = col, CanCollide = false, CanQuery = false, CastShadow = false })
+	end
+	CollectionService:AddTag(pane, "HoloDoor")
+	return m
+end
+
+-- Enlarge everything built under `root` (plus the markers and nav spaces recorded meanwhile) by
+-- `scale` about `origin`. Structure grows; anything named in `keep` (human-scale furniture, as a
+-- part or a whole model) keeps its size and moves rigidly, so rooms get bigger, not the chairs.
+function Kit.scaleBuild(root: Instance, markers: { BasePart }, navFrom: number, origin: Vector3, scale: number, keep: { [string]: boolean })
+	local function sp(p: Vector3): Vector3 return origin + (p - origin) * scale end
+	local moved: { [Instance]: boolean } = {}
+	local function walk(inst: Instance)
+		for _, d in inst:GetChildren() do
+			if d:IsA("Model") and keep[d.Name] then
+				local pivot = d:GetPivot()
+				d:PivotTo(CFrame.new(sp(pivot.Position)) * pivot.Rotation)
+				moved[d] = true
+			elseif d:IsA("BasePart") then
+				local cf = d.CFrame
+				if not keep[d.Name] then d.Size *= scale end
+				d.CFrame = CFrame.new(sp(cf.Position)) * cf.Rotation
+				local closed = d:GetAttribute("ClosedCFrame")
+				if typeof(closed) == "CFrame" then d:SetAttribute("ClosedCFrame", CFrame.new(sp(closed.Position)) * closed.Rotation) end
+				local off = d:GetAttribute("OpenOffset")
+				if typeof(off) == "Vector3" then d:SetAttribute("OpenOffset", off * scale) end
+				walk(d)
+			elseif d:IsA("Light") then
+				local l = d :: any
+				l.Range = math.min(60, l.Range * scale)
+			else
+				walk(d)
+			end
+		end
+	end
+	walk(root)
+	for _, m in markers do
+		local cf = m.CFrame
+		m.CFrame = CFrame.new(sp(cf.Position)) * cf.Rotation
+		local size = m:GetAttribute("Size")
+		if typeof(size) == "Vector3" then m:SetAttribute("Size", size * scale) end
+	end
+	for i = navFrom, #Kit.NavSpaces do
+		local s = Kit.NavSpaces[i]
+		s.cf = CFrame.new(sp(s.cf.Position)) * s.cf.Rotation
+		s.size *= scale
+		s.wall = (s.wall or 2) * scale
+		local scaled = {}
+		for face, o in s.openings or {} do
+			if type(o) == "table" then
+				scaled[face] = { w = o.w * scale, h = o.h * scale, x = (o.x or 0) * scale, y = (o.y or 0) * scale }
+			else
+				scaled[face] = o
+			end
+		end
+		s.openings = scaled
+	end
+	local _ = moved
+end
+
 function Kit.brokenLight(parent: Instance, cf: CFrame)
 	local p = Kit.part(parent, { Name = "BrokenLight", CFrame = cf, Size = Vector3.new(2, 0.4, 2), Material = Enum.Material.Neon,
 		Color = Color3.fromRGB(255, 170, 110), CanCollide = false })

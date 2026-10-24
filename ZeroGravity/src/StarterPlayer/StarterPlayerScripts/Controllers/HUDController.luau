@@ -42,13 +42,21 @@ local function inMatchAlive(): boolean
 end
 
 -- BUILD ---------------------------------------------------------------------------------------------
+-- Small display-font tag floating above a panel's top edge ("// SUIT TELEMETRY").
+local function tag(panel: GuiObject, text: string, right: boolean?)
+	UI.label(panel, "// " .. text, { Font = UI.Fonts.Display, TextSize = 10, TextColor3 = C.Accent, Size = UDim2.new(1, 0, 0, 14),
+		Position = UDim2.fromOffset(0, -18), TextXAlignment = right and Enum.TextXAlignment.Right or Enum.TextXAlignment.Left })
+end
+
 local function buildVitals()
-	local f = UI.panel(gui, { Name = "Vitals", AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 16, 1, -16), Size = UDim2.fromOffset(300, 150) })
+	local f = UI.panel(gui, { Name = "Vitals", AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 16, 1, -16), Size = UDim2.fromOffset(300, 150) },
+		{ brackets = true })
+	tag(f, "SUIT TELEMETRY")
 	UI.pad(f, 10)
 	UI.list(f, 5)
 	local function row(name: string, color: Color3)
 		local r = new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 16) }, f)
-		UI.label(r, name, { Size = UDim2.fromOffset(62, 16), TextSize = 12, TextColor3 = C.Dim, Font = Enum.Font.GothamBold })
+		UI.label(r, name, { Size = UDim2.fromOffset(62, 16), TextSize = 12, TextColor3 = C.Dim, Font = UI.Fonts.Bold })
 		local _, set = UI.bar(r, color, { Position = UDim2.fromOffset(64, 2), Size = UDim2.new(1, -64, 0, 12) })
 		return set
 	end
@@ -56,16 +64,18 @@ local function buildVitals()
 	refs.setShield = row("SHIELD", C.Shield)
 	refs.setO2 = row("OXYGEN", C.Oxygen)
 	refs.setBoost = row("BOOST", C.Boost)
-	refs.suit = UI.label(f, "", { TextSize = 13, Font = Enum.Font.GothamBold })
+	refs.suit = UI.label(f, "", { TextSize = 13, Font = UI.Fonts.Bold })
 	refs.equip = UI.label(f, "", { TextSize = 13, TextColor3 = C.Dim })
 	refs.vitals = f
 end
 
 local function buildWeapon()
-	local f = UI.panel(gui, { Name = "Weapon", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -16, 1, -16), Size = UDim2.fromOffset(300, 150) })
+	local f = UI.panel(gui, { Name = "Weapon", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -16, 1, -16), Size = UDim2.fromOffset(300, 150) },
+		{ brackets = true })
+	tag(f, "WEAPON SYSTEMS", true)
 	UI.pad(f, 10)
-	refs.weaponName = UI.label(f, "", { Size = UDim2.new(1, 0, 0, 22), TextSize = 18, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Right })
-	refs.ammo = UI.label(f, "", { Position = UDim2.fromOffset(0, 22), Size = UDim2.new(1, 0, 0, 40), TextSize = 36, Font = Enum.Font.GothamBold,
+	refs.weaponName = UI.label(f, "", { Size = UDim2.new(1, 0, 0, 22), TextSize = 18, Font = UI.Fonts.Bold, TextXAlignment = Enum.TextXAlignment.Right })
+	refs.ammo = UI.label(f, "", { Position = UDim2.fromOffset(0, 22), Size = UDim2.new(1, 0, 0, 40), TextSize = 36, Font = UI.Fonts.Bold,
 		TextXAlignment = Enum.TextXAlignment.Right })
 	local _, setReload, reloadBar = UI.bar(f, C.Accent, { Position = UDim2.fromOffset(0, 66), Size = UDim2.new(1, 0, 0, 4) })
 	refs.setReload, refs.reloadBar = setReload, reloadBar.Parent
@@ -85,9 +95,10 @@ local function buildWeapon()
 end
 
 local function buildTop()
-	local f = UI.panel(gui, { Name = "MatchInfo", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 12), Size = UDim2.fromOffset(420, 64) })
+	local f = UI.panel(gui, { Name = "MatchInfo", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 12), Size = UDim2.fromOffset(440, 64) },
+		{ brackets = true })
 	refs.phase = UI.label(f, "", { Position = UDim2.fromOffset(0, 6), Size = UDim2.new(1, 0, 0, 20), TextXAlignment = Enum.TextXAlignment.Center,
-		Font = Enum.Font.GothamBold, TextSize = 16 })
+		Font = UI.Fonts.Bold, TextSize = 16 })
 	refs.sub = UI.label(f, "", { Position = UDim2.fromOffset(0, 30), Size = UDim2.new(1, 0, 0, 26), TextXAlignment = Enum.TextXAlignment.Center,
 		TextSize = 14, TextColor3 = C.Dim, RichText = true })
 	refs.top = f
@@ -102,7 +113,9 @@ end
 
 local MAP_R = 95
 local function buildMap()
-	local f = UI.panel(gui, { Name = "TacticalMap", Position = UDim2.fromOffset(16, 12), Size = UDim2.fromOffset(MAP_R * 2 + 20, MAP_R * 2 + 44) })
+	local f = UI.panel(gui, { Name = "TacticalMap", Position = UDim2.fromOffset(16, 28), Size = UDim2.fromOffset(MAP_R * 2 + 20, MAP_R * 2 + 44) },
+		{ brackets = true })
+	tag(f, "TACTICAL // ORBIT")
 	local disc = new("Frame", { Name = "Disc", BackgroundColor3 = Color3.fromRGB(8, 12, 20), BackgroundTransparency = 0.2, Position = UDim2.fromOffset(10, 10),
 		Size = UDim2.fromOffset(MAP_R * 2, MAP_R * 2), ClipsDescendants = false }, f)
 	UI.corner(disc, MAP_R)
@@ -116,7 +129,7 @@ local function buildMap()
 	refs.mapZone = ring(C.Storm, 2)
 	refs.mapNext = ring(Color3.new(1, 1, 1), 1)
 	refs.mapMe = new("TextLabel", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(16, 16),
-		Text = "▲", TextColor3 = C.Accent, Font = Enum.Font.GothamBold, TextSize = 14, ZIndex = 5 }, disc)
+		Text = "▲", TextColor3 = C.Accent, Font = UI.Fonts.Bold, TextSize = 14, ZIndex = 5 }, disc)
 	refs.mapDisc = disc
 	refs.mapInfo = UI.label(f, "", { Position = UDim2.new(0, 10, 1, -28), Size = UDim2.new(1, -20, 0, 20), TextSize = 12, TextColor3 = C.Dim,
 		TextXAlignment = Enum.TextXAlignment.Center })
@@ -139,10 +152,10 @@ local function buildCenter()
 	refs.crosshair = ch
 	-- hit marker
 	local hm = new("TextLabel", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(40, 40), Text = "✕", TextColor3 = Color3.new(1, 1, 1), TextSize = 28, Font = Enum.Font.GothamBold, TextTransparency = 1 }, gui)
+		Size = UDim2.fromOffset(40, 40), Text = "✕", TextColor3 = Color3.new(1, 1, 1), TextSize = 28, Font = UI.Fonts.Bold, TextTransparency = 1 }, gui)
 	refs.hitmarker = hm
 	refs.hitText = new("TextLabel", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0.5, 26, 0.5, -18),
-		Size = UDim2.fromOffset(80, 20), Text = "", TextColor3 = C.Orange, TextSize = 16, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left,
+		Size = UDim2.fromOffset(80, 20), Text = "", TextColor3 = C.Orange, TextSize = 16, Font = UI.Fonts.Bold, TextXAlignment = Enum.TextXAlignment.Left,
 		TextTransparency = 1 }, gui)
 	-- damage indicators container
 	refs.damage = new("Frame", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
@@ -159,7 +172,7 @@ local function buildCenter()
 	refs.progress, refs.setProg = pf, setProg
 	-- big banner (eliminated / winner / deployed)
 	refs.banner = new("TextLabel", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.32),
-		Size = UDim2.fromOffset(900, 60), Text = "", TextColor3 = Color3.new(1, 1, 1), TextStrokeTransparency = 0.5, Font = Enum.Font.GothamBlack,
+		Size = UDim2.fromOffset(900, 60), Text = "", TextColor3 = Color3.new(1, 1, 1), TextStrokeTransparency = 0.5, Font = UI.Fonts.Display,
 		TextSize = 44, TextTransparency = 1 }, gui)
 	-- low oxygen / storm vignette
 	local grad = new("Frame", { BackgroundColor3 = C.Red, BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 0 }, gui)
@@ -189,9 +202,9 @@ HUD.ItemTooltip = itemTooltip
 
 local function buildInventory()
 	local f = UI.panel(gui, { Name = "Inventory", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(640, 440),
-		Visible = false, ZIndex = 10 })
+		Visible = false, ZIndex = 10 }, { brackets = true })
 	UI.pad(f, 14)
-	UI.label(f, "SUIT INVENTORY", { TextSize = 20, Font = Enum.Font.GothamBold, Size = UDim2.new(1, 0, 0, 24) })
+	UI.title(f, "SUIT INVENTORY")
 	refs.invBody = new("ScrollingFrame", { BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 32), Size = UDim2.new(1, 0, 1, -90),
 		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 4, BorderSizePixel = 0 }, f)
 	UI.list(refs.invBody, 6)
@@ -225,7 +238,7 @@ local function refreshInventoryScreen()
 	end
 	local function header(text: string)
 		order += 1
-		UI.label(body, text, { LayoutOrder = order, TextSize = 13, TextColor3 = C.Accent, Font = Enum.Font.GothamBold })
+		UI.label(body, text, { LayoutOrder = order, TextSize = 13, TextColor3 = C.Accent, Font = UI.Fonts.Bold })
 	end
 	header("WEAPONS")
 	for slot = 1, Config.Inventory.WeaponSlots do
@@ -280,10 +293,12 @@ end
 -- RESULTS -------------------------------------------------------------------------------------------
 local function buildResults()
 	local f = UI.panel(gui, { Name = "Results", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(520, 400),
-		Visible = false, ZIndex = 20 })
+		Visible = false, ZIndex = 20 }, { brackets = true, accent = C.Accent })
 	UI.pad(f, 18)
 	UI.list(f, 8)
-	refs.resTitle = UI.label(f, "", { TextSize = 30, Font = Enum.Font.GothamBlack, Size = UDim2.new(1, 0, 0, 36), TextXAlignment = Enum.TextXAlignment.Center })
+	refs.resTitle = UI.label(f, "", { TextSize = 22, Font = UI.Fonts.Display, Size = UDim2.new(1, 0, 0, 36), TextXAlignment = Enum.TextXAlignment.Center,
+		TextScaled = true })
+	UI.new("UITextSizeConstraint", { MaxTextSize = 24 }, refs.resTitle)
 	refs.resWinner = UI.label(f, "", { TextSize = 18, Size = UDim2.new(1, 0, 0, 24), TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = C.Orange })
 	refs.resStats = UI.label(f, "", { TextSize = 17, Size = UDim2.new(1, 0, 0, 150), TextYAlignment = Enum.TextYAlignment.Top, RichText = true })
 	refs.resRewards = UI.label(f, "", { TextSize = 17, Size = UDim2.new(1, 0, 0, 50), TextColor3 = C.Green, RichText = true })
@@ -309,7 +324,7 @@ end
 
 -- FEEDBACK -------------------------------------------------------------------------------------------
 function HUD.Notice(text: string, color: Color3?)
-	local l = UI.label(refs.notices, text, { Size = UDim2.new(1, 0, 0, 24), TextXAlignment = Enum.TextXAlignment.Center, Font = Enum.Font.GothamBold,
+	local l = UI.label(refs.notices, text, { Size = UDim2.new(1, 0, 0, 24), TextXAlignment = Enum.TextXAlignment.Center, Font = UI.Fonts.Bold,
 		TextSize = 18, TextColor3 = color or C.Text, TextStrokeTransparency = 0.6 })
 	local kids = {}
 	for _, c in refs.notices:GetChildren() do
@@ -369,7 +384,7 @@ local function damageIndicator(from: Vector3?, _amount: number, shield: boolean)
 	local angle = math.atan2(rel.X, -rel.Z) -- bearing around the crosshair (0 = in front, shown at top)
 	local arrow = new("TextLabel", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(40, 40),
 		Position = UDim2.fromOffset(math.sin(angle) * 120, -math.cos(angle) * 120), Rotation = math.deg(angle), Text = "▲",
-		TextColor3 = shield and C.Shield or C.Red, TextSize = 34, Font = Enum.Font.GothamBlack }, refs.damage)
+		TextColor3 = shield and C.Shield or C.Red, TextSize = 34, Font = UI.Fonts.Display }, refs.damage)
 	task.spawn(function()
 		task.wait(0.6)
 		for i = 1, 10 do
@@ -496,7 +511,7 @@ local function updateMap()
 			if m:IsA("BasePart") then
 				local dot = new("TextLabel", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(80, 12),
 					Position = toMap(m.Position), Text = "• " .. (m:GetAttribute("Label") or ""), TextColor3 = C.Dim, TextSize = 9,
-					Font = Enum.Font.Gotham, ZIndex = 4 }, refs.mapDisc)
+					Font = UI.Fonts.Body, ZIndex = 4 }, refs.mapDisc)
 				table.insert(refs.landmarks, dot)
 			end
 		end

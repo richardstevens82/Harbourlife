@@ -3591,7 +3591,11 @@ local function awardAndReport(winner: Player?)
 	for _, p in participants do
 		if p.Parent and not Roster.IsBot(p) then
 			local r = Roster.Get(p)
-			if p == winner then r.placement = 1 end
+			if p == winner then
+				r.placement = 1
+			elseif r.placement == 1 then
+				r.placement = 2 -- simultaneous final eliminations: only the declared winner places first
+			end
 			local survived = (r.eliminatedAt > 0 and r.eliminatedAt or os.clock()) - r.deployedAt
 			-- still alive at a time-limit finish without winning = runner-up
 			local placement = r.placement > 0 and r.placement or (p == winner and 1 or 2)
@@ -3713,7 +3717,17 @@ local function runMatch()
 	-- ENDING ----------------------------------------------------------------------------------------
 	local winner = nil
 	local aliveNow = Roster.Alive()
-	if #aliveNow == 1 then
+	if #aliveNow == 0 and not solo then
+		-- everyone left died on the same tick (storm, explosion): the last one eliminated wins
+		local best = nil
+		for _, p in participants do
+			local r = p.Parent and Roster.Get(p)
+			if r and (not best or r.eliminatedAt > best.r.eliminatedAt or (r.eliminatedAt == best.r.eliminatedAt and r.kills > best.r.kills)) then
+				best = { p = p, r = r }
+			end
+		end
+		winner = best and best.p
+	elseif #aliveNow == 1 then
 		winner = aliveNow[1]
 	elseif #aliveNow > 1 then
 		-- time limit: highest health wins
@@ -4560,8 +4574,9 @@ function WorldBuilder.Start()
 	step("Ship", function() require(Builders.Ship).Build(arena, markers, WorldBuilder.ShipCFrame) end)
 
 	local Debris = require(Builders.Debris)
+	local stationScale = require(Builders.Station).Scale
 	local exclusion = {
-		{ center = Vector3.new(110, 0, 0), radius = 420 }, -- station
+		{ center = Vector3.new(110, 0, 0) * stationScale, radius = 420 * stationScale }, -- station
 		{ center = WorldBuilder.ShipCFrame.Position, radius = 340 }, -- ship
 	}
 	for _, e in Debris.Exclusions() do table.insert(exclusion, e) end
@@ -5124,6 +5139,7 @@ Kit.Palette = {
 local P = Kit.Palette
 
 Kit.Stats = { parts = 0 }
+Kit.Glow = true -- extra interior/exterior light strips on rooms (see Kit.room)
 -- Navigation registry: every hollow space the kit builds (rooms, corridors, tubes, airlocks), with its
 -- openings. NavGraph turns this into the bot navigation graph after the world is built.
 Kit.NavSpaces = {} :: { any }
@@ -5267,6 +5283,24 @@ function Kit.room(parent: Instance, cf: CFrame, size: Vector3, opts)
 		for _, sx in { -1, 1 } do
 			Kit.strip(m, cf * CFrame.new(sx * (size.X / 2 - 0.3), size.Y / 2 - 0.3, 0), Vector3.new(0.4, 0.4, stripLen),
 				opts.stripColor, false)
+		end
+	end
+	-- Glow pass (Kit.Glow): blue floor-edge strips inside, and lit hull bands on the outside of every
+	-- solid face, so structures read clearly against space from far away.
+	if Kit.Glow and opts.glow ~= false and size.X >= 10 and size.Z >= 10 then
+		local stripLen = math.max(size.Z - 4, 2)
+		for _, sx in { -1, 1 } do
+			Kit.strip(m, cf * CFrame.new(sx * (size.X / 2 - 0.3), -size.Y / 2 + 0.35, 0), Vector3.new(0.3, 0.3, stripLen), P.Blue, false)
+		end
+		for face in FACE_ROT do
+			if openings[face] == nil and face ~= "+Y" and face ~= "-Y" then
+				local axis = string.sub(face, 2, 2)
+				local width = axis == "X" and size.Z or size.X
+				local fcf = Kit.faceCFrame(cf, size, face, t + 0.12)
+				local warm = (string.len(face) + math.floor(size.Y)) % 2 == 0
+				Kit.part(m, { Name = "HullBand", CFrame = fcf * CFrame.new(0, size.Y / 2 - 1.6, 0), Size = Vector3.new(width - 2, 0.35, 0.2),
+					Material = Enum.Material.Neon, Color = warm and Color3.fromRGB(255, 214, 170) or P.BlueGlow, CanCollide = false, CastShadow = false })
+			end
 		end
 	end
 	if opts.lights ~= false then
@@ -5415,6 +5449,7 @@ function Kit.antenna(parent: Instance, cf: CFrame, height: number)
 	local tip = Kit.part(m, { Name = "Beacon", Shape = Enum.PartType.Ball, CFrame = cf * CFrame.new(0, height + 1, 0), Size = Vector3.one * 1.4,
 		Material = Enum.Material.Neon, Color = P.Red, CanCollide = false })
 	Kit.light(tip, P.Red, 20, 1.5)
+	CollectionService:AddTag(tip, "Blink")
 	return m
 end
 
@@ -5489,6 +5524,77 @@ function Kit.airlock(parent: Instance, cf: CFrame, opts)
 end
 
 -- Damaged/flickering light fixture for wreck interiors.
+-- Holo door: an atmosphere-containment field across an opening. Air stays in (the room remains
+-- pressurised) but players, bots and bullets pass straight through. cf: centre of the opening in
+-- the wall plane (local Z = through the door). Tagged "HoloDoor" for the client shimmer.
+function Kit.holoDoor(parent: Instance, cf: CFrame, w: number, h: number, color: Color3?)
+	local col = color or Color3.fromRGB(90, 220, 255)
+	local m = Kit.model("HoloDoor", parent)
+	local pane = Kit.part(m, { Name = "Field", CFrame = cf, Size = Vector3.new(w, h, 0.2), Material = Enum.Material.ForceField, Color = col,
+		Transparency = 0.2, CanCollide = false, CanQuery = false, CanTouch = false, CastShadow = false })
+	Kit.light(pane, col, math.max(w, h) * 1.4, 1.2)
+	for _, e in { { 0, h / 2, w + 0.8, 0.4 }, { 0, -h / 2, w + 0.8, 0.4 }, { w / 2, 0, 0.4, h }, { -w / 2, 0, 0.4, h } } do
+		Kit.part(m, { Name = "Emitter", CFrame = cf * CFrame.new(e[1], e[2], 0), Size = Vector3.new(e[3], e[4], 0.6), Material = Enum.Material.Neon,
+			Color = col, CanCollide = false, CanQuery = false, CastShadow = false })
+	end
+	CollectionService:AddTag(pane, "HoloDoor")
+	return m
+end
+
+-- Enlarge everything built under `root` (plus the markers and nav spaces recorded meanwhile) by
+-- `scale` about `origin`. Structure grows; anything named in `keep` (human-scale furniture, as a
+-- part or a whole model) keeps its size and moves rigidly, so rooms get bigger, not the chairs.
+function Kit.scaleBuild(root: Instance, markers: { BasePart }, navFrom: number, origin: Vector3, scale: number, keep: { [string]: boolean })
+	local function sp(p: Vector3): Vector3 return origin + (p - origin) * scale end
+	local moved: { [Instance]: boolean } = {}
+	local function walk(inst: Instance)
+		for _, d in inst:GetChildren() do
+			if d:IsA("Model") and keep[d.Name] then
+				local pivot = d:GetPivot()
+				d:PivotTo(CFrame.new(sp(pivot.Position)) * pivot.Rotation)
+				moved[d] = true
+			elseif d:IsA("BasePart") then
+				local cf = d.CFrame
+				if not keep[d.Name] then d.Size *= scale end
+				d.CFrame = CFrame.new(sp(cf.Position)) * cf.Rotation
+				local closed = d:GetAttribute("ClosedCFrame")
+				if typeof(closed) == "CFrame" then d:SetAttribute("ClosedCFrame", CFrame.new(sp(closed.Position)) * closed.Rotation) end
+				local off = d:GetAttribute("OpenOffset")
+				if typeof(off) == "Vector3" then d:SetAttribute("OpenOffset", off * scale) end
+				walk(d)
+			elseif d:IsA("Light") then
+				local l = d :: any
+				l.Range = math.min(60, l.Range * scale)
+			else
+				walk(d)
+			end
+		end
+	end
+	walk(root)
+	for _, m in markers do
+		local cf = m.CFrame
+		m.CFrame = CFrame.new(sp(cf.Position)) * cf.Rotation
+		local size = m:GetAttribute("Size")
+		if typeof(size) == "Vector3" then m:SetAttribute("Size", size * scale) end
+	end
+	for i = navFrom, #Kit.NavSpaces do
+		local s = Kit.NavSpaces[i]
+		s.cf = CFrame.new(sp(s.cf.Position)) * s.cf.Rotation
+		s.size *= scale
+		s.wall = (s.wall or 2) * scale
+		local scaled = {}
+		for face, o in s.openings or {} do
+			if type(o) == "table" then
+				scaled[face] = { w = o.w * scale, h = o.h * scale, x = (o.x or 0) * scale, y = (o.y or 0) * scale }
+			else
+				scaled[face] = o
+			end
+		end
+		s.openings = scaled
+	end
+	local _ = moved
+end
+
 function Kit.brokenLight(parent: Instance, cf: CFrame)
 	local p = Kit.part(parent, { Name = "BrokenLight", CFrame = cf, Size = Vector3.new(2, 0.4, 2), Material = Enum.Material.Neon,
 		Color = Color3.fromRGB(255, 170, 110), CanCollide = false })
@@ -5845,10 +5951,21 @@ return Ship
 --     +X Spine -> Ring Junction -> Engineering (reactor); the Habitat Ring (8 segments) circles the
 --        spine in the YZ plane and is reached by two spokes.
 --   Exterior: solar arrays, antennae, maintenance platforms with loot, hull lights.
+--   Holo doors (containment fields) on many exterior walls give quick, airlock-free access; a few
+--   airlocks remain as the slower, sealed routes.
+-- The whole station is laid out at base scale, then enlarged by Station.Scale (structure grows,
+-- human-scale furniture keeps its size).
+local CollectionService = game:GetService("CollectionService")
 local Kit = require(script.Parent.Kit)
 local P = Kit.Palette
 
 local Station = {}
+Station.Scale = 1.5
+-- Furniture that keeps its real size when the station is enlarged (parts or whole models).
+local KEEP = {
+	ConsoleUnit = true, LockerUnit = true, CargoStack = true, PlanterUnit = true, Container = true, CaptainChair = true, Bench = true,
+	Bunk = true, FallenBench = true, SpecimenTube = true,
+}
 
 local T = 2 -- wall thickness used throughout
 
@@ -5864,6 +5981,11 @@ local function airlockOnFace(parent, roomCf: CFrame, size: Vector3, face: string
 	return airlockAt(parent, center, fcf.LookVector * -1)
 end
 
+-- Holo door in a room face (the room needs a 12x12 opening on that face).
+local function holoOnFace(parent, roomCf: CFrame, size: Vector3, face: string)
+	return Kit.holoDoor(parent, Kit.faceCFrame(roomCf, size, face, T / 2), 12, 12)
+end
+
 -- Maintenance platform: grated deck with railings, a crate stack and a loot marker.
 local function platform(parent, markers, cf: CFrame, w: number, d: number, tier: string)
 	local m = Kit.model("MaintenancePlatform", parent)
@@ -5877,15 +5999,25 @@ local function platform(parent, markers, cf: CFrame, w: number, d: number, tier:
 		Kit.part(m, { Name = "Post", CFrame = cf * CFrame.new(x, 1, z), Size = Vector3.new(0.5, 2, 0.5), Color = P.HullLight })
 	end
 	Kit.crate(m, cf * CFrame.new(w / 4, 3.5, 0), Vector3.new(6, 6, 10), P.Gunmetal)
-	local lamp = Kit.part(m, { Name = "Floodlight", CFrame = cf * CFrame.new(-w / 2 + 1, 4, -d / 2 + 1), Size = Vector3.new(1.4, 1.4, 1.4),
+	local lampPos = (cf * CFrame.new(-w / 2 + 1, 4, -d / 2 + 1)).Position
+	-- floodlight aimed back at the station hull
+	local lamp = Kit.part(m, { Name = "Floodlight", CFrame = CFrame.lookAt(lampPos, Vector3.zero), Size = Vector3.new(1.4, 1.4, 1.4),
 		Material = Enum.Material.Neon, Color = P.BlueGlow, CanCollide = false })
 	Kit.light(lamp, P.BlueGlow, 30, 1.4)
+	local spot = Instance.new("SpotLight")
+	spot.Face = Enum.NormalId.Front
+	spot.Angle = 70
+	spot.Range = 60
+	spot.Brightness = 3
+	spot.Color = Color3.fromRGB(220, 235, 255)
+	spot.Parent = lamp
 	Kit.marker(markers, "LootSpot", cf * CFrame.new(-w / 4, 2.5, 0), { Tier = tier, Kind = "crate" })
 	return m
 end
 
 -- Furniture helpers ------------------------------------------------------------------------------
 local function console(parent, cf: CFrame)
+	parent = Kit.model("ConsoleUnit", parent)
 	Kit.part(parent, { Name = "Console", CFrame = cf, Size = Vector3.new(6, 3, 2.4), Color = P.Gunmetal })
 	local screen = Kit.part(parent, { Name = "Screen", CFrame = cf * CFrame.new(0, 1.6, -0.4) * CFrame.Angles(math.rad(-25), 0, 0),
 		Size = Vector3.new(5, 0.2, 1.8), Material = Enum.Material.Neon, Color = Color3.fromRGB(60, 150, 255), CanCollide = false })
@@ -5895,19 +6027,24 @@ end
 local function lockers(parent, cf: CFrame, count: number)
 	for i = 0, count - 1 do
 		local c = cf * CFrame.new((i - (count - 1) / 2) * 3.2, 0, 0)
-		Kit.part(parent, { Name = "Locker", CFrame = c, Size = Vector3.new(3, 8, 2.4), Color = P.HullDark })
-		Kit.part(parent, { Name = "LockerLight", CFrame = c * CFrame.new(0, 3, -1.25), Size = Vector3.new(2, 0.3, 0.1),
+		local unit = Kit.model("LockerUnit", parent)
+		Kit.part(unit, { Name = "Locker", CFrame = c, Size = Vector3.new(3, 8, 2.4), Color = P.HullDark })
+		Kit.part(unit, { Name = "LockerLight", CFrame = c * CFrame.new(0, 3, -1.25), Size = Vector3.new(2, 0.3, 0.1),
 			Material = Enum.Material.Neon, Color = P.Blue, CanCollide = false })
 	end
 end
 
 local function cargoStack(parent, cf: CFrame)
-	Kit.crate(parent, cf, Vector3.new(8, 6, 6), P.HullDark)
-	Kit.crate(parent, cf * CFrame.new(1, 6, 0) * CFrame.Angles(0, math.rad(15), 0), Vector3.new(6, 6, 6), Color3.fromRGB(70, 90, 120))
+	local m = Kit.model("CargoStack", parent)
+	Kit.crate(m, cf, Vector3.new(8, 6, 6), P.HullDark)
+	Kit.crate(m, cf * CFrame.new(1, 6, 0) * CFrame.Angles(0, math.rad(15), 0), Vector3.new(6, 6, 6), Color3.fromRGB(70, 90, 120))
 end
 
 function Station.Build(arena: Instance, markers: Instance)
 	local root = Kit.model("SpaceStation", arena)
+	local navFrom = #Kit.NavSpaces + 1
+	local existingMarkers = {}
+	for _, m in markers:GetChildren() do existingMarkers[m] = true end
 
 	-- HUB ---------------------------------------------------------------------------------------
 	local hubCf, hubSize = CFrame.new(0, 0, 0), Vector3.new(60, 40, 60)
@@ -5929,6 +6066,11 @@ function Station.Build(arena: Instance, markers: Instance)
 		cargoStack(hub, CFrame.new(c[1], c[2], c[3]))
 	end
 	console(hub, CFrame.new(0, -18, 24))
+	-- ceiling light ring
+	for i = 0, 11 do
+		local a = math.rad(i * 30)
+		Kit.strip(hub, CFrame.new(math.cos(a) * 14, 19.4, math.sin(a) * 14) * CFrame.Angles(0, -a, 0), Vector3.new(1, 0.4, 6.5), P.BlueGlow, i % 3 == 0, 40)
+	end
 	Kit.sign(hub, CFrame.new(0, 14, 29.6) * CFrame.Angles(0, math.rad(180), 0), "MERIDIAN STATION - HUB", 24, 3)
 	Kit.marker(markers, "LootSpot", CFrame.new(24, -17, -24), { Tier = "mid", Kind = "crate" })
 	Kit.marker(markers, "LootSpot", CFrame.new(-24, 10, 24), { Tier = "mid", Kind = "locker" })
@@ -6000,8 +6142,9 @@ function Station.Build(arena: Instance, markers: Instance)
 	local jCf, jSize = CFrame.new(-120, 0, 0), Vector3.new(36, 24, 36)
 	local junction = Kit.room(root, jCf, jSize, {
 		name = "LabJunction", pressurized = "lab_junction", deck = true,
-		openings = { ["+X"] = door, ["-X"] = door, ["+Z"] = door, ["-Z"] = door, ["+Y"] = door },
+		openings = { ["+X"] = door, ["-X"] = door, ["+Z"] = door, ["-Z"] = door, ["+Y"] = door, ["-Y"] = door },
 	})
+	holoOnFace(root, jCf, jSize, "-Y")
 	Kit.sign(junction, jCf * CFrame.new(0, 9, -17.6), "SCIENCE LABS", 14, 2.5)
 	Kit.marker(markers, "OxygenStation", jCf * CFrame.new(16, -6, 10) * CFrame.Angles(0, math.rad(-90), 0))
 	airlockOnFace(root, jCf, jSize, "-X")
@@ -6009,7 +6152,9 @@ function Station.Build(arena: Instance, markers: Instance)
 	-- Lab A (+Z)
 	Kit.corridor(root, jCf * Vector3.new(0, 0, 20), jCf * Vector3.new(0, 0, 50), { pressurized = "labA_corridor" })
 	local laCf, laSize = jCf * CFrame.new(0, 0, 68), Vector3.new(40, 20, 32)
-	local labA = Kit.room(root, laCf, laSize, { name = "LabA", pressurized = "labA", deck = true, openings = { ["-Z"] = door } })
+	local labA = Kit.room(root, laCf, laSize, { name = "LabA", pressurized = "labA", deck = true,
+		openings = { ["-Z"] = door, ["+Z"] = door, ["+X"] = door, ["-X"] = door } })
+	for _, f in { "+Z", "+X", "-X" } do holoOnFace(root, laCf, laSize, f) end
 	for i = -1, 1 do
 		Kit.part(labA, { Name = "Bench", CFrame = laCf * CFrame.new(i * 12, -8, 4), Size = Vector3.new(8, 3, 14), Color = P.HullLight })
 		local tube = Kit.part(labA, { Name = "SpecimenTube", Shape = Enum.PartType.Cylinder, CFrame = laCf * CFrame.new(i * 12, -3, 10) * CFrame.Angles(0, 0, math.rad(90)),
@@ -6041,7 +6186,9 @@ function Station.Build(arena: Instance, markers: Instance)
 	Kit.corridor(root, jCf * Vector3.new(0, 14, 0), jCf * Vector3.new(0, 38, 0), { pressurized = "labC_corridor" })
 	local lcCf, lcSize = jCf * CFrame.new(0, 49, 0), Vector3.new(30, 18, 30)
 	local labC = Kit.room(root, lcCf, lcSize, { name = "LabC_Observatory", pressurized = "labC", deck = true,
-		openings = { ["-Y"] = door, ["+Y"] = { w = 18, h = 18 } } })
+		openings = { ["-Y"] = door, ["+Y"] = { w = 18, h = 18 }, ["+X"] = door, ["-X"] = door } })
+	holoOnFace(root, lcCf, lcSize, "+X")
+	holoOnFace(root, lcCf, lcSize, "-X")
 	Kit.window(labC, Kit.faceCFrame(lcCf, lcSize, "+Y", T / 2), 18, 18)
 	Kit.part(labC, { Name = "Telescope", Shape = Enum.PartType.Cylinder, CFrame = lcCf * CFrame.new(0, 2, 0) * CFrame.Angles(0, 0, math.rad(70)),
 		Size = Vector3.new(14, 4, 4), Color = P.HullLight })
@@ -6052,13 +6199,16 @@ function Station.Build(arena: Instance, markers: Instance)
 	local hyCf, hySize = CFrame.new(0, 0, -140), Vector3.new(56, 24, 56)
 	local hydro = Kit.room(root, hyCf, hySize, {
 		name = "Hydroponics", pressurized = "hydro", deck = true, lightColor = Color3.fromRGB(200, 255, 210),
-		openings = { ["+Z"] = door, ["-Z"] = door, ["+X"] = door },
+		openings = { ["+Z"] = door, ["-Z"] = door, ["+X"] = door, ["-X"] = door },
 	})
+	holoOnFace(root, hyCf, hySize, "+X")
+	holoOnFace(root, hyCf, hySize, "-X")
 	for x = -1, 1 do
 		for z = -1, 1 do
 			local bed = hyCf * CFrame.new(x * 16, -10, z * 16)
-			Kit.part(hydro, { Name = "Planter", CFrame = bed, Size = Vector3.new(10, 2, 10), Color = P.HullDark })
-			Kit.part(hydro, { Name = "Crop", CFrame = bed * CFrame.new(0, 1.6, 0), Size = Vector3.new(9, 1.2, 9), Color = Color3.fromRGB(70, 160, 60),
+			local unit = Kit.model("PlanterUnit", hydro)
+			Kit.part(unit, { Name = "Planter", CFrame = bed, Size = Vector3.new(10, 2, 10), Color = P.HullDark })
+			Kit.part(unit, { Name = "Crop", CFrame = bed * CFrame.new(0, 1.6, 0), Size = Vector3.new(9, 1.2, 9), Color = Color3.fromRGB(70, 160, 60),
 				Material = Enum.Material.Grass })
 			Kit.strip(hydro, bed * CFrame.new(0, 9, 0), Vector3.new(8, 0.3, 1), Color3.fromRGB(255, 120, 255), x == 0 and z == 0, 40)
 		end
@@ -6069,13 +6219,14 @@ function Station.Build(arena: Instance, markers: Instance)
 	Kit.marker(markers, "OxygenStation", hyCf * CFrame.new(-26, -6, 0) * CFrame.Angles(0, math.rad(90), 0))
 	Kit.marker(markers, "FinalZone", hyCf, { Label = "Hydroponics" })
 	airlockOnFace(root, hyCf, hySize, "-Z")
-	airlockOnFace(root, hyCf, hySize, "+X")
 
 	-- +Z ARMOURY -> OBSERVATION DECK -----------------------------------------------------------------
 	Kit.corridor(root, Vector3.new(0, 0, 32), Vector3.new(0, 0, 90), { pressurized = "arm_corridor" })
 	local arCf, arSize = CFrame.new(0, 0, 107), Vector3.new(30, 16, 30)
 	local armoury = Kit.room(root, arCf, arSize, { name = "Armoury", pressurized = "armoury", deck = true, lightColor = Color3.fromRGB(255, 200, 170),
-		openings = { ["-Z"] = door, ["+Z"] = door } })
+		openings = { ["-Z"] = door, ["+Z"] = door, ["+Y"] = door, ["-Y"] = door } })
+	holoOnFace(root, arCf, arSize, "+Y")
+	holoOnFace(root, arCf, arSize, "-Y")
 	lockers(armoury, arCf * CFrame.new(-13.5, -4, 0) * CFrame.Angles(0, math.rad(90), 0), 5)
 	lockers(armoury, arCf * CFrame.new(13.5, -4, 0) * CFrame.Angles(0, math.rad(-90), 0), 5)
 	Kit.sign(armoury, arCf * CFrame.new(0, 6, -14.6), "ARMOURY", 10, 2, P.Orange)
@@ -6092,7 +6243,7 @@ function Station.Build(arena: Instance, markers: Instance)
 	end
 	Kit.marker(markers, "LootSpot", obCf * CFrame.new(-24, -6, -10), { Tier = "low", Kind = "crate" })
 	Kit.marker(markers, "OxygenStation", obCf * CFrame.new(20, -6, -13))
-	airlockOnFace(root, obCf, obSize, "+X")
+	holoOnFace(root, obCf, obSize, "+X")
 	airlockOnFace(root, obCf, obSize, "-X")
 
 	-- +X SPINE, RING JUNCTION, ENGINEERING ---------------------------------------------------------
@@ -6106,13 +6257,17 @@ function Station.Build(arena: Instance, markers: Instance)
 	local rjCf, rjSize = CFrame.new(200, 0, 0), Vector3.new(34, 34, 34)
 	local tubeHole = { w = 24, h = 24 }
 	local rj = Kit.room(root, rjCf, rjSize, { name = "RingJunction", pressurized = "ring_junction", deck = true,
-		openings = { ["-X"] = tubeHole, ["+X"] = tubeHole, ["+Y"] = door, ["-Y"] = door } })
+		openings = { ["-X"] = tubeHole, ["+X"] = tubeHole, ["+Y"] = door, ["-Y"] = door, ["+Z"] = door, ["-Z"] = door } })
+	holoOnFace(root, rjCf, rjSize, "+Z")
+	holoOnFace(root, rjCf, rjSize, "-Z")
 	Kit.marker(markers, "LootSpot", rjCf * CFrame.new(0, -12, 12), { Tier = "mid", Kind = "crate" })
 	Kit.sign(rj, rjCf * CFrame.new(0, 10, -16.6), "RING ACCESS", 12, 2)
 	tubeBetween(217, 300, "SpineAft", "spine2")
 	local enCf, enSize = CFrame.new(334, 0, 0), Vector3.new(64, 48, 64)
 	local eng = Kit.room(root, enCf, enSize, { name = "Engineering", pressurized = "engineering", deck = true,
-		lightColor = Color3.fromRGB(255, 210, 160), openings = { ["-X"] = tubeHole, ["+X"] = door, ["+Z"] = door } })
+		lightColor = Color3.fromRGB(255, 210, 160), openings = { ["-X"] = tubeHole, ["+X"] = door, ["+Z"] = door, ["-Z"] = door } })
+	holoOnFace(root, enCf, enSize, "+Z")
+	holoOnFace(root, enCf, enSize, "-Z")
 	local core = Kit.part(eng, { Name = "ReactorCore", Shape = Enum.PartType.Cylinder, CFrame = enCf * CFrame.Angles(0, 0, math.rad(90)),
 		Size = Vector3.new(44, 12, 12), Material = Enum.Material.Neon, Color = Color3.fromRGB(90, 200, 255) })
 	Kit.light(core, Color3.fromRGB(90, 200, 255), 50, 3, true)
@@ -6130,7 +6285,6 @@ function Station.Build(arena: Instance, markers: Instance)
 	Kit.marker(markers, "OxygenStation", enCf * CFrame.new(-30, -16, 10) * CFrame.Angles(0, math.rad(90), 0))
 	Kit.sign(eng, enCf * CFrame.new(0, 20, -31.6), "ENGINEERING  -  REACTOR RADIATION", 26, 3, P.Orange)
 	airlockOnFace(root, enCf, enSize, "+X")
-	airlockOnFace(root, enCf, enSize, "+Z")
 
 	-- HABITAT RING: 8 joint rooms + 8 tube segments in the YZ plane around (200,0,0) -----------------
 	local ringC, R = Vector3.new(200, 0, 0), 150
@@ -6143,7 +6297,7 @@ function Station.Build(arena: Instance, markers: Instance)
 		nodes[k] = { cf = cf, r = r }
 		local openings = { ["+Z"] = { w = 26, h = 26 }, ["-Z"] = { w = 26, h = 26 } }
 		if k == 0 or k == 4 then openings["-Y"] = door end
-		if k == 2 or k == 6 then openings["+Y"] = door end
+		openings["+Y"] = door -- outward face: airlock on nodes 2 and 6, holo door on the others
 		local j = Kit.room(root, cf, jointSize, { name = "RingNode" .. k, pressurized = "ring" .. k, deck = false, openings = openings })
 		if k % 2 == 1 then
 			-- crew quarters: bunks
@@ -6155,6 +6309,7 @@ function Station.Build(arena: Instance, markers: Instance)
 		else
 			Kit.marker(markers, "LootSpot", cf * CFrame.new(8, 6, 0), { Tier = "mid", Kind = "crate" })
 		end
+		if k ~= 2 and k ~= 6 then holoOnFace(root, cf, jointSize, "+Y") end
 		if k == 2 or k == 6 then
 			airlockOnFace(root, cf, jointSize, "+Y")
 			Kit.marker(markers, "OxygenStation", cf * CFrame.new(-13, 0, 0) * CFrame.Angles(0, math.rad(90), 0))
@@ -6169,8 +6324,17 @@ function Station.Build(arena: Instance, markers: Instance)
 		local mid = (s + e) / 2
 		local outward = (mid - ringC).Unit
 		local cf = CFrame.lookAt(mid, e, -outward) -- deck (local -Y) faces outward, like centrifugal "down"
-		Kit.octTube(root, cf, 11, (e - s).Magnitude, { name = "RingSegment" .. k, pressurized = "ringseg" .. k,
+		local len = (e - s).Magnitude
+		local seg = Kit.octTube(root, cf, 11, len, { name = "RingSegment" .. k, pressurized = "ringseg" .. k,
 			caps = { front = true, back = true }, rings = 2, accentColor = P.Blue })
+		-- running "chaser" lights along the outer hull; the client sweeps a pulse around the ring
+		for i = 0, 5 do
+			local z = -len / 2 + (i + 0.5) * len / 6
+			local dot = Kit.part(seg, { Name = "ChaserLight", CFrame = cf * CFrame.new(0, -14.2, z), Size = Vector3.new(1.6, 0.4, 1.6),
+				Material = Enum.Material.Neon, Color = P.BlueGlow, CanCollide = false, CastShadow = false })
+			dot:SetAttribute("Seq", k * 6 + i)
+			CollectionService:AddTag(dot, "Chaser")
+		end
 	end
 	Kit.corridor(root, Vector3.new(200, 19, 0), (nodes[0].cf * CFrame.new(0, -17, 0)).Position, { pressurized = "spoke_top" })
 	Kit.corridor(root, Vector3.new(200, -19, 0), (nodes[4].cf * CFrame.new(0, -17, 0)).Position, { pressurized = "spoke_bottom" })
@@ -6192,6 +6356,15 @@ function Station.Build(arena: Instance, markers: Instance)
 		local b = Kit.part(root, { Name = "NavLight", Shape = Enum.PartType.Ball, CFrame = CFrame.new(c[1] * 33, c[2] * 23, c[3] * 33), Size = Vector3.one * 2,
 			Material = Enum.Material.Neon, Color = c[2] > 0 and P.Red or P.Green, CanCollide = false })
 		Kit.light(b, b.Color, 24, 2)
+		CollectionService:AddTag(b, "Blink")
+	end
+	-- Extremity beacons so the station's full size reads from across the arena
+	for _, p in { Vector3.new(372, 0, 30), Vector3.new(-160, 0, 26), Vector3.new(20, 100, 20), Vector3.new(20, -118, 0), Vector3.new(30, 0, 190),
+		Vector3.new(30, 0, -172), Vector3.new(200, 168, 20), Vector3.new(200, -168, 20) } do
+		local b = Kit.part(root, { Name = "Beacon", Shape = Enum.PartType.Ball, CFrame = CFrame.new(p), Size = Vector3.one * 2.4,
+			Material = Enum.Material.Neon, Color = Color3.fromRGB(255, 90, 70), CanCollide = false, CastShadow = false })
+		Kit.light(b, b.Color, 40, 2.5)
+		CollectionService:AddTag(b, "Blink")
 	end
 
 	-- Deployment points around the station exterior
@@ -6199,6 +6372,13 @@ function Station.Build(arena: Instance, markers: Instance)
 		local a = math.rad(i * 45 + 10)
 		Kit.marker(markers, "DeployPoint", CFrame.new(100 + math.cos(a) * 330, (i % 3 - 1) * 120, math.sin(a) * 330))
 	end
+
+	-- Enlarge the whole station (structure, markers, nav spaces) about its centre.
+	local newMarkers = {}
+	for _, m in markers:GetChildren() do
+		if not existingMarkers[m] and m:IsA("BasePart") then table.insert(newMarkers, m) end
+	end
+	Kit.scaleBuild(root, newMarkers, navFrom, Vector3.zero, Station.Scale, KEEP)
 	return root
 end
 
@@ -7134,6 +7314,34 @@ local function crackleLoop()
 	end
 end
 
+-- Station lighting animation: blinking beacons, a pulse sweeping around the habitat ring, and the
+-- shimmer of holo-door containment fields. Cheap: a few property writes per frame.
+local function lightingLoop()
+	local t0 = os.clock()
+	while true do
+		local t = os.clock() - t0
+		local blinkOn = (t % 1.2) < 0.25
+		for _, b in CollectionService:GetTagged("Blink") do
+			if b:IsA("BasePart") then
+				b.Transparency = blinkOn and 0 or 0.85
+				local l = b:FindFirstChildOfClass("PointLight")
+				if l then l.Enabled = blinkOn end
+			end
+		end
+		local head = (t * 14) % 48
+		for _, c in CollectionService:GetTagged("Chaser") do
+			if c:IsA("BasePart") then
+				local d = (head - (c:GetAttribute("Seq") or 0)) % 48
+				c.Transparency = d < 4 and d * 0.15 or 0.75
+			end
+		end
+		for _, f in CollectionService:GetTagged("HoloDoor") do
+			if f:IsA("BasePart") then f.Transparency = 0.15 + 0.12 * math.sin(t * 3 + f.Position.X * 0.05) end
+		end
+		task.wait(0.05)
+	end
+end
+
 -- Low-oxygen breathing / beeps
 local function oxygenLoop()
 	while true do
@@ -7167,6 +7375,7 @@ function Effects.Start()
 		updateZone()
 	end)
 	task.spawn(flickerLoop)
+	task.spawn(lightingLoop)
 	task.spawn(crackleLoop)
 	task.spawn(oxygenLoop)
 end
@@ -7216,13 +7425,21 @@ local function inMatchAlive(): boolean
 end
 
 -- BUILD ---------------------------------------------------------------------------------------------
+-- Small display-font tag floating above a panel's top edge ("// SUIT TELEMETRY").
+local function tag(panel: GuiObject, text: string, right: boolean?)
+	UI.label(panel, "// " .. text, { Font = UI.Fonts.Display, TextSize = 10, TextColor3 = C.Accent, Size = UDim2.new(1, 0, 0, 14),
+		Position = UDim2.fromOffset(0, -18), TextXAlignment = right and Enum.TextXAlignment.Right or Enum.TextXAlignment.Left })
+end
+
 local function buildVitals()
-	local f = UI.panel(gui, { Name = "Vitals", AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 16, 1, -16), Size = UDim2.fromOffset(300, 150) })
+	local f = UI.panel(gui, { Name = "Vitals", AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 16, 1, -16), Size = UDim2.fromOffset(300, 150) },
+		{ brackets = true })
+	tag(f, "SUIT TELEMETRY")
 	UI.pad(f, 10)
 	UI.list(f, 5)
 	local function row(name: string, color: Color3)
 		local r = new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 16) }, f)
-		UI.label(r, name, { Size = UDim2.fromOffset(62, 16), TextSize = 12, TextColor3 = C.Dim, Font = Enum.Font.GothamBold })
+		UI.label(r, name, { Size = UDim2.fromOffset(62, 16), TextSize = 12, TextColor3 = C.Dim, Font = UI.Fonts.Bold })
 		local _, set = UI.bar(r, color, { Position = UDim2.fromOffset(64, 2), Size = UDim2.new(1, -64, 0, 12) })
 		return set
 	end
@@ -7230,16 +7447,18 @@ local function buildVitals()
 	refs.setShield = row("SHIELD", C.Shield)
 	refs.setO2 = row("OXYGEN", C.Oxygen)
 	refs.setBoost = row("BOOST", C.Boost)
-	refs.suit = UI.label(f, "", { TextSize = 13, Font = Enum.Font.GothamBold })
+	refs.suit = UI.label(f, "", { TextSize = 13, Font = UI.Fonts.Bold })
 	refs.equip = UI.label(f, "", { TextSize = 13, TextColor3 = C.Dim })
 	refs.vitals = f
 end
 
 local function buildWeapon()
-	local f = UI.panel(gui, { Name = "Weapon", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -16, 1, -16), Size = UDim2.fromOffset(300, 150) })
+	local f = UI.panel(gui, { Name = "Weapon", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -16, 1, -16), Size = UDim2.fromOffset(300, 150) },
+		{ brackets = true })
+	tag(f, "WEAPON SYSTEMS", true)
 	UI.pad(f, 10)
-	refs.weaponName = UI.label(f, "", { Size = UDim2.new(1, 0, 0, 22), TextSize = 18, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Right })
-	refs.ammo = UI.label(f, "", { Position = UDim2.fromOffset(0, 22), Size = UDim2.new(1, 0, 0, 40), TextSize = 36, Font = Enum.Font.GothamBold,
+	refs.weaponName = UI.label(f, "", { Size = UDim2.new(1, 0, 0, 22), TextSize = 18, Font = UI.Fonts.Bold, TextXAlignment = Enum.TextXAlignment.Right })
+	refs.ammo = UI.label(f, "", { Position = UDim2.fromOffset(0, 22), Size = UDim2.new(1, 0, 0, 40), TextSize = 36, Font = UI.Fonts.Bold,
 		TextXAlignment = Enum.TextXAlignment.Right })
 	local _, setReload, reloadBar = UI.bar(f, C.Accent, { Position = UDim2.fromOffset(0, 66), Size = UDim2.new(1, 0, 0, 4) })
 	refs.setReload, refs.reloadBar = setReload, reloadBar.Parent
@@ -7259,9 +7478,10 @@ local function buildWeapon()
 end
 
 local function buildTop()
-	local f = UI.panel(gui, { Name = "MatchInfo", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 12), Size = UDim2.fromOffset(420, 64) })
+	local f = UI.panel(gui, { Name = "MatchInfo", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 12), Size = UDim2.fromOffset(440, 64) },
+		{ brackets = true })
 	refs.phase = UI.label(f, "", { Position = UDim2.fromOffset(0, 6), Size = UDim2.new(1, 0, 0, 20), TextXAlignment = Enum.TextXAlignment.Center,
-		Font = Enum.Font.GothamBold, TextSize = 16 })
+		Font = UI.Fonts.Bold, TextSize = 16 })
 	refs.sub = UI.label(f, "", { Position = UDim2.fromOffset(0, 30), Size = UDim2.new(1, 0, 0, 26), TextXAlignment = Enum.TextXAlignment.Center,
 		TextSize = 14, TextColor3 = C.Dim, RichText = true })
 	refs.top = f
@@ -7276,7 +7496,9 @@ end
 
 local MAP_R = 95
 local function buildMap()
-	local f = UI.panel(gui, { Name = "TacticalMap", Position = UDim2.fromOffset(16, 12), Size = UDim2.fromOffset(MAP_R * 2 + 20, MAP_R * 2 + 44) })
+	local f = UI.panel(gui, { Name = "TacticalMap", Position = UDim2.fromOffset(16, 28), Size = UDim2.fromOffset(MAP_R * 2 + 20, MAP_R * 2 + 44) },
+		{ brackets = true })
+	tag(f, "TACTICAL // ORBIT")
 	local disc = new("Frame", { Name = "Disc", BackgroundColor3 = Color3.fromRGB(8, 12, 20), BackgroundTransparency = 0.2, Position = UDim2.fromOffset(10, 10),
 		Size = UDim2.fromOffset(MAP_R * 2, MAP_R * 2), ClipsDescendants = false }, f)
 	UI.corner(disc, MAP_R)
@@ -7290,7 +7512,7 @@ local function buildMap()
 	refs.mapZone = ring(C.Storm, 2)
 	refs.mapNext = ring(Color3.new(1, 1, 1), 1)
 	refs.mapMe = new("TextLabel", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(16, 16),
-		Text = "▲", TextColor3 = C.Accent, Font = Enum.Font.GothamBold, TextSize = 14, ZIndex = 5 }, disc)
+		Text = "▲", TextColor3 = C.Accent, Font = UI.Fonts.Bold, TextSize = 14, ZIndex = 5 }, disc)
 	refs.mapDisc = disc
 	refs.mapInfo = UI.label(f, "", { Position = UDim2.new(0, 10, 1, -28), Size = UDim2.new(1, -20, 0, 20), TextSize = 12, TextColor3 = C.Dim,
 		TextXAlignment = Enum.TextXAlignment.Center })
@@ -7313,10 +7535,10 @@ local function buildCenter()
 	refs.crosshair = ch
 	-- hit marker
 	local hm = new("TextLabel", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(40, 40), Text = "✕", TextColor3 = Color3.new(1, 1, 1), TextSize = 28, Font = Enum.Font.GothamBold, TextTransparency = 1 }, gui)
+		Size = UDim2.fromOffset(40, 40), Text = "✕", TextColor3 = Color3.new(1, 1, 1), TextSize = 28, Font = UI.Fonts.Bold, TextTransparency = 1 }, gui)
 	refs.hitmarker = hm
 	refs.hitText = new("TextLabel", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0.5, 26, 0.5, -18),
-		Size = UDim2.fromOffset(80, 20), Text = "", TextColor3 = C.Orange, TextSize = 16, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left,
+		Size = UDim2.fromOffset(80, 20), Text = "", TextColor3 = C.Orange, TextSize = 16, Font = UI.Fonts.Bold, TextXAlignment = Enum.TextXAlignment.Left,
 		TextTransparency = 1 }, gui)
 	-- damage indicators container
 	refs.damage = new("Frame", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
@@ -7333,7 +7555,7 @@ local function buildCenter()
 	refs.progress, refs.setProg = pf, setProg
 	-- big banner (eliminated / winner / deployed)
 	refs.banner = new("TextLabel", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.32),
-		Size = UDim2.fromOffset(900, 60), Text = "", TextColor3 = Color3.new(1, 1, 1), TextStrokeTransparency = 0.5, Font = Enum.Font.GothamBlack,
+		Size = UDim2.fromOffset(900, 60), Text = "", TextColor3 = Color3.new(1, 1, 1), TextStrokeTransparency = 0.5, Font = UI.Fonts.Display,
 		TextSize = 44, TextTransparency = 1 }, gui)
 	-- low oxygen / storm vignette
 	local grad = new("Frame", { BackgroundColor3 = C.Red, BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 0 }, gui)
@@ -7363,9 +7585,9 @@ HUD.ItemTooltip = itemTooltip
 
 local function buildInventory()
 	local f = UI.panel(gui, { Name = "Inventory", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(640, 440),
-		Visible = false, ZIndex = 10 })
+		Visible = false, ZIndex = 10 }, { brackets = true })
 	UI.pad(f, 14)
-	UI.label(f, "SUIT INVENTORY", { TextSize = 20, Font = Enum.Font.GothamBold, Size = UDim2.new(1, 0, 0, 24) })
+	UI.title(f, "SUIT INVENTORY")
 	refs.invBody = new("ScrollingFrame", { BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 32), Size = UDim2.new(1, 0, 1, -90),
 		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 4, BorderSizePixel = 0 }, f)
 	UI.list(refs.invBody, 6)
@@ -7399,7 +7621,7 @@ local function refreshInventoryScreen()
 	end
 	local function header(text: string)
 		order += 1
-		UI.label(body, text, { LayoutOrder = order, TextSize = 13, TextColor3 = C.Accent, Font = Enum.Font.GothamBold })
+		UI.label(body, text, { LayoutOrder = order, TextSize = 13, TextColor3 = C.Accent, Font = UI.Fonts.Bold })
 	end
 	header("WEAPONS")
 	for slot = 1, Config.Inventory.WeaponSlots do
@@ -7454,10 +7676,12 @@ end
 -- RESULTS -------------------------------------------------------------------------------------------
 local function buildResults()
 	local f = UI.panel(gui, { Name = "Results", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(520, 400),
-		Visible = false, ZIndex = 20 })
+		Visible = false, ZIndex = 20 }, { brackets = true, accent = C.Accent })
 	UI.pad(f, 18)
 	UI.list(f, 8)
-	refs.resTitle = UI.label(f, "", { TextSize = 30, Font = Enum.Font.GothamBlack, Size = UDim2.new(1, 0, 0, 36), TextXAlignment = Enum.TextXAlignment.Center })
+	refs.resTitle = UI.label(f, "", { TextSize = 22, Font = UI.Fonts.Display, Size = UDim2.new(1, 0, 0, 36), TextXAlignment = Enum.TextXAlignment.Center,
+		TextScaled = true })
+	UI.new("UITextSizeConstraint", { MaxTextSize = 24 }, refs.resTitle)
 	refs.resWinner = UI.label(f, "", { TextSize = 18, Size = UDim2.new(1, 0, 0, 24), TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = C.Orange })
 	refs.resStats = UI.label(f, "", { TextSize = 17, Size = UDim2.new(1, 0, 0, 150), TextYAlignment = Enum.TextYAlignment.Top, RichText = true })
 	refs.resRewards = UI.label(f, "", { TextSize = 17, Size = UDim2.new(1, 0, 0, 50), TextColor3 = C.Green, RichText = true })
@@ -7483,7 +7707,7 @@ end
 
 -- FEEDBACK -------------------------------------------------------------------------------------------
 function HUD.Notice(text: string, color: Color3?)
-	local l = UI.label(refs.notices, text, { Size = UDim2.new(1, 0, 0, 24), TextXAlignment = Enum.TextXAlignment.Center, Font = Enum.Font.GothamBold,
+	local l = UI.label(refs.notices, text, { Size = UDim2.new(1, 0, 0, 24), TextXAlignment = Enum.TextXAlignment.Center, Font = UI.Fonts.Bold,
 		TextSize = 18, TextColor3 = color or C.Text, TextStrokeTransparency = 0.6 })
 	local kids = {}
 	for _, c in refs.notices:GetChildren() do
@@ -7543,7 +7767,7 @@ local function damageIndicator(from: Vector3?, _amount: number, shield: boolean)
 	local angle = math.atan2(rel.X, -rel.Z) -- bearing around the crosshair (0 = in front, shown at top)
 	local arrow = new("TextLabel", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(40, 40),
 		Position = UDim2.fromOffset(math.sin(angle) * 120, -math.cos(angle) * 120), Rotation = math.deg(angle), Text = "▲",
-		TextColor3 = shield and C.Shield or C.Red, TextSize = 34, Font = Enum.Font.GothamBlack }, refs.damage)
+		TextColor3 = shield and C.Shield or C.Red, TextSize = 34, Font = UI.Fonts.Display }, refs.damage)
 	task.spawn(function()
 		task.wait(0.6)
 		for i = 1, 10 do
@@ -7670,7 +7894,7 @@ local function updateMap()
 			if m:IsA("BasePart") then
 				local dot = new("TextLabel", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(80, 12),
 					Position = toMap(m.Position), Text = "• " .. (m:GetAttribute("Label") or ""), TextColor3 = C.Dim, TextSize = 9,
-					Font = Enum.Font.Gotham, ZIndex = 4 }, refs.mapDisc)
+					Font = UI.Fonts.Body, ZIndex = 4 }, refs.mapDisc)
 				table.insert(refs.landmarks, dot)
 			end
 		end
@@ -7889,10 +8113,16 @@ function Input.Start()
 end
 
 return Input
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">MenuController</string><ProtectedString name="Source"><![CDATA[-- Main menu (opens on join and with M): Play, Practice, Loadout, Locker, Settings, Statistics,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">MenuController</string><ProtectedString name="Source"><![CDATA[-- Main menu (opens on join and with M): Deploy, Practice, Loadout, Locker, Settings, Statistics,
 -- Tutorial, Credits. Every option shown is implemented. During a match only Resume, Settings and
 -- Tutorial are offered.
+--
+-- Layout: a full-screen orbital overlay. A twinkling starfield and a left-to-right fade let the
+-- lobby window (station + planet) show through; the logo, navigation and pilot card sit on the
+-- left; the selected page sits in a bracketed glass panel on the right; a status chip shows the
+-- orbit state and how many pilots and bots are ready.
 local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -7912,6 +8142,18 @@ local gui: ScreenGui
 local root: Frame
 local nav: Frame
 local page: Frame
+local leftCol: Frame
+local content: Frame
+local pageHeader: TextLabel
+local statusText: TextLabel
+local pilotText: TextLabel
+local setXp: (number, string?) -> ()
+local stars: { Frame } = {}
+
+local PAGE_TAGS = {
+	home = "MISSION CONTROL", loadout = "DEPLOYMENT KIT", locker = "SUIT LOCKER", settings = "SYSTEM SETTINGS",
+	stats = "PILOT RECORD", tutorial = "FLIGHT MANUAL", credits = "CREDITS",
+}
 local currentPage = "home"
 local rebinding: string? = nil
 
@@ -7927,9 +8169,16 @@ local TUTORIAL = {
 }
 
 local function setOpen(open: boolean)
+	local wasOpen = root.Visible
 	root.Visible = open
 	State.SetModal("menu", open)
-	if open then Menu.Show(currentPage) end
+	if open then
+		Menu.Show(currentPage)
+		if not wasOpen then
+			UI.reveal(leftCol, Vector2.new(-60, 0))
+			UI.reveal(content, Vector2.new(80, 0), 0.05)
+		end
+	end
 end
 Menu.SetOpen = setOpen
 
@@ -7938,11 +8187,11 @@ local function clear(f: Instance)
 end
 
 local function title(text: string)
-	UI.label(page, text, { TextSize = 24, Font = Enum.Font.GothamBlack, Size = UDim2.new(1, 0, 0, 30), LayoutOrder = 0 })
+	pageHeader.Text = text
 end
 
 local function para(text: string, order: number, props)
-	local l = UI.label(page, text, { TextWrapped = true, AutomaticSize = Enum.AutomaticSize.Y, Size = UDim2.new(1, 0, 0, 18), TextSize = 15,
+	local l = UI.label(page, text, { TextWrapped = true, AutomaticSize = Enum.AutomaticSize.Y, Size = UDim2.new(1, 0, 0, 18), TextSize = 17,
 		TextColor3 = C.Text, LayoutOrder = order, TextYAlignment = Enum.TextYAlignment.Top, RichText = true })
 	for k, v in props or {} do (l :: any)[k] = v end
 	return l
@@ -7952,28 +8201,29 @@ local pages = {}
 
 function pages.home()
 	local inMatch = player:GetAttribute("InMatch") == true and player:GetAttribute("Alive") == true
-	title(Config.GameName)
-	local p = State.Profile
-	para(p and string.format("Level <b>%d</b>   |   %d XP   |   %d credits%s", p.level, p.xp, p.credits,
-		State.TemporaryProfile and "\n<font color=\"#FF9060\">Progress is not saving in this session (DataStores unavailable).</font>" or "") or "Loading profile...", 1)
-	local phase = ReplicatedStorage:FindFirstChild("MatchState") and ReplicatedStorage.MatchState:GetAttribute("Phase") or "Waiting"
-	para("Match status: <b>" .. tostring(phase) .. "</b>", 2, { TextColor3 = C.Dim })
+	title("MISSION CONTROL")
+	para("<font size=\"24\"><b>20 PILOTS. ONE ORBIT. ONE SURVIVOR.</b></font>", 1, { Font = UI.Fonts.Bold, TextColor3 = C.Accent })
+	para("Fly in every direction, loot the station and the exploration ship, manage your oxygen and stay ahead of the radiation storm.", 2,
+		{ TextColor3 = C.Dim })
+	if State.TemporaryProfile then
+		para("<font color=\"#FFB060\">Progress is not saving in this session (DataStores unavailable).</font>", 3)
+	end
 	if inMatch then
-		para("You are in a live match. Close the menu to keep fighting.", 3)
+		para("You are in a live match. Close the menu to keep fighting.", 4)
 		return
 	end
 	local queued = player:GetAttribute("Queued") == true
-	para(queued and "<font color=\"#5ADC8C\">You are queued for the next match.</font> Practise on the range while you wait."
-		or "You are not queued. Press PLAY to join the next match.", 3)
-	local b = UI.button(page, queued and "LEAVE QUEUE" or "PLAY", { LayoutOrder = 4, Size = UDim2.new(1, 0, 0, 52), TextSize = 22,
-		BackgroundColor3 = queued and C.PanelLight or Color3.fromRGB(30, 80, 150) })
+	para(queued and "<font color=\"#46FFAA\">QUEUED</font> - you deploy with the next drop. Practise on the range while you wait."
+		or "Not queued. Hit DEPLOY to join the next drop (bots fill every empty seat).", 4)
+	local b = UI.button(page, queued and "LEAVE QUEUE" or "DEPLOY", { LayoutOrder = 5, Size = UDim2.new(1, 0, 0, 58), TextSize = 22 }, nil,
+		{ primary = not queued })
 	b.MouseButton1Click:Connect(function()
 		Effects.Play("ui")
 		Remotes.Match:FireServer({ action = "queue", value = not queued })
 		task.wait(0.2)
 		if not queued then setOpen(false) else Menu.Show("home") end
 	end)
-	UI.button(page, "PRACTICE RANGE (stay in lobby, not queued)", { LayoutOrder = 5 }, function()
+	UI.button(page, "PRACTICE RANGE  (stay in the lobby)", { LayoutOrder = 6 }, function()
 		Effects.Play("ui")
 		Remotes.Match:FireServer({ action = "queue", value = false })
 		setOpen(false)
@@ -8058,7 +8308,7 @@ function pages.settings()
 		local key = State.Bindings[action]
 		local text = string.format("%-22s  %s", State.BindingLabels[action], rebinding == action and "press a key..." or key.Name)
 		UI.button(page, text, { LayoutOrder = order, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, 0, 0, 28), TextSize = 14,
-			Font = Enum.Font.Code }, function()
+			Font = UI.Fonts.Mono }, function()
 			rebinding = action
 			Menu.Show("settings")
 		end)
@@ -8097,26 +8347,36 @@ end
 function Menu.Show(name: string)
 	currentPage = name
 	clear(page)
-	UI.list(page, 8)
+	UI.list(page, 10)
+	pageHeader.Text = ""
 	local fn = pages[name] or pages.home
 	fn()
+	local tagLabel = content:FindFirstChild("PageTag") :: TextLabel?
+	if tagLabel then tagLabel.Text = "// " .. (PAGE_TAGS[name] or "") end
 	-- nav highlights
 	for _, b in nav:GetChildren() do
 		if b:IsA("TextButton") then
-			b.TextColor3 = b.Name == name and C.Accent or C.Text
+			local on = b.Name == name
+			b.TextColor3 = on and C.Accent or C.Text
+			local rail = b:FindFirstChild("Rail") :: Frame?
+			if rail then rail.BackgroundTransparency = on and 0 or 0.6 end
 		end
 	end
 end
 
+local NAV_GLYPH = { home = "\u{25C8}", loadout = "\u{25A3}", locker = "\u{2B21}", settings = "\u{2699}", stats = "\u{25B2}", tutorial = "\u{25CE}",
+	credits = "\u{2726}" }
+
 local function buildNav()
 	local inMatch = player:GetAttribute("InMatch") == true and player:GetAttribute("Alive") == true
 	clear(nav)
-	UI.list(nav, 6)
+	UI.list(nav, 8)
 	local entries = inMatch and { { "home", "RESUME" }, { "settings", "SETTINGS" }, { "tutorial", "TUTORIAL" } }
-		or { { "home", "PLAY" }, { "loadout", "LOADOUT" }, { "locker", "LOCKER" }, { "settings", "SETTINGS" }, { "stats", "STATISTICS" },
+		or { { "home", "MISSION" }, { "loadout", "LOADOUT" }, { "locker", "LOCKER" }, { "settings", "SETTINGS" }, { "stats", "STATISTICS" },
 			{ "tutorial", "TUTORIAL" }, { "credits", "CREDITS" } }
 	for i, e in entries do
-		local b = UI.button(nav, e[2], { Name = e[1], LayoutOrder = i })
+		local b = UI.button(nav, "   " .. (NAV_GLYPH[e[1]] or "") .. "   " .. e[2], { Name = e[1], LayoutOrder = i, Size = UDim2.new(1, 0, 0, 40),
+			TextXAlignment = Enum.TextXAlignment.Left })
 		b.MouseButton1Click:Connect(function()
 			Effects.Play("ui")
 			if inMatch and e[1] == "home" then
@@ -8126,7 +8386,55 @@ local function buildNav()
 			end
 		end)
 	end
-	UI.button(nav, "CLOSE  [M]", { LayoutOrder = 99, BackgroundColor3 = Color3.fromRGB(40, 20, 24) }, function() setOpen(false) end)
+	UI.button(nav, "   \u{2715}   CLOSE  [M]", { LayoutOrder = 99, TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = C.Dim }, function()
+		setOpen(false)
+	end)
+end
+
+-- Pilot card + status chip, refreshed every half second while the menu is open.
+local function refreshStatus()
+	local p = State.Profile
+	if p then
+		local need = Config.XpForLevel(p.level)
+		local prev = p.level > 1 and Config.XpForLevel(p.level - 1) or 0
+		pilotText.Text = string.format("<font size=\"20\"><b>%s</b></font>\nLEVEL %d   \u{00B7}   %d CREDITS", string.upper(player.Name), p.level, p.credits)
+		setXp((p.xp - prev) / math.max(1, need - prev), string.format("%d / %d XP", p.xp, need))
+	end
+	local ms = ReplicatedStorage:FindFirstChild("MatchState")
+	if ms then
+		local phase = string.upper(tostring(ms:GetAttribute("Phase") or "WAITING"))
+		local bots = ms:GetAttribute("Bots") or 0
+		local queued = ms:GetAttribute("Queued") or 0
+		statusText.Text = string.format("ORBIT STATUS  <font color=\"#00E1FF\">\u{25CF} %s</font>   |   %d PILOT%s + %d BOTS", phase, queued,
+			queued == 1 and "" or "S", bots)
+	end
+end
+
+-- Twinkling starfield behind the menu.
+local function buildStars(parent: Instance)
+	local rng = Random.new(7)
+	for i = 1, 90 do
+		local size = rng:NextNumber() < 0.15 and 3 or (rng:NextNumber() < 0.5 and 2 or 1)
+		local star = new("Frame", { Name = "Star", BackgroundColor3 = i % 7 == 0 and C.Accent or Color3.new(1, 1, 1), BorderSizePixel = 0,
+			Position = UDim2.fromScale(rng:NextNumber(), rng:NextNumber()), Size = UDim2.fromOffset(size, size),
+			BackgroundTransparency = rng:NextNumber(0.1, 0.7) }, parent)
+		UI.corner(star, 2)
+		table.insert(stars, star)
+	end
+	task.spawn(function()
+		local trng = Random.new()
+		while gui and gui.Parent do
+			if root.Visible then
+				for _ = 1, 6 do
+					local s = stars[trng:NextInteger(1, #stars)]
+					TweenService:Create(s, TweenInfo.new(trng:NextNumber(0.6, 1.6), Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, 0, true),
+						{ BackgroundTransparency = trng:NextNumber(0, 0.9) }):Play()
+				end
+				refreshStatus()
+			end
+			task.wait(0.5)
+		end
+	end)
 end
 
 function Menu.Start()
@@ -8134,15 +8442,46 @@ function Menu.Start()
 	local scale = new("UIScale", {}, gui)
 	local function rescale()
 		local vp = workspace.CurrentCamera.ViewportSize
-		scale.Scale = math.clamp(math.min(vp.X / 1100, vp.Y / 700), 0.55, 1.2)
+		scale.Scale = math.clamp(math.min(vp.X / 1280, vp.Y / 760), 0.5, 1.25)
 	end
 	rescale()
 	workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(rescale)
-	root = UI.panel(gui, { Name = "Menu", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(860, 540),
-		BackgroundTransparency = 0.12 })
-	nav = new("Frame", { BackgroundTransparency = 1, Position = UDim2.fromOffset(16, 16), Size = UDim2.new(0, 200, 1, -32) }, root)
-	page = new("ScrollingFrame", { BackgroundTransparency = 1, BorderSizePixel = 0, Position = UDim2.fromOffset(236, 16), Size = UDim2.new(1, -252, 1, -32),
-		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 4 }, root)
+
+	root = new("Frame", { Name = "Menu", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1) }, gui)
+	-- backdrop: deep space fading out to the right so the lobby window (station, planet) shows through
+	local back = new("Frame", { Name = "Backdrop", BackgroundColor3 = Color3.fromRGB(2, 5, 14), BorderSizePixel = 0, Size = UDim2.fromScale(1, 1) }, root)
+	new("UIGradient", { Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.02), NumberSequenceKeypoint.new(0.45, 0.25),
+		NumberSequenceKeypoint.new(1, 0.55) }) }, back)
+	buildStars(back)
+	-- left column: logo, navigation, pilot card
+	leftCol = new("Frame", { Name = "Left", BackgroundTransparency = 1, Position = UDim2.new(0, 56, 0, 0), Size = UDim2.new(0, 360, 1, 0) }, root)
+	local logo = UI.label(leftCol, "ZERO GRAVITY", { Font = UI.Fonts.Display, TextSize = 40, Position = UDim2.fromOffset(0, 60),
+		Size = UDim2.new(1, 0, 0, 50) })
+	new("UIGradient", { Color = ColorSequence.new(Color3.fromRGB(0, 225, 255), Color3.fromRGB(170, 120, 255)) }, logo)
+	UI.label(leftCol, "L A S T    O R B I T", { Font = UI.Fonts.Display, TextSize = 14, TextColor3 = C.Dim, Position = UDim2.fromOffset(4, 110),
+		Size = UDim2.new(1, 0, 0, 20) })
+	new("Frame", { BackgroundColor3 = C.Accent, BorderSizePixel = 0, Position = UDim2.fromOffset(4, 140), Size = UDim2.fromOffset(120, 2) }, leftCol)
+	nav = new("Frame", { Name = "Nav", BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 170), Size = UDim2.new(1, 0, 0, 400) }, leftCol)
+	local card = UI.panel(leftCol, { Name = "PilotCard", AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, -40), Size = UDim2.new(1, 0, 0, 92) },
+		{ brackets = true })
+	UI.pad(card, 12)
+	pilotText = UI.label(card, "PILOT", { Font = UI.Fonts.Bold, TextSize = 15, RichText = true, Size = UDim2.new(1, 0, 0, 44),
+		TextYAlignment = Enum.TextYAlignment.Top })
+	local _, xpSetter = UI.bar(card, C.Accent, { Position = UDim2.fromOffset(0, 52), Size = UDim2.new(1, 0, 0, 12) }, 20)
+	setXp = xpSetter
+	-- status chip (top right)
+	local chip = UI.panel(root, { Name = "Status", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -56, 0, 40), Size = UDim2.fromOffset(470, 36) })
+	statusText = UI.label(chip, "ORBIT STATUS", { Font = UI.Fonts.Bold, TextSize = 15, RichText = true, Size = UDim2.fromScale(1, 1),
+		TextXAlignment = Enum.TextXAlignment.Center })
+	-- content panel (right)
+	content = UI.panel(root, { Name = "Content", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -56, 0.5, 30),
+		Size = UDim2.new(0.5, 0, 0.72, 0) }, { brackets = true })
+	new("UISizeConstraint", { MinSize = Vector2.new(520, 380), MaxSize = Vector2.new(820, 640) }, content)
+	UI.label(content, "// MISSION CONTROL", { Name = "PageTag", Font = UI.Fonts.Display, TextSize = 10, TextColor3 = C.Accent,
+		Position = UDim2.fromOffset(22, 14), Size = UDim2.new(1, -44, 0, 14) })
+	pageHeader = UI.title(content, "", { Position = UDim2.fromOffset(22, 32), Size = UDim2.new(1, -44, 0, 36) })
+	page = new("ScrollingFrame", { BackgroundTransparency = 1, BorderSizePixel = 0, Position = UDim2.fromOffset(22, 84), Size = UDim2.new(1, -44, 1, -104),
+		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 3, ScrollBarImageColor3 = C.Accent }, content)
 	gui.Parent = player:WaitForChild("PlayerGui")
 	buildNav()
 	setOpen(true)
@@ -8161,7 +8500,10 @@ function Menu.Start()
 		end
 	end)
 	State.ProfileChanged:Connect(function()
-		if root.Visible then Menu.Show(currentPage) end
+		if root.Visible then
+			Menu.Show(currentPage)
+			refreshStatus()
+		end
 	end)
 	player:GetAttributeChangedSignal("Queued"):Connect(function()
 		if root.Visible and currentPage == "home" then Menu.Show("home") end
@@ -8353,25 +8695,39 @@ function Movement.Start()
 end
 
 return Movement
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Small UI construction helpers so every screen shares one look: transparent dark panels,
--- thin cyan strokes, clean Gotham type, restrained neon accents.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- UI construction kit: one "orbital HUD" look shared by every screen.
+--   * deep-space glass panels (navy with a soft vertical sheen) edged by a light-catching cyan stroke
+--   * HUD corner brackets on major panels
+--   * Michroma display type, Titillium body, Sarpanch for numbers and short readouts
+--   * segmented telemetry bars, buttons with an accent rail and animated hover glow
+local TweenService = game:GetService("TweenService")
+
 local UIKit = {}
 
+UIKit.Fonts = {
+	Display = Enum.Font.Michroma, -- titles, section headers, buttons
+	Body = Enum.Font.TitilliumWeb, -- paragraphs and descriptions
+	Bold = Enum.Font.Sarpanch, -- numbers, readouts, short labels
+	Mono = Enum.Font.RobotoMono, -- key bindings, tabular values
+}
+local F = UIKit.Fonts
+
 UIKit.Colors = {
-	Panel = Color3.fromRGB(10, 14, 22),
-	PanelLight = Color3.fromRGB(22, 30, 44),
-	Stroke = Color3.fromRGB(70, 150, 230),
-	Text = Color3.fromRGB(225, 235, 248),
-	Dim = Color3.fromRGB(140, 155, 175),
-	Accent = Color3.fromRGB(80, 180, 255),
-	Orange = Color3.fromRGB(255, 140, 50),
-	Red = Color3.fromRGB(255, 70, 60),
-	Green = Color3.fromRGB(90, 220, 140),
-	Health = Color3.fromRGB(235, 240, 245),
-	Shield = Color3.fromRGB(70, 150, 255),
-	Oxygen = Color3.fromRGB(90, 230, 220),
-	Boost = Color3.fromRGB(255, 160, 60),
-	Storm = Color3.fromRGB(190, 110, 255),
+	Panel = Color3.fromRGB(6, 12, 26),
+	PanelLight = Color3.fromRGB(14, 28, 52),
+	Stroke = Color3.fromRGB(0, 210, 255),
+	Text = Color3.fromRGB(228, 242, 255),
+	Dim = Color3.fromRGB(128, 160, 196),
+	Accent = Color3.fromRGB(0, 225, 255),
+	Accent2 = Color3.fromRGB(150, 110, 255),
+	Orange = Color3.fromRGB(255, 170, 60),
+	Red = Color3.fromRGB(255, 72, 96),
+	Green = Color3.fromRGB(70, 255, 170),
+	Health = Color3.fromRGB(235, 248, 255),
+	Shield = Color3.fromRGB(60, 160, 255),
+	Oxygen = Color3.fromRGB(70, 240, 225),
+	Boost = Color3.fromRGB(255, 176, 70),
+	Storm = Color3.fromRGB(196, 110, 255),
 }
 local C = UIKit.Colors
 
@@ -8386,53 +8742,113 @@ end
 local new = UIKit.new
 
 function UIKit.corner(parent: Instance, r: number?)
-	return new("UICorner", { CornerRadius = UDim.new(0, r or 6) }, parent)
+	return new("UICorner", { CornerRadius = UDim.new(0, r or 3) }, parent)
 end
 
+-- Stroke that catches the light on its left/top edge and fades out to the right.
 function UIKit.stroke(parent: Instance, color: Color3?, transparency: number?)
-	return new("UIStroke", { Color = color or C.Stroke, Transparency = transparency or 0.55, Thickness = 1,
+	local s = new("UIStroke", { Color = color or C.Stroke, Transparency = transparency or 0.35, Thickness = 1,
 		ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, parent)
+	new("UIGradient", { Rotation = 25, Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.45, 0.55), NumberSequenceKeypoint.new(1, 0.25),
+	}) }, s)
+	return s
 end
 
-function UIKit.panel(parent: Instance, props)
-	local f = new("Frame", { BackgroundColor3 = C.Panel, BackgroundTransparency = 0.25, BorderSizePixel = 0 }, parent)
+-- Four L-shaped corner brackets, the classic HUD framing.
+function UIKit.brackets(parent: Instance, color: Color3?, len: number?)
+	local L = len or 12
+	local col = color or C.Accent
+	for _, c in { { 0, 0, 1, 1 }, { 1, 0, -1, 1 }, { 0, 1, 1, -1 }, { 1, 1, -1, -1 } } do
+		local anchor = Vector2.new(c[1], c[2])
+		new("Frame", { Name = "Bracket", BackgroundColor3 = col, BorderSizePixel = 0, AnchorPoint = anchor, Position = UDim2.fromScale(c[1], c[2]),
+			Size = UDim2.fromOffset(L, 2), ZIndex = 5 }, parent)
+		new("Frame", { Name = "Bracket", BackgroundColor3 = col, BorderSizePixel = 0, AnchorPoint = anchor, Position = UDim2.fromScale(c[1], c[2]),
+			Size = UDim2.fromOffset(2, L), ZIndex = 5 }, parent)
+	end
+end
+
+-- Glass panel. opts.brackets adds HUD corner brackets; opts.accent tints edge and brackets.
+function UIKit.panel(parent: Instance, props, opts)
+	opts = opts or {}
+	local f = new("Frame", { BackgroundColor3 = C.Panel, BackgroundTransparency = 0.18, BorderSizePixel = 0 }, parent)
 	for k, v in props or {} do (f :: any)[k] = v end
 	UIKit.corner(f)
-	UIKit.stroke(f)
+	UIKit.stroke(f, opts.accent)
+	new("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(190, 225, 255), Color3.fromRGB(150, 170, 200)),
+		Transparency = NumberSequence.new(0, 0.1) }, f)
+	if opts.brackets then UIKit.brackets(f, opts.accent) end
 	return f
 end
 
 function UIKit.label(parent: Instance, text: string, props)
 	local l = new("TextLabel", {
-		BackgroundTransparency = 1, Text = text, TextColor3 = C.Text, Font = Enum.Font.GothamMedium, TextSize = 16,
+		BackgroundTransparency = 1, Text = text, TextColor3 = C.Text, Font = F.Body, TextSize = 17,
 		TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, 0, 0, 20),
 	}, parent)
 	for k, v in props or {} do (l :: any)[k] = v end
 	return l
 end
 
-function UIKit.button(parent: Instance, text: string, props, onClick: (() -> ())?)
+-- Display-font heading with a short accent underline.
+function UIKit.title(parent: Instance, text: string, props)
+	local l = UIKit.label(parent, text, { Font = F.Display, TextSize = 22, Size = UDim2.new(1, 0, 0, 34), TextColor3 = C.Text })
+	for k, v in props or {} do (l :: any)[k] = v end
+	new("Frame", { BackgroundColor3 = C.Accent, BorderSizePixel = 0, AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1),
+		Size = UDim2.fromOffset(56, 2) }, l)
+	return l
+end
+
+local HOVER = TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+-- Button with a left accent rail and an animated hover glow. opts.primary = filled cyan call to action.
+function UIKit.button(parent: Instance, text: string, props, onClick: (() -> ())?, opts)
+	opts = opts or {}
+	local base = opts.primary and Color3.fromRGB(0, 120, 160) or C.PanelLight
 	local b = new("TextButton", {
-		BackgroundColor3 = C.PanelLight, BackgroundTransparency = 0.1, BorderSizePixel = 0, AutoButtonColor = true,
-		Text = text, TextColor3 = C.Text, Font = Enum.Font.GothamBold, TextSize = 16, Size = UDim2.new(1, 0, 0, 38),
+		BackgroundColor3 = base, BackgroundTransparency = opts.primary and 0.05 or 0.25, BorderSizePixel = 0, AutoButtonColor = false,
+		Text = text, TextColor3 = C.Text, Font = F.Display, TextSize = 14, Size = UDim2.new(1, 0, 0, 38),
 	}, parent)
 	for k, v in props or {} do (b :: any)[k] = v end
-	UIKit.corner(b)
-	UIKit.stroke(b, C.Stroke, 0.4)
+	UIKit.corner(b, 2)
+	local stroke = UIKit.stroke(b, opts.primary and C.Accent or C.Stroke, opts.primary and 0.1 or 0.5)
+	local rail = new("Frame", { Name = "Rail", BackgroundColor3 = C.Accent, BorderSizePixel = 0, Size = UDim2.new(0, 3, 1, 0),
+		BackgroundTransparency = opts.primary and 0 or 0.6 }, b)
+	if opts.primary then
+		new("UIGradient", { Rotation = 0, Color = ColorSequence.new(Color3.fromRGB(0, 210, 255), Color3.fromRGB(110, 90, 255)) }, b)
+	end
+	local hover = base:Lerp(C.Accent, 0.35)
+	b.MouseEnter:Connect(function()
+		TweenService:Create(b, HOVER, { BackgroundColor3 = hover }):Play()
+		TweenService:Create(stroke, HOVER, { Transparency = 0 }):Play()
+		TweenService:Create(rail, HOVER, { BackgroundTransparency = 0, Size = UDim2.new(0, 5, 1, 0) }):Play()
+	end)
+	b.MouseLeave:Connect(function()
+		TweenService:Create(b, HOVER, { BackgroundColor3 = base }):Play()
+		TweenService:Create(stroke, HOVER, { Transparency = opts.primary and 0.1 or 0.5 }):Play()
+		TweenService:Create(rail, HOVER, { BackgroundTransparency = opts.primary and 0 or 0.6, Size = UDim2.new(0, 3, 1, 0) }):Play()
+	end)
 	if onClick then b.MouseButton1Click:Connect(onClick) end
 	return b
 end
 
--- Horizontal bar with fill; returns frame and a setter (fraction 0..1, optional text).
-function UIKit.bar(parent: Instance, color: Color3, props)
-	local back = new("Frame", { BackgroundColor3 = Color3.fromRGB(30, 36, 48), BackgroundTransparency = 0.2, BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 12) }, parent)
+-- Segmented telemetry bar; returns frame, setter (fraction 0..1, optional text) and the fill.
+function UIKit.bar(parent: Instance, color: Color3, props, segments: number?)
+	local back = new("Frame", { BackgroundColor3 = Color3.fromRGB(10, 22, 40), BackgroundTransparency = 0.15, BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, 12), ClipsDescendants = true }, parent)
 	for k, v in props or {} do (back :: any)[k] = v end
-	UIKit.corner(back, 3)
-	local fill = new("Frame", { BackgroundColor3 = color, BorderSizePixel = 0, Size = UDim2.fromScale(1, 1) }, back)
-	UIKit.corner(fill, 3)
-	local text = new("TextLabel", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Font = Enum.Font.GothamBold, TextSize = 11,
-		TextColor3 = Color3.fromRGB(10, 14, 22), Text = "", ZIndex = 3 }, back)
+	UIKit.corner(back, 2)
+	new("UIStroke", { Color = color, Transparency = 0.7, Thickness = 1 }, back)
+	local fill = new("Frame", { Name = "Fill", BackgroundColor3 = color, BorderSizePixel = 0, Size = UDim2.fromScale(1, 1) }, back)
+	UIKit.corner(fill, 2)
+	new("UIGradient", { Color = ColorSequence.new(color:Lerp(Color3.new(0, 0, 0), 0.35), color:Lerp(Color3.new(1, 1, 1), 0.15)) }, fill)
+	local n = segments or 10
+	for i = 1, n - 1 do
+		new("Frame", { Name = "Tick", BackgroundColor3 = Color3.fromRGB(4, 10, 20), BackgroundTransparency = 0.2, BorderSizePixel = 0,
+			Position = UDim2.new(i / n, -1, 0, 0), Size = UDim2.new(0, 2, 1, 0), ZIndex = 2 }, back)
+	end
+	local text = new("TextLabel", { BackgroundTransparency = 1, Size = UDim2.new(1, -6, 1, 0), Position = UDim2.fromOffset(3, 0), Font = F.Bold,
+		TextSize = 12, TextColor3 = C.Text, TextStrokeTransparency = 0.4, TextXAlignment = Enum.TextXAlignment.Right, Text = "", ZIndex = 3 }, back)
 	local function set(frac: number, txt: string?)
 		fill.Size = UDim2.fromScale(math.clamp(frac, 0, 1), 1)
 		text.Text = txt or ""
@@ -8450,6 +8866,15 @@ end
 function UIKit.pad(parent: Instance, px: number)
 	return new("UIPadding", { PaddingLeft = UDim.new(0, px), PaddingRight = UDim.new(0, px), PaddingTop = UDim.new(0, px),
 		PaddingBottom = UDim.new(0, px) }, parent)
+end
+
+-- Slide + fade a frame in (used when menus and result screens open).
+function UIKit.reveal(frame: GuiObject, fromOffset: Vector2, delay: number?)
+	local target = frame.Position
+	frame.Position = target + UDim2.fromOffset(fromOffset.X, fromOffset.Y)
+	task.delay(delay or 0, function()
+		TweenService:Create(frame, TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Position = target }):Play()
+	end)
 end
 
 function UIKit.formatTime(seconds: number): string

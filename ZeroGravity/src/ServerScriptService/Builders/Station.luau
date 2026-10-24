@@ -8,10 +8,21 @@
 --     +X Spine -> Ring Junction -> Engineering (reactor); the Habitat Ring (8 segments) circles the
 --        spine in the YZ plane and is reached by two spokes.
 --   Exterior: solar arrays, antennae, maintenance platforms with loot, hull lights.
+--   Holo doors (containment fields) on many exterior walls give quick, airlock-free access; a few
+--   airlocks remain as the slower, sealed routes.
+-- The whole station is laid out at base scale, then enlarged by Station.Scale (structure grows,
+-- human-scale furniture keeps its size).
+local CollectionService = game:GetService("CollectionService")
 local Kit = require(script.Parent.Kit)
 local P = Kit.Palette
 
 local Station = {}
+Station.Scale = 1.5
+-- Furniture that keeps its real size when the station is enlarged (parts or whole models).
+local KEEP = {
+	ConsoleUnit = true, LockerUnit = true, CargoStack = true, PlanterUnit = true, Container = true, CaptainChair = true, Bench = true,
+	Bunk = true, FallenBench = true, SpecimenTube = true,
+}
 
 local T = 2 -- wall thickness used throughout
 
@@ -27,6 +38,11 @@ local function airlockOnFace(parent, roomCf: CFrame, size: Vector3, face: string
 	return airlockAt(parent, center, fcf.LookVector * -1)
 end
 
+-- Holo door in a room face (the room needs a 12x12 opening on that face).
+local function holoOnFace(parent, roomCf: CFrame, size: Vector3, face: string)
+	return Kit.holoDoor(parent, Kit.faceCFrame(roomCf, size, face, T / 2), 12, 12)
+end
+
 -- Maintenance platform: grated deck with railings, a crate stack and a loot marker.
 local function platform(parent, markers, cf: CFrame, w: number, d: number, tier: string)
 	local m = Kit.model("MaintenancePlatform", parent)
@@ -40,15 +56,25 @@ local function platform(parent, markers, cf: CFrame, w: number, d: number, tier:
 		Kit.part(m, { Name = "Post", CFrame = cf * CFrame.new(x, 1, z), Size = Vector3.new(0.5, 2, 0.5), Color = P.HullLight })
 	end
 	Kit.crate(m, cf * CFrame.new(w / 4, 3.5, 0), Vector3.new(6, 6, 10), P.Gunmetal)
-	local lamp = Kit.part(m, { Name = "Floodlight", CFrame = cf * CFrame.new(-w / 2 + 1, 4, -d / 2 + 1), Size = Vector3.new(1.4, 1.4, 1.4),
+	local lampPos = (cf * CFrame.new(-w / 2 + 1, 4, -d / 2 + 1)).Position
+	-- floodlight aimed back at the station hull
+	local lamp = Kit.part(m, { Name = "Floodlight", CFrame = CFrame.lookAt(lampPos, Vector3.zero), Size = Vector3.new(1.4, 1.4, 1.4),
 		Material = Enum.Material.Neon, Color = P.BlueGlow, CanCollide = false })
 	Kit.light(lamp, P.BlueGlow, 30, 1.4)
+	local spot = Instance.new("SpotLight")
+	spot.Face = Enum.NormalId.Front
+	spot.Angle = 70
+	spot.Range = 60
+	spot.Brightness = 3
+	spot.Color = Color3.fromRGB(220, 235, 255)
+	spot.Parent = lamp
 	Kit.marker(markers, "LootSpot", cf * CFrame.new(-w / 4, 2.5, 0), { Tier = tier, Kind = "crate" })
 	return m
 end
 
 -- Furniture helpers ------------------------------------------------------------------------------
 local function console(parent, cf: CFrame)
+	parent = Kit.model("ConsoleUnit", parent)
 	Kit.part(parent, { Name = "Console", CFrame = cf, Size = Vector3.new(6, 3, 2.4), Color = P.Gunmetal })
 	local screen = Kit.part(parent, { Name = "Screen", CFrame = cf * CFrame.new(0, 1.6, -0.4) * CFrame.Angles(math.rad(-25), 0, 0),
 		Size = Vector3.new(5, 0.2, 1.8), Material = Enum.Material.Neon, Color = Color3.fromRGB(60, 150, 255), CanCollide = false })
@@ -58,19 +84,24 @@ end
 local function lockers(parent, cf: CFrame, count: number)
 	for i = 0, count - 1 do
 		local c = cf * CFrame.new((i - (count - 1) / 2) * 3.2, 0, 0)
-		Kit.part(parent, { Name = "Locker", CFrame = c, Size = Vector3.new(3, 8, 2.4), Color = P.HullDark })
-		Kit.part(parent, { Name = "LockerLight", CFrame = c * CFrame.new(0, 3, -1.25), Size = Vector3.new(2, 0.3, 0.1),
+		local unit = Kit.model("LockerUnit", parent)
+		Kit.part(unit, { Name = "Locker", CFrame = c, Size = Vector3.new(3, 8, 2.4), Color = P.HullDark })
+		Kit.part(unit, { Name = "LockerLight", CFrame = c * CFrame.new(0, 3, -1.25), Size = Vector3.new(2, 0.3, 0.1),
 			Material = Enum.Material.Neon, Color = P.Blue, CanCollide = false })
 	end
 end
 
 local function cargoStack(parent, cf: CFrame)
-	Kit.crate(parent, cf, Vector3.new(8, 6, 6), P.HullDark)
-	Kit.crate(parent, cf * CFrame.new(1, 6, 0) * CFrame.Angles(0, math.rad(15), 0), Vector3.new(6, 6, 6), Color3.fromRGB(70, 90, 120))
+	local m = Kit.model("CargoStack", parent)
+	Kit.crate(m, cf, Vector3.new(8, 6, 6), P.HullDark)
+	Kit.crate(m, cf * CFrame.new(1, 6, 0) * CFrame.Angles(0, math.rad(15), 0), Vector3.new(6, 6, 6), Color3.fromRGB(70, 90, 120))
 end
 
 function Station.Build(arena: Instance, markers: Instance)
 	local root = Kit.model("SpaceStation", arena)
+	local navFrom = #Kit.NavSpaces + 1
+	local existingMarkers = {}
+	for _, m in markers:GetChildren() do existingMarkers[m] = true end
 
 	-- HUB ---------------------------------------------------------------------------------------
 	local hubCf, hubSize = CFrame.new(0, 0, 0), Vector3.new(60, 40, 60)
@@ -92,6 +123,11 @@ function Station.Build(arena: Instance, markers: Instance)
 		cargoStack(hub, CFrame.new(c[1], c[2], c[3]))
 	end
 	console(hub, CFrame.new(0, -18, 24))
+	-- ceiling light ring
+	for i = 0, 11 do
+		local a = math.rad(i * 30)
+		Kit.strip(hub, CFrame.new(math.cos(a) * 14, 19.4, math.sin(a) * 14) * CFrame.Angles(0, -a, 0), Vector3.new(1, 0.4, 6.5), P.BlueGlow, i % 3 == 0, 40)
+	end
 	Kit.sign(hub, CFrame.new(0, 14, 29.6) * CFrame.Angles(0, math.rad(180), 0), "MERIDIAN STATION - HUB", 24, 3)
 	Kit.marker(markers, "LootSpot", CFrame.new(24, -17, -24), { Tier = "mid", Kind = "crate" })
 	Kit.marker(markers, "LootSpot", CFrame.new(-24, 10, 24), { Tier = "mid", Kind = "locker" })
@@ -163,8 +199,9 @@ function Station.Build(arena: Instance, markers: Instance)
 	local jCf, jSize = CFrame.new(-120, 0, 0), Vector3.new(36, 24, 36)
 	local junction = Kit.room(root, jCf, jSize, {
 		name = "LabJunction", pressurized = "lab_junction", deck = true,
-		openings = { ["+X"] = door, ["-X"] = door, ["+Z"] = door, ["-Z"] = door, ["+Y"] = door },
+		openings = { ["+X"] = door, ["-X"] = door, ["+Z"] = door, ["-Z"] = door, ["+Y"] = door, ["-Y"] = door },
 	})
+	holoOnFace(root, jCf, jSize, "-Y")
 	Kit.sign(junction, jCf * CFrame.new(0, 9, -17.6), "SCIENCE LABS", 14, 2.5)
 	Kit.marker(markers, "OxygenStation", jCf * CFrame.new(16, -6, 10) * CFrame.Angles(0, math.rad(-90), 0))
 	airlockOnFace(root, jCf, jSize, "-X")
@@ -172,7 +209,9 @@ function Station.Build(arena: Instance, markers: Instance)
 	-- Lab A (+Z)
 	Kit.corridor(root, jCf * Vector3.new(0, 0, 20), jCf * Vector3.new(0, 0, 50), { pressurized = "labA_corridor" })
 	local laCf, laSize = jCf * CFrame.new(0, 0, 68), Vector3.new(40, 20, 32)
-	local labA = Kit.room(root, laCf, laSize, { name = "LabA", pressurized = "labA", deck = true, openings = { ["-Z"] = door } })
+	local labA = Kit.room(root, laCf, laSize, { name = "LabA", pressurized = "labA", deck = true,
+		openings = { ["-Z"] = door, ["+Z"] = door, ["+X"] = door, ["-X"] = door } })
+	for _, f in { "+Z", "+X", "-X" } do holoOnFace(root, laCf, laSize, f) end
 	for i = -1, 1 do
 		Kit.part(labA, { Name = "Bench", CFrame = laCf * CFrame.new(i * 12, -8, 4), Size = Vector3.new(8, 3, 14), Color = P.HullLight })
 		local tube = Kit.part(labA, { Name = "SpecimenTube", Shape = Enum.PartType.Cylinder, CFrame = laCf * CFrame.new(i * 12, -3, 10) * CFrame.Angles(0, 0, math.rad(90)),
@@ -204,7 +243,9 @@ function Station.Build(arena: Instance, markers: Instance)
 	Kit.corridor(root, jCf * Vector3.new(0, 14, 0), jCf * Vector3.new(0, 38, 0), { pressurized = "labC_corridor" })
 	local lcCf, lcSize = jCf * CFrame.new(0, 49, 0), Vector3.new(30, 18, 30)
 	local labC = Kit.room(root, lcCf, lcSize, { name = "LabC_Observatory", pressurized = "labC", deck = true,
-		openings = { ["-Y"] = door, ["+Y"] = { w = 18, h = 18 } } })
+		openings = { ["-Y"] = door, ["+Y"] = { w = 18, h = 18 }, ["+X"] = door, ["-X"] = door } })
+	holoOnFace(root, lcCf, lcSize, "+X")
+	holoOnFace(root, lcCf, lcSize, "-X")
 	Kit.window(labC, Kit.faceCFrame(lcCf, lcSize, "+Y", T / 2), 18, 18)
 	Kit.part(labC, { Name = "Telescope", Shape = Enum.PartType.Cylinder, CFrame = lcCf * CFrame.new(0, 2, 0) * CFrame.Angles(0, 0, math.rad(70)),
 		Size = Vector3.new(14, 4, 4), Color = P.HullLight })
@@ -215,13 +256,16 @@ function Station.Build(arena: Instance, markers: Instance)
 	local hyCf, hySize = CFrame.new(0, 0, -140), Vector3.new(56, 24, 56)
 	local hydro = Kit.room(root, hyCf, hySize, {
 		name = "Hydroponics", pressurized = "hydro", deck = true, lightColor = Color3.fromRGB(200, 255, 210),
-		openings = { ["+Z"] = door, ["-Z"] = door, ["+X"] = door },
+		openings = { ["+Z"] = door, ["-Z"] = door, ["+X"] = door, ["-X"] = door },
 	})
+	holoOnFace(root, hyCf, hySize, "+X")
+	holoOnFace(root, hyCf, hySize, "-X")
 	for x = -1, 1 do
 		for z = -1, 1 do
 			local bed = hyCf * CFrame.new(x * 16, -10, z * 16)
-			Kit.part(hydro, { Name = "Planter", CFrame = bed, Size = Vector3.new(10, 2, 10), Color = P.HullDark })
-			Kit.part(hydro, { Name = "Crop", CFrame = bed * CFrame.new(0, 1.6, 0), Size = Vector3.new(9, 1.2, 9), Color = Color3.fromRGB(70, 160, 60),
+			local unit = Kit.model("PlanterUnit", hydro)
+			Kit.part(unit, { Name = "Planter", CFrame = bed, Size = Vector3.new(10, 2, 10), Color = P.HullDark })
+			Kit.part(unit, { Name = "Crop", CFrame = bed * CFrame.new(0, 1.6, 0), Size = Vector3.new(9, 1.2, 9), Color = Color3.fromRGB(70, 160, 60),
 				Material = Enum.Material.Grass })
 			Kit.strip(hydro, bed * CFrame.new(0, 9, 0), Vector3.new(8, 0.3, 1), Color3.fromRGB(255, 120, 255), x == 0 and z == 0, 40)
 		end
@@ -232,13 +276,14 @@ function Station.Build(arena: Instance, markers: Instance)
 	Kit.marker(markers, "OxygenStation", hyCf * CFrame.new(-26, -6, 0) * CFrame.Angles(0, math.rad(90), 0))
 	Kit.marker(markers, "FinalZone", hyCf, { Label = "Hydroponics" })
 	airlockOnFace(root, hyCf, hySize, "-Z")
-	airlockOnFace(root, hyCf, hySize, "+X")
 
 	-- +Z ARMOURY -> OBSERVATION DECK -----------------------------------------------------------------
 	Kit.corridor(root, Vector3.new(0, 0, 32), Vector3.new(0, 0, 90), { pressurized = "arm_corridor" })
 	local arCf, arSize = CFrame.new(0, 0, 107), Vector3.new(30, 16, 30)
 	local armoury = Kit.room(root, arCf, arSize, { name = "Armoury", pressurized = "armoury", deck = true, lightColor = Color3.fromRGB(255, 200, 170),
-		openings = { ["-Z"] = door, ["+Z"] = door } })
+		openings = { ["-Z"] = door, ["+Z"] = door, ["+Y"] = door, ["-Y"] = door } })
+	holoOnFace(root, arCf, arSize, "+Y")
+	holoOnFace(root, arCf, arSize, "-Y")
 	lockers(armoury, arCf * CFrame.new(-13.5, -4, 0) * CFrame.Angles(0, math.rad(90), 0), 5)
 	lockers(armoury, arCf * CFrame.new(13.5, -4, 0) * CFrame.Angles(0, math.rad(-90), 0), 5)
 	Kit.sign(armoury, arCf * CFrame.new(0, 6, -14.6), "ARMOURY", 10, 2, P.Orange)
@@ -255,7 +300,7 @@ function Station.Build(arena: Instance, markers: Instance)
 	end
 	Kit.marker(markers, "LootSpot", obCf * CFrame.new(-24, -6, -10), { Tier = "low", Kind = "crate" })
 	Kit.marker(markers, "OxygenStation", obCf * CFrame.new(20, -6, -13))
-	airlockOnFace(root, obCf, obSize, "+X")
+	holoOnFace(root, obCf, obSize, "+X")
 	airlockOnFace(root, obCf, obSize, "-X")
 
 	-- +X SPINE, RING JUNCTION, ENGINEERING ---------------------------------------------------------
@@ -269,13 +314,17 @@ function Station.Build(arena: Instance, markers: Instance)
 	local rjCf, rjSize = CFrame.new(200, 0, 0), Vector3.new(34, 34, 34)
 	local tubeHole = { w = 24, h = 24 }
 	local rj = Kit.room(root, rjCf, rjSize, { name = "RingJunction", pressurized = "ring_junction", deck = true,
-		openings = { ["-X"] = tubeHole, ["+X"] = tubeHole, ["+Y"] = door, ["-Y"] = door } })
+		openings = { ["-X"] = tubeHole, ["+X"] = tubeHole, ["+Y"] = door, ["-Y"] = door, ["+Z"] = door, ["-Z"] = door } })
+	holoOnFace(root, rjCf, rjSize, "+Z")
+	holoOnFace(root, rjCf, rjSize, "-Z")
 	Kit.marker(markers, "LootSpot", rjCf * CFrame.new(0, -12, 12), { Tier = "mid", Kind = "crate" })
 	Kit.sign(rj, rjCf * CFrame.new(0, 10, -16.6), "RING ACCESS", 12, 2)
 	tubeBetween(217, 300, "SpineAft", "spine2")
 	local enCf, enSize = CFrame.new(334, 0, 0), Vector3.new(64, 48, 64)
 	local eng = Kit.room(root, enCf, enSize, { name = "Engineering", pressurized = "engineering", deck = true,
-		lightColor = Color3.fromRGB(255, 210, 160), openings = { ["-X"] = tubeHole, ["+X"] = door, ["+Z"] = door } })
+		lightColor = Color3.fromRGB(255, 210, 160), openings = { ["-X"] = tubeHole, ["+X"] = door, ["+Z"] = door, ["-Z"] = door } })
+	holoOnFace(root, enCf, enSize, "+Z")
+	holoOnFace(root, enCf, enSize, "-Z")
 	local core = Kit.part(eng, { Name = "ReactorCore", Shape = Enum.PartType.Cylinder, CFrame = enCf * CFrame.Angles(0, 0, math.rad(90)),
 		Size = Vector3.new(44, 12, 12), Material = Enum.Material.Neon, Color = Color3.fromRGB(90, 200, 255) })
 	Kit.light(core, Color3.fromRGB(90, 200, 255), 50, 3, true)
@@ -293,7 +342,6 @@ function Station.Build(arena: Instance, markers: Instance)
 	Kit.marker(markers, "OxygenStation", enCf * CFrame.new(-30, -16, 10) * CFrame.Angles(0, math.rad(90), 0))
 	Kit.sign(eng, enCf * CFrame.new(0, 20, -31.6), "ENGINEERING  -  REACTOR RADIATION", 26, 3, P.Orange)
 	airlockOnFace(root, enCf, enSize, "+X")
-	airlockOnFace(root, enCf, enSize, "+Z")
 
 	-- HABITAT RING: 8 joint rooms + 8 tube segments in the YZ plane around (200,0,0) -----------------
 	local ringC, R = Vector3.new(200, 0, 0), 150
@@ -306,7 +354,7 @@ function Station.Build(arena: Instance, markers: Instance)
 		nodes[k] = { cf = cf, r = r }
 		local openings = { ["+Z"] = { w = 26, h = 26 }, ["-Z"] = { w = 26, h = 26 } }
 		if k == 0 or k == 4 then openings["-Y"] = door end
-		if k == 2 or k == 6 then openings["+Y"] = door end
+		openings["+Y"] = door -- outward face: airlock on nodes 2 and 6, holo door on the others
 		local j = Kit.room(root, cf, jointSize, { name = "RingNode" .. k, pressurized = "ring" .. k, deck = false, openings = openings })
 		if k % 2 == 1 then
 			-- crew quarters: bunks
@@ -318,6 +366,7 @@ function Station.Build(arena: Instance, markers: Instance)
 		else
 			Kit.marker(markers, "LootSpot", cf * CFrame.new(8, 6, 0), { Tier = "mid", Kind = "crate" })
 		end
+		if k ~= 2 and k ~= 6 then holoOnFace(root, cf, jointSize, "+Y") end
 		if k == 2 or k == 6 then
 			airlockOnFace(root, cf, jointSize, "+Y")
 			Kit.marker(markers, "OxygenStation", cf * CFrame.new(-13, 0, 0) * CFrame.Angles(0, math.rad(90), 0))
@@ -332,8 +381,17 @@ function Station.Build(arena: Instance, markers: Instance)
 		local mid = (s + e) / 2
 		local outward = (mid - ringC).Unit
 		local cf = CFrame.lookAt(mid, e, -outward) -- deck (local -Y) faces outward, like centrifugal "down"
-		Kit.octTube(root, cf, 11, (e - s).Magnitude, { name = "RingSegment" .. k, pressurized = "ringseg" .. k,
+		local len = (e - s).Magnitude
+		local seg = Kit.octTube(root, cf, 11, len, { name = "RingSegment" .. k, pressurized = "ringseg" .. k,
 			caps = { front = true, back = true }, rings = 2, accentColor = P.Blue })
+		-- running "chaser" lights along the outer hull; the client sweeps a pulse around the ring
+		for i = 0, 5 do
+			local z = -len / 2 + (i + 0.5) * len / 6
+			local dot = Kit.part(seg, { Name = "ChaserLight", CFrame = cf * CFrame.new(0, -14.2, z), Size = Vector3.new(1.6, 0.4, 1.6),
+				Material = Enum.Material.Neon, Color = P.BlueGlow, CanCollide = false, CastShadow = false })
+			dot:SetAttribute("Seq", k * 6 + i)
+			CollectionService:AddTag(dot, "Chaser")
+		end
 	end
 	Kit.corridor(root, Vector3.new(200, 19, 0), (nodes[0].cf * CFrame.new(0, -17, 0)).Position, { pressurized = "spoke_top" })
 	Kit.corridor(root, Vector3.new(200, -19, 0), (nodes[4].cf * CFrame.new(0, -17, 0)).Position, { pressurized = "spoke_bottom" })
@@ -355,6 +413,15 @@ function Station.Build(arena: Instance, markers: Instance)
 		local b = Kit.part(root, { Name = "NavLight", Shape = Enum.PartType.Ball, CFrame = CFrame.new(c[1] * 33, c[2] * 23, c[3] * 33), Size = Vector3.one * 2,
 			Material = Enum.Material.Neon, Color = c[2] > 0 and P.Red or P.Green, CanCollide = false })
 		Kit.light(b, b.Color, 24, 2)
+		CollectionService:AddTag(b, "Blink")
+	end
+	-- Extremity beacons so the station's full size reads from across the arena
+	for _, p in { Vector3.new(372, 0, 30), Vector3.new(-160, 0, 26), Vector3.new(20, 100, 20), Vector3.new(20, -118, 0), Vector3.new(30, 0, 190),
+		Vector3.new(30, 0, -172), Vector3.new(200, 168, 20), Vector3.new(200, -168, 20) } do
+		local b = Kit.part(root, { Name = "Beacon", Shape = Enum.PartType.Ball, CFrame = CFrame.new(p), Size = Vector3.one * 2.4,
+			Material = Enum.Material.Neon, Color = Color3.fromRGB(255, 90, 70), CanCollide = false, CastShadow = false })
+		Kit.light(b, b.Color, 40, 2.5)
+		CollectionService:AddTag(b, "Blink")
 	end
 
 	-- Deployment points around the station exterior
@@ -362,6 +429,13 @@ function Station.Build(arena: Instance, markers: Instance)
 		local a = math.rad(i * 45 + 10)
 		Kit.marker(markers, "DeployPoint", CFrame.new(100 + math.cos(a) * 330, (i % 3 - 1) * 120, math.sin(a) * 330))
 	end
+
+	-- Enlarge the whole station (structure, markers, nav spaces) about its centre.
+	local newMarkers = {}
+	for _, m in markers:GetChildren() do
+		if not existingMarkers[m] and m:IsA("BasePart") then table.insert(newMarkers, m) end
+	end
+	Kit.scaleBuild(root, newMarkers, navFrom, Vector3.zero, Station.Scale, KEEP)
 	return root
 end
 
