@@ -27,6 +27,9 @@ Kit.Palette = {
 local P = Kit.Palette
 
 Kit.Stats = { parts = 0 }
+-- Navigation registry: every hollow space the kit builds (rooms, corridors, tubes, airlocks), with its
+-- openings. NavGraph turns this into the bot navigation graph after the world is built.
+Kit.NavSpaces = {} :: { any }
 
 local DEFAULTS = {
 	Anchored = true,
@@ -180,6 +183,7 @@ function Kit.room(parent: Instance, cf: CFrame, size: Vector3, opts)
 	if opts.pressurized then
 		Kit.zone(m, cf, size, opts.pressurized)
 	end
+	table.insert(Kit.NavSpaces, { cf = cf, size = size, openings = openings, wall = t, model = m })
 	return m
 end
 
@@ -263,6 +267,9 @@ function Kit.octTube(parent: Instance, cf: CFrame, radius: number, length: numbe
 	if opts.pressurized then
 		Kit.zone(m, cf, Vector3.new(radius * 2, radius * 2, length), opts.pressurized)
 	end
+	local caps = opts.caps or {}
+	table.insert(Kit.NavSpaces, { cf = cf, size = Vector3.new(radius * 2, radius * 2, length), wall = t, model = m, tube = true,
+		openings = { ["-Z"] = caps.front, ["+Z"] = caps.back } })
 	return m
 end
 
@@ -380,6 +387,7 @@ function Kit.airlock(parent: Instance, cf: CFrame, opts)
 	Kit.light(lamp, P.Green, 14, 1)
 	local _ = panel
 	CollectionService:AddTag(m, "Airlock")
+	Kit.NavSpaces[#Kit.NavSpaces].airlock = m -- the chamber room registered by Kit.room above
 	return m
 end
 

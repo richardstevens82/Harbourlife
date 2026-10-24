@@ -7,6 +7,7 @@ local Config = require(Shared.Config)
 local Cosmetics = require(Shared.Cosmetics)
 local WeaponModels = require(Shared.WeaponModels)
 local Security = require(script.Parent.SecurityService)
+local Roster = require(script.Parent.Roster)
 
 local CharacterService = {}
 local spawnSerial: { [Player]: number } = {}
@@ -126,6 +127,66 @@ function CharacterService.Spawn(player: Player, cf: CFrame): Model?
 	char:PivotTo(cf)
 	root.AssemblyLinearVelocity = Vector3.zero
 	CharacterService.ApplySuit(player, char)
+	return char
+end
+
+-- Bot bodies: an R15 rig built from a default HumanoidDescription, simulated by the server.
+local BOT_DISABLED_STATES = {
+	Enum.HumanoidStateType.FallingDown, Enum.HumanoidStateType.Ragdoll, Enum.HumanoidStateType.GettingUp,
+	Enum.HumanoidStateType.Climbing, Enum.HumanoidStateType.Seated, Enum.HumanoidStateType.Swimming,
+	Enum.HumanoidStateType.Freefall, Enum.HumanoidStateType.Jumping, Enum.HumanoidStateType.Running,
+	Enum.HumanoidStateType.RunningNoPhysics, Enum.HumanoidStateType.Landed, Enum.HumanoidStateType.Flying,
+	Enum.HumanoidStateType.StrafingNoPhysics,
+}
+
+function CharacterService.SpawnBot(bot, cf: CFrame, parent: Instance, displayName: string): Model?
+	local old = bot.Character
+	if old then
+		Roster.UnbindCharacter(old)
+		old:Destroy()
+		bot.Character = nil
+	end
+	local ok, char = pcall(function()
+		return Players:CreateHumanoidModelFromDescription(Instance.new("HumanoidDescription"), Enum.HumanoidRigType.R15)
+	end)
+	if not ok or not char then
+		warn("[ZG] could not build bot body: " .. tostring(char))
+		return nil
+	end
+	char.Name = bot.Name
+	local root = char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not (root and hum) then
+		char:Destroy()
+		return nil
+	end
+	char.PrimaryPart = root
+	hum.DisplayName = displayName
+	hum.MaxHealth = Config.Health.Max
+	hum.Health = Config.Health.Max
+	hum.AutoRotate = false
+	hum.BreakJointsOnDeath = false
+	for _, st in BOT_DISABLED_STATES do hum:SetStateEnabled(st, false) end
+	local att = Instance.new("Attachment")
+	att.Name = "ZG_Align"
+	att.Parent = root
+	local align = Instance.new("AlignOrientation")
+	align.Name = "ZG_Align"
+	align.Mode = Enum.OrientationAlignmentMode.OneAttachment
+	align.Attachment0 = att
+	align.RigidityEnabled = false
+	align.Responsiveness = Config.Movement.TurnResponsiveness
+	align.MaxTorque = math.huge
+	align.MaxAngularVelocity = 20
+	align.CFrame = cf.Rotation
+	align.Parent = root
+	char:PivotTo(cf)
+	char.Parent = parent
+	pcall(function() root:SetNetworkOwner(nil) end) -- the server simulates bots
+	hum:ChangeState(Enum.HumanoidStateType.Physics)
+	bot.Character = char
+	Roster.BindCharacter(char, bot)
+	CharacterService.ApplySuit(bot, char, bot.suit)
 	return char
 end
 

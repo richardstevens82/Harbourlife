@@ -1,9 +1,12 @@
--- Per-player match state (never persisted). The single source of truth for "is this player an
--- active combatant right now". Mirrors the fields clients need onto Player attributes.
+-- Per-combatant match state (never persisted). The single source of truth for "is this combatant
+-- active right now". A combatant is a Player or a bot (BotService): bots are tables that expose the
+-- same surface the services use (Name, UserId, Parent, Character, GetAttribute, SetAttribute).
+-- Mirrors the fields clients need onto attributes.
 local Players = game:GetService("Players")
 
 local Roster = {}
-local records: { [Player]: any } = {}
+local records: { [any]: any } = {}
+local characterOwner: { [Model]: any } = {} -- bot characters -> bot
 
 local function fresh()
 	return {
@@ -22,6 +25,28 @@ local function fresh()
 		lastAttackerAt = 0,
 		loadout = "scout",
 	}
+end
+
+function Roster.IsBot(c): boolean
+	return type(c) == "table" and c.IsBot == true
+end
+
+-- Player or bot owning a character model (nil for anything else).
+function Roster.FromCharacter(model: Instance?)
+	if not model or not model:IsA("Model") then return nil end
+	return Players:GetPlayerFromCharacter(model) or characterOwner[model :: Model]
+end
+
+function Roster.BindCharacter(model: Model, bot)
+	characterOwner[model] = bot
+end
+
+function Roster.UnbindCharacter(model: Model)
+	characterOwner[model] = nil
+end
+
+function Roster.Remove(c)
+	records[c] = nil
 end
 
 function Roster.Get(player: Player)

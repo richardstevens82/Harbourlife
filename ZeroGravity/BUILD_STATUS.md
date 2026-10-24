@@ -27,6 +27,7 @@ Every claim below falls into one of three levels, and they are kept separate:
 | C. Inspect & correct blockout | Done (automated). Passability, embedding, spacing and sealing checks plus rendered plans in `docs/blockout/`. Fixes listed below. |
 | D. Detail environment | First pass: modular kit with furniture, consoles, lockers, cargo, lights, signage, windows, solar arrays, antennae, hull detail. Not a final art pass. |
 | E. Zero-g movement | Implemented + tested headless (integrator). Feel unverified in Studio. |
+| E2. Bots (fill to 20) | Implemented + tested headless (full simulated 19-bot match). Unverified against real collisions. |
 | F. Match lifecycle | Implemented + tested headless (two full simulated matches, including a disconnect) |
 | G. Weapons & server-authoritative combat | Implemented + tested headless (validation, damage, shields, reload, kills) |
 | H. Loot, inventory, oxygen, equipment | Implemented + tested headless |
@@ -66,6 +67,21 @@ camera-relative thrust on 6 axes, drift, a speed cap, boost energy, an exponenti
 stop, tether pull, and server impulses for knockback, shoves and the boundary. The camera is
 yaw/pitch with pitch clamped at ±85°, so the view can never flip or roll. The server checks speed
 from actual displacement, rolls back teleports, and enforces the arena boundary.
+
+**Bots** (`BotService`, `NavGraph`, `Config.Bots`). Every match and the lobby are kept at 20
+combatants: with one player online there are 19 bots, and each player who joins replaces a bot from
+the next match. Bots act only through the same validated server entry points as players: fire rate,
+ammo, spread, aim cone, pickup range, cooldowns and airlocks. They move with the shared
+`ZeroGMotion` model, so they get the same acceleration, caps, boost energy and braking.
+- **Skill (0.72–0.93 per bot)** shapes reaction time (0.17–0.5 s), aim error that settles while
+  tracking, headshot preference, strafe and jink rhythm, and grenade use.
+- **Priorities:** storm, then oxygen, then fight, then heal or recharge, then loot, then hunt.
+- **Navigation** uses a graph generated from the station, ship and wreck geometry: doors, airlocks
+  (cycled like a player would) and exits through open space. It's backed by obstacle avoidance and
+  an unstick routine.
+- **Between matches** bots drift around the lobby and practise on the range drones.
+- **Spectating:** eliminated players can watch bots.
+- `Config.Bots.ShowTag` controls the "[BOT]" name tag.
 
 **Match.** Waiting → Countdown → Preparing → Deploying → Active → Final → Ending → Results → Waiting.
 Configurable min/max players. Deploy points are chosen spaced and validated as clear. Players get 4 s
@@ -114,7 +130,7 @@ in Studio, with a warning shown. Cosmetics only: no paid items and no random rew
 
 ## Tests performed
 
-**Automated: `python3 tests/run.py` → 43 passed, 0 failed.**
+**Automated: `python3 tests/run.py` → 49 passed, 0 failed** (about 3 minutes, most of it the simulated bot match).
 - *Pure logic:* the CFrame mock; all 8 weapons complete; damage falloff is monotonic; time-to-kill is
   ≥ 0.4 s against 200 effective HP; 9,000 loot rolls are valid (ammo comes with weapons, no
   legendaries in the low tier, heavy weapons are never common or uncommon); loot quality rises with
@@ -140,6 +156,23 @@ in Studio, with a warning shown. Cosmetics only: no paid items and no random rew
   boost is capped and runs out of energy then bleeds back to cruise, the tether pulls and releases,
   and impulses apply. ClientMain boots every controller. Every server-to-client message type is
   handled, and the HUD runs through every phase, spectate and results without errors.
+- *Bots:*
+  - The nav graph reaches all 50+ pressurised interiors from open space, and the hub-to-ship route
+    cycles an airlock.
+  - With one player online, 19 bots fill the lobby and are published for spectating. They drift
+    around and practise on the range without hurting anyone.
+  - A full 20-combatant match plays out to a bot winner, using a 0.35× storm schedule so the test
+    stays fast. In the last run: 186 s, 15 of 19 eliminations were bot kills, and bots split their
+    time between looting, fighting, refilling oxygen and outrunning the storm.
+  - Bots never trip the anti-cheat or the fire validation.
+  - Afterwards the bots return to the lobby, and a joining player replaces a bot.
+  - The headless physics moves bodies by their velocity but doesn't collide them, so this proves the
+    decisions and validation, not wall-hugging.
+- *Bot tuning found by these tests:*
+  - Bots duelled with starter pistols across open space. They now engage only within effective range.
+  - Oxygen lost out to the storm and to fights. Critical O2 now comes first, with planned refills
+    below 38%.
+  - Boost acceleration out-ran the speed cap. The motion model is now shared by bots and players.
 
 **Static analysis:** `luau-compile` gives a clean syntax pass on every file. `luau-lsp analyze`
 (Roblox definitions, non-strict) reports 0 errors. The only remaining note is a deprecation hint on
@@ -158,6 +191,12 @@ the `LoadCharacter` fallback.
 - An ambiguous Luau statement in the storm visual.
 
 ## Known defects / limitations
+
+- **Bots are untested in real Roblox physics.** In the headless simulation bodies don't collide, so
+  avoidance, unsticking and airlock cycling against real collisions need a Studio check. Watch for
+  bots snagging on furniture or hovering at closed doors.
+- **Bot tracer traffic.** Every bot shot sends a tracer to every client. Batching (roadmap #47) is
+  advisable before running many servers.
 
 - **No lag compensation.** Hits are raycast against current server positions, so fast strafing
   targets at high ping may register less than the shooter saw.
@@ -204,7 +243,7 @@ None at runtime. There are no external assets, packages or free models. Optional
 ## Files
 
 Everything under `ZeroGravity/` is new:
-- `src/`: 9 shared modules, 7 builders, 13 services, 2 bootstraps and 9 client controllers.
+- `src/`: 10 shared modules, 7 builders, 15 services, 2 bootstraps, 9 client controllers and the empty `Health` override.
 - `tests/`: `mock.luau`, `specs.luau` and `run.py`.
 - `tools/`: `build_place.py` and `render_blockout.py`.
 - `docs/blockout/*.png`

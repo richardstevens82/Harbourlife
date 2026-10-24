@@ -5,6 +5,8 @@
 --   Equipment: tether / tetherRelease / grenade         (EquipmentService)
 --   Match:     queue / unqueue / cosmetic               (MatchService)      server -> client: phase, results
 --   FX:        server -> clients only (tracers, kill feed, hit markers, damage indicators, notices)
+-- On the server each entry is a thin wrapper (FireClient / FireAllClients / OnServerEvent) so bots can
+-- be addressed like players; on the client each entry is the RemoteEvent itself.
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -26,7 +28,34 @@ if RunService:IsServer() then
 else
 	folder = ReplicatedStorage:WaitForChild("Remotes")
 end
+
+-- Server side: wrap each RemoteEvent so a message addressed to a bot (a server-side combatant that
+-- is not a Player instance) goes to the bot brain via Remotes.BotSink instead of the network.
+Remotes.BotSink = nil :: ((any, string, any) -> ())?
 for _, name in NAMES do
-	Remotes[name] = folder:WaitForChild(name)
+	local remote = folder:WaitForChild(name) :: RemoteEvent
+	if RunService:IsServer() then
+		Remotes[name] = {
+			Instance = remote,
+			OnServerEvent = remote.OnServerEvent,
+			FireClient = function(_, target, msg)
+				if typeof(target) == "Instance" then
+					remote:FireClient(target, msg)
+				elseif Remotes.BotSink then
+					Remotes.BotSink(target, name, msg)
+				end
+			end,
+			FireAllClients = function(_, msg)
+				remote:FireAllClients(msg)
+			end,
+			-- client-side members, unused on a real server (the headless tests run both sides in one VM)
+			OnClientEvent = remote.OnClientEvent,
+			FireServer = function(_, msg)
+				remote:FireServer(msg)
+			end,
+		}
+	else
+		Remotes[name] = remote
+	end
 end
 return Remotes

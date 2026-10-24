@@ -363,13 +363,14 @@ end)
 print("\n== Server systems (simulated match) ==")
 Mock.errors = {}
 Mock.isStudio = false -- live-server rules: 2 players minimum
+Config.Bots.Enabled = false -- the 2-player scenarios below run without bots; bots get their own section
 local Roster = svc("Roster")
 local Combat = svc("CombatService")
 local Security = svc("SecurityService")
 for _, name in { "Roster" } do svc(name).Start() end
 Security.Start(Roster.IsActive, function(p, amount, cause) Combat.ApplyDamage(p, amount, nil, cause) end)
 for _, name in { "CharacterService", "DataService", "InventoryService", "CombatService", "LootService", "OxygenService", "SafeZoneService",
-	"EquipmentService", "HazardService", "MatchService" } do
+	"EquipmentService", "HazardService", "BotService", "MatchService" } do
 	svc(name).Start()
 end
 local Inventory = svc("InventoryService")
@@ -828,6 +829,140 @@ test("HUD keeps running through lobby, match, spectate and results states", func
 	matchState:SetAttribute("Phase", "Active")
 	frames(10)
 	check(#Mock.errors == 0, "errors:\n          %s", table.concat(Mock.errors, "\n          "))
+end)
+
+-------------------------------------------------------------------------------------------------- bots
+print("\n== Bots (19 bots + 1 player, full simulated match) ==")
+local Bots = svc("BotService")
+local Nav = svc("NavGraph")
+Mock.errors, Mock.warnings, Mock.sent = {}, {}, {}
+
+test("navigation graph reaches every pressurised interior from open space", function()
+	local st = Nav.Stats()
+	print(string.format("        nav: %d nodes, %d edges, %d exits, %d spaces", st.nodes, st.edges, st.exits, st.spaces))
+	check(st.exits >= 15, "too few exits: %d", st.exits)
+	local unreachable = {}
+	local from = V3.new(0, 600, 300)
+	local lobbyFolder = Mock.workspace:FindFirstChild("Lobby")
+	for _, z in CS:GetTagged("Pressurized") do
+		if not z:IsDescendantOf(lobbyFolder) then
+			local path = Nav.Path(from, z._props.CFrame.p)
+			if not path then table.insert(unreachable, tostring(z:GetAttribute("ZoneId"))) end
+		end
+	end
+	check(#unreachable == 0, "no route into: %s", table.concat(unreachable, ", "))
+	local p = Nav.Path(V3.new(0, 0, 0), WorldBuilder.ShipCFrame * V3.new(18, 0, 0)) -- hub -> ship cargo hold
+	check(p and #p > 3, "no hub -> ship route")
+	local usesAirlock = false
+	for _, wp in p do
+		if wp.door then usesAirlock = true end
+	end
+	check(usesAirlock, "hub -> ship route should cycle an airlock")
+end)
+
+test("19 bots fill the lobby when one player is online", function()
+	Mock.removePlayer(localPlayer)
+	Config.Bots.Enabled = true
+	Bots.Rebalance()
+	Mock.advance(1)
+	check(#Bots.All() == Config.Bots.FillTo - 1, "expected %d bots, got %d", Config.Bots.FillTo - 1, #Bots.All())
+	for _, b in Bots.All() do
+		local r = b.Character and b.Character:FindFirstChild("HumanoidRootPart")
+		check(r and (r._props.CFrame.p - Config.Arena.LobbyCenter).Magnitude < 90, "%s not in the lobby", b.Name)
+		check(RS.Bots:FindFirstChild(b.Name) ~= nil, "%s not published for clients", b.Name)
+	end
+end)
+
+test("lobby bots drift and practise on the range without hurting anyone", function()
+	local h = hum(alice)
+	local hp = h.Health
+	local before = {}
+	for _, b in Bots.All() do before[b] = b.Character.HumanoidRootPart._props.CFrame.p end
+	Mock.advance(12)
+	local moved = 0
+	for _, b in Bots.All() do
+		if b.Character and (b.Character.HumanoidRootPart._props.CFrame.p - before[b]).Magnitude > 2 then moved += 1 end
+	end
+	check(moved >= 10, "only %d bots moved", moved)
+	check(#sentTo(alice, "FX", "tracer") > 0, "no practice shots seen")
+	check(h.Health == hp, "lobby practice hurt a player")
+end)
+
+local matchStats = {}
+-- Compress the storm schedule so the simulated match takes minutes, not a quarter of an hour.
+for _, st in Config.Zone.Stages do
+	st.wait *= 0.35
+	st.shrink *= 0.35
+end
+test("a full 20-combatant match plays out to a winner", function()
+	Mock.sent = {}
+	local rays0, clock0 = Mock.stats.rays, os.clock()
+	check(advanceUntil(function() return matchState:GetAttribute("Phase") == "Active" end, 60), "match never started (%s)",
+		tostring(matchState:GetAttribute("Phase")))
+	check(matchState:GetAttribute("Participants") == 20, "participants %s", tostring(matchState:GetAttribute("Participants")))
+	local t0 = Mock.clock()
+	local firstKillAt
+	local lastReport = 0
+	check(advanceUntil(function()
+		if not firstKillAt and matchState:GetAttribute("AliveCount") < 20 then firstKillAt = Mock.clock() - t0 end
+		if Mock.clock() - lastReport > 30 then
+			lastReport = Mock.clock()
+			local tasks = {}
+			for _, b in Bots.All() do
+				if Roster.IsActive(b) then
+					local k = b.brain.task ~= "" and b.brain.task or "-"
+					tasks[k] = (tasks[k] or 0) + 1
+				end
+			end
+			local tl = {}
+			for k, n in tasks do table.insert(tl, k .. "=" .. n) end
+			table.sort(tl)
+			print(string.format("        t=%3.0fs alive=%d rays=%d cpu=%.0fs  [%s]", Mock.clock() - t0, matchState:GetAttribute("AliveCount"),
+				Mock.stats.rays - rays0, os.clock() - clock0, table.concat(tl, " ")))
+		end
+		local ph = matchState:GetAttribute("Phase")
+		return ph == "Ending" or ph == "Results" or ph == "Waiting" or ph == "Countdown"
+	end, Config.Match.MaxMatchTime + 60), "match did not finish")
+	matchStats.duration = Mock.clock() - t0
+	matchStats.firstKill = firstKillAt
+	local winner = matchState:GetAttribute("Winner")
+	local kills = 0
+	for _, b in Bots.All() do kills += b:GetAttribute("Kills") or 0 end
+	matchStats.kills = kills
+	print(string.format("        match lasted %.0fs, first elimination at %.0fs, bot kills %d, winner %s", matchStats.duration, firstKillAt or -1, kills,
+		tostring(winner)))
+	print(string.format("        (mock: %d raycasts, %.1fs CPU)", Mock.stats.rays - rays0, os.clock() - clock0))
+	check(winner ~= nil and winner ~= "", "no winner declared")
+	check(kills >= 5, "bots barely fought (%d kills)", kills)
+	check(#sentTo(alice, "FX", "killfeed") >= 10, "too few eliminations in the kill feed")
+end)
+
+test("bots looted, used the validated fire path and never tripped security", function()
+	local searched = 0
+	for _, s in Mock.sent or {} do
+		if s.msg.t == "search" then searched += 1 end
+	end
+	check(searched >= 5, "bots searched only %d containers", searched)
+	for _, w in Mock.warnings do
+		check(not string.find(w, "error"), "warning: %s", w)
+		check(not string.find(w, "Security"), "security flag: %s", w)
+	end
+	check(#(Mock.errors or {}) == 0, "errors: %s", table.concat(Mock.errors or {}, "; "))
+end)
+
+test("after the match bots return to the lobby and a new round begins", function()
+	advanceUntil(function() return matchState:GetAttribute("Phase") == "Countdown" or matchState:GetAttribute("Phase") == "Active" end, 40)
+	local inLobby = 0
+	for _, b in Bots.All() do
+		local r = b.Character and b.Character:FindFirstChild("HumanoidRootPart")
+		if r and (r._props.CFrame.p - Config.Arena.LobbyCenter).Magnitude < 90 then inLobby += 1 end
+	end
+	check(#Bots.All() == 19 and inLobby >= 15, "bots %d, in lobby %d", #Bots.All(), inLobby)
+	-- a second real player joining replaces a bot (between matches)
+	local carol = Mock.addPlayer("Carol", 7)
+	Mock.advance(1)
+	local r = Roster.Get(carol)
+	check(#Bots.All() == 18 or (r and r.inMatch), "bot count after join: %d", #Bots.All())
 end)
 
 print(string.format("\n%d passed, %d failed", passed, failed))

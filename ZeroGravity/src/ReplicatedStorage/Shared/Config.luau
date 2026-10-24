@@ -6,8 +6,8 @@ Config.DataStoreName = "ZG_Progress_v1"
 
 -- Match ----------------------------------------------------------------------------------------
 Config.Match = {
-	MinPlayers = 2,
-	MaxPlayers = 24,
+	MinPlayers = 2, -- real players needed when bots are disabled
+	MaxPlayers = 20,
 	StudioMinPlayers = 1, -- solo testing in Studio: a match with one player ends when the zone wins
 	LobbyCountdown = 20,
 	PrepareTime = 3,
@@ -17,6 +17,21 @@ Config.Match = {
 	MaxMatchTime = 15 * 60,
 	DeploySpacing = 160, -- minimum distance between two deployment points used in one match
 	TeamSize = 1, -- solo; squads would raise this (MatchService groups players by team id)
+}
+
+-- Bots fill every match (and the lobby) up to FillTo combatants: with 1 player online there are 19
+-- bots; each real player who joins replaces one (after the current match). See BotService.
+Config.Bots = {
+	Enabled = true,
+	FillTo = 20,
+	MinRealPlayers = 1, -- with bots on, one queued player is enough to start a full match
+	SkillMin = 0.72, -- 0..1; shapes reaction time, aim error/settling, headshots, strafing
+	SkillMax = 0.93,
+	ShowTag = true, -- "[BOT]" after bot name tags (set false to hide)
+	ThinkRate = 8, -- decisions per second per bot
+	SightRange = 450,
+	HuntRange = 1100, -- bots track enemies this far away when nothing else needs doing
+	LobbyPractice = true, -- bots shoot the lobby range drones between matches
 }
 
 -- Arena geometry (studs). Arena is centred on the origin.

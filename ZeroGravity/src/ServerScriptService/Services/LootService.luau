@@ -15,6 +15,10 @@ local Inventory = require(script.Parent.InventoryService)
 local Loot = {}
 local folder: Folder
 local pickups: { [BasePart]: any } = {}
+-- Interaction handlers keyed by container / pickup part, shared by ProximityPrompts (players) and
+-- Loot.Search / Loot.Take (bots), so both go through identical validation.
+local searchHandlers: { [BasePart]: (any) -> () } = {}
+local takeHandlers: { [BasePart]: (any) -> () } = {}
 local rng = Random.new()
 
 local CATEGORY_COLOR = {
@@ -115,7 +119,7 @@ function Loot.SpawnPickup(pos: Vector3, entry)
 	base:SetAttribute("Spawned", os.clock())
 	CollectionService:AddTag(base, "Pickup")
 	base.Parent = folder
-	pr.Triggered:Connect(function(player)
+	local function take(player)
 		local e = pickups[base]
 		if not e or not canInteract(player, base.Position, Config.Inventory.PickupRange) then return end
 		local accepted, leftover, dropped = Inventory.Add(player, e)
@@ -134,7 +138,9 @@ function Loot.SpawnPickup(pos: Vector3, entry)
 		if dropped then
 			Loot.SpawnPickup(base.Position + Vector3.new(0, 2.5, 0), dropped)
 		end
-	end)
+	end
+	takeHandlers[base] = take
+	pr.Triggered:Connect(take)
 	return base
 end
 
@@ -182,7 +188,7 @@ local function container(cf: CFrame, kind: string, tier: string, contents, title
 	CollectionService:AddTag(box, "LootContainer")
 	box.Parent = folder
 	local pr = prompt(box, "Search", title or look.label, kind == "suit" and 0.4 or 0.8, Config.Inventory.SearchRange)
-	pr.Triggered:Connect(function(player)
+	local function search(player)
 		if box:GetAttribute("Searched") or not canInteract(player, box.Position, Config.Inventory.SearchRange) then return end
 		box:SetAttribute("Searched", true)
 		pr.Enabled = false
@@ -190,8 +196,42 @@ local function container(cf: CFrame, kind: string, tier: string, contents, title
 		local items = contents or LootTables.RollContainer(rng, tier, Config.Loot.ItemsPerContainer.min, Config.Loot.ItemsPerContainer.max)
 		scatter(box.Position + cf.UpVector * (look.size.Y / 2 + 1.2), items, box)
 		Remotes.FX:FireAllClients({ t = "search", pos = box.Position })
-	end)
+	end
+	searchHandlers[box] = search
+	pr.Triggered:Connect(search)
 	return box
+end
+
+-- Bot entry points (same checks as the prompts: active combatant, distance, state, capacity).
+function Loot.Search(c, box: BasePart)
+	local h = searchHandlers[box]
+	if h then h(c) end
+end
+
+function Loot.Take(c, part: BasePart)
+	local h = takeHandlers[part]
+	if h then h(c) end
+end
+
+function Loot.EntryOf(part: BasePart)
+	return pickups[part]
+end
+
+-- Unsearched containers and live pickups (for bot decision making).
+function Loot.OpenContainers(): { BasePart }
+	local out = {}
+	for box in searchHandlers do
+		if box.Parent and not box:GetAttribute("Searched") then table.insert(out, box) end
+	end
+	return out
+end
+
+function Loot.PickupsNear(pos: Vector3, radius: number): { BasePart }
+	local out = {}
+	for part in pickups do
+		if part.Parent and (part.Position - pos).Magnitude <= radius then table.insert(out, part) end
+	end
+	return out
 end
 
 -- Drop everything an eliminated player carried in a suit locker at their position.
@@ -208,6 +248,8 @@ function Loot.ClearAll()
 		if p.Parent then p:Destroy() end
 	end
 	table.clear(pickups)
+	table.clear(searchHandlers)
+	table.clear(takeHandlers)
 	folder:ClearAllChildren()
 end
 

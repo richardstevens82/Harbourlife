@@ -424,17 +424,31 @@ local function updateSpectate()
 		refs.spectate.Visible = false
 		return
 	end
+	-- living combatants: other players plus bots (bots publish their state under ReplicatedStorage.Bots)
 	local alive = {}
-	for _, p in Players:GetPlayers() do
-		if p ~= player and p:GetAttribute("Alive") == true and p:GetAttribute("InMatch") == true and p.Character then table.insert(alive, p) end
+	local function add(name: string, char: Instance?, kills: number?)
+		if char then
+			table.insert(alive, { Name = name, Character = char, kills = kills or 0, GetAttribute = function(self, k)
+				return k == "Kills" and self.kills or nil
+			end })
+		end
 	end
+	for _, p in Players:GetPlayers() do
+		if p ~= player and p:GetAttribute("Alive") == true and p:GetAttribute("InMatch") == true then add(p.Name, p.Character, p:GetAttribute("Kills")) end
+	end
+	local botFolder = ReplicatedStorage:FindFirstChild("Bots")
+	for _, cfg in botFolder and botFolder:GetChildren() or {} do
+		local ref = cfg:FindFirstChild("Character") :: ObjectValue?
+		if cfg:GetAttribute("Alive") == true and cfg:GetAttribute("InMatch") == true and ref then add(cfg.Name, ref.Value, cfg:GetAttribute("Kills")) end
+	end
+	table.sort(alive, function(a, b) return a.Name < b.Name end)
 	if #alive == 0 then
 		State.Spectating = nil
 		refs.spectate.Visible = false
 		return
 	end
 	spectateIndex = ((spectateIndex - 1) % #alive) + 1
-	State.Spectating = alive[spectateIndex]
+	State.Spectating = alive[spectateIndex] :: any
 	refs.spectate.Visible = true
 	refs.spectateLabel.Text = string.format("SPECTATING <b>%s</b>  (%d kills)   [Q / E] switch   [Backspace] lobby", State.Spectating.Name,
 		State.Spectating:GetAttribute("Kills") or 0)
@@ -561,7 +575,9 @@ local function update()
 		refs.sub.Text = string.format("<b>%d</b> IN ORBIT   |   <font color=\"#C08CFF\">%s</font>   |   KILLS <b>%d</b>", alive, zText, player:GetAttribute("Kills") or 0)
 	elseif phase == "Waiting" then
 		local q, minP = matchState:GetAttribute("Queued") or 0, matchState:GetAttribute("MinPlayers") or 2
-		refs.sub.Text = string.format("%d / %d ready   |   %s", q, minP, player:GetAttribute("Queued") and "You are queued" or "Not queued - open menu (M) and press PLAY")
+		local bots = matchState:GetAttribute("Bots") or 0
+		refs.sub.Text = string.format("%d / %d ready%s   |   %s", q, minP, bots > 0 and string.format(" + %d bots", bots) or "",
+			player:GetAttribute("Queued") and "You are queued" or "Not queued - open menu (M) and press PLAY")
 	elseif endsAt > 0 then
 		refs.sub.Text = string.format("%s   |   %d ready", UI.formatTime(endsAt - serverNow()), (matchState:GetAttribute("Queued") :: number?) or 0)
 	else

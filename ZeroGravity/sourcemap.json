@@ -67,6 +67,13 @@
        ]
       },
       {
+       "name": "ZeroGMotion",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ReplicatedStorage/Shared/ZeroGMotion.luau"
+       ]
+      },
+      {
        "name": "ZoneMath",
        "className": "ModuleScript",
        "filePaths": [
@@ -85,6 +92,13 @@
      "name": "Services",
      "className": "Folder",
      "children": [
+      {
+       "name": "BotService",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Services/BotService.luau"
+       ]
+      },
       {
        "name": "CharacterService",
        "className": "ModuleScript",
@@ -139,6 +153,13 @@
        "className": "ModuleScript",
        "filePaths": [
         "src/ServerScriptService/Services/MatchService.luau"
+       ]
+      },
+      {
+       "name": "NavGraph",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Services/NavGraph.luau"
        ]
       },
       {

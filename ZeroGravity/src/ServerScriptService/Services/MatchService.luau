@@ -20,6 +20,7 @@ local Loot = require(script.Parent.LootService)
 local Oxygen = require(script.Parent.OxygenService)
 local SafeZone = require(script.Parent.SafeZoneService)
 local Hazards = require(script.Parent.HazardService)
+local Bots = require(script.Parent.BotService)
 local Lobby = require(script.Parent.Parent:WaitForChild("Builders"):WaitForChild("Lobby"))
 
 local Match = {}
@@ -35,7 +36,9 @@ local function setPhase(phase: string, duration: number?)
 	stateObj:SetAttribute("PhaseEndsAt", duration and workspace:GetServerTimeNow() + duration or 0)
 end
 
+-- Real (queued) players needed to start: with bots enabled one player gets a full 20-combatant match.
 local function minPlayers(): number
+	if Config.Bots.Enabled then return Config.Bots.MinRealPlayers end
 	return RunService:IsStudio() and M.StudioMinPlayers or M.MinPlayers
 end
 
@@ -48,6 +51,10 @@ end
 
 -- Spawn in the lobby with the practice kit.
 function Match.SendToLobby(player: Player)
+	if Roster.IsBot(player) then
+		Bots.ToLobby(player)
+		return
+	end
 	task.spawn(function()
 		local char = CharacterService.Spawn(player, lobbySpawnCFrame())
 		if not char then return end
@@ -84,6 +91,8 @@ local function updateCounts()
 	stateObj:SetAttribute("Participants", #participants)
 	stateObj:SetAttribute("Queued", #eligibleQueued())
 	stateObj:SetAttribute("MinPlayers", minPlayers())
+	stateObj:SetAttribute("Bots", #Bots.All())
+	stateObj:SetAttribute("MaxPlayers", M.MaxPlayers)
 end
 
 -- Free of solid geometry and terrain?
@@ -214,7 +223,7 @@ end
 local function awardAndReport(winner: Player?)
 	local total = #participants
 	for _, p in participants do
-		if p.Parent then
+		if p.Parent and not Roster.IsBot(p) then
 			local r = Roster.Get(p)
 			if p == winner then r.placement = 1 end
 			local survived = (r.eliminatedAt > 0 and r.eliminatedAt or os.clock()) - r.deployedAt
@@ -266,6 +275,11 @@ local function runMatch()
 		if i > M.MaxPlayers then break end
 		table.insert(participants, p)
 	end
+	-- top up with bots so every match is full
+	if Config.Bots.Enabled then
+		Bots.Rebalance()
+		for _, b in Bots.ForMatch(M.MaxPlayers - #participants) do table.insert(participants, b) end
+	end
 	Loot.Seed()
 	Hazards.Reset()
 	local finals = CollectionService:GetTagged("FinalZone")
@@ -290,13 +304,15 @@ local function runMatch()
 			r.protectUntil = os.clock() + M.DeployProtection
 			table.insert(deployed, p)
 			task.spawn(function()
-				local char = CharacterService.Spawn(p, points[i] or CFrame.new(0, 600, 0))
+				local cf = points[i] or CFrame.new(0, 600, 0)
+				local isBot = Roster.IsBot(p)
+				local char = if isBot then Bots.Deploy(p, cf) else CharacterService.Spawn(p, cf)
 				if not char or matchSerial ~= serial then return end
 				hookDeath(p, char)
 				Combat.ResetPlayer(p)
 				Oxygen.Reset(p)
-				local profile = DataService.Get(p)
-				Inventory.Reset(p, "match", profile and profile.loadout or "scout")
+				local profile = not isBot and DataService.Get(p)
+				Inventory.Reset(p, "match", if isBot then p.loadout else (profile and profile.loadout or "scout"))
 				Roster.Sync(p)
 				Remotes.Match:FireClient(p, { t = "deployed", protect = M.DeployProtection })
 			end)
@@ -369,6 +385,7 @@ local function loop()
 			Lobby.SetStatus(string.format("WAITING FOR PLAYERS  %d / %d", #eligibleQueued(), minPlayers()))
 			task.wait(1)
 		end
+		Bots.Rebalance() -- players may have joined or left during the last match
 		-- COUNTDOWN -----------------------------------------------------------------------------------
 		setPhase("Countdown", M.LobbyCountdown)
 		local t0 = os.clock()
@@ -379,7 +396,8 @@ local function loop()
 				aborted = true
 				break
 			end
-			Lobby.SetStatus(string.format("DEPLOYMENT IN %d", math.ceil(M.LobbyCountdown - (os.clock() - t0))))
+			Lobby.SetStatus(string.format("DEPLOYMENT IN %d   |   %d PILOTS + %d BOTS", math.ceil(M.LobbyCountdown - (os.clock() - t0)),
+				#eligibleQueued(), math.max(0, math.min(#Bots.All(), M.MaxPlayers - #eligibleQueued()))))
 			task.wait(0.5)
 		end
 		if not aborted then

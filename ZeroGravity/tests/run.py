@@ -39,5 +39,8 @@ bundle = os.path.join(HERE, ".bundle.luau")
 open(bundle, "w", encoding="utf-8").write("\n".join(parts))
 
 luau = sys.argv[1] if len(sys.argv) > 1 else (shutil.which("luau") or "/tmp/luau/luau")
-r = subprocess.run([luau, bundle])
+cmd = [luau, bundle]
+if shutil.which("stdbuf"):
+    cmd = ["stdbuf", "-oL"] + cmd  # line-buffered so progress shows up while long simulations run
+r = subprocess.run(cmd)
 sys.exit(r.returncode)

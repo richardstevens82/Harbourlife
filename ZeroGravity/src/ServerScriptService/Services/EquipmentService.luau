@@ -126,6 +126,8 @@ local function onGrenade(player: Player, dir)
 	end)
 end
 
+Equipment.ThrowGrenade = onGrenade -- bot entry point (same checks as the remote)
+
 function Equipment.Start()
 	Remotes.Equipment.OnServerEvent:Connect(function(player, req)
 		if type(req) ~= "table" or not Security.RateLimit(player, "equipment", 6, 4) then return end

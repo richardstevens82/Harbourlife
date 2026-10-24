@@ -83,8 +83,8 @@ function Combat.Explode(pos: Vector3, radius: number, damage: number, attacker: 
 	Remotes.FX:FireAllClients({ t = "explosion", pos = pos, radius = radius })
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	for _, p in Players:GetPlayers() do
-		if p ~= ignore and Roster.IsActive(p) then
+	for _, p in Roster.Active() do
+		if p ~= ignore then
 			local root = p.Character and p.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
 			if root then
 				local d = (root.Position - pos).Magnitude
@@ -196,7 +196,7 @@ local function onFire(player: Player, req)
 			local dist = (result.Position - origin).Magnitude
 			local dmg = Weapons.DamageAt(weapon.id, weapon.rarity, dist)
 			local model, hum = charOf(result.Instance)
-			local victim = model and Players:GetPlayerFromCharacter(model)
+			local victim = Roster.FromCharacter(model) -- player or bot
 			if victim and hum and dmg > 0 then
 				if result.Instance.Name == "Head" then dmg *= 1.5 end
 				if not practice then
@@ -296,6 +296,25 @@ local function onMelee(player: Player)
 			Security.AllowBurst(best, 1)
 		end
 	end
+end
+
+-- Direct entry points for bots: the same validation path the RemoteEvent handlers use.
+function Combat.Fire(c, origin: Vector3, dirs: { Vector3 }, expectMag: number?)
+	onFire(c, { origin = origin, dirs = dirs, expectMag = expectMag })
+end
+Combat.Reload = function(c) onReload(c) end
+Combat.Equip = function(c, slot: number) onEquip(c, slot) end
+Combat.Melee = function(c) onMelee(c) end
+
+-- Seconds until this combatant may fire again (reload / equip / fire interval), for bot pacing.
+function Combat.ReadyIn(c): number
+	local s = st(c)
+	local now = os.clock()
+	return math.max(0, s.reloadUntil - now, s.equipAt - now)
+end
+
+function Combat.IsReloading(c): boolean
+	return os.clock() < st(c).reloadUntil
 end
 
 function Combat.ResetPlayer(player: Player)

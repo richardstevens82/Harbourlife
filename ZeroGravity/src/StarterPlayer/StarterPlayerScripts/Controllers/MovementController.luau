@@ -15,6 +15,7 @@ local RunService = game:GetService("RunService")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Remotes = require(Shared.Remotes)
+local Motion = require(Shared.ZeroGMotion)
 local State = require(script.Parent.ClientState)
 local Input = require(script.Parent.InputController)
 local CameraController = require(script.Parent.CameraController)
@@ -131,13 +132,9 @@ local function step(dt: number)
 	local thrust = rot:VectorToWorldSpace(Vector3.new(move.X, move.Y, -move.Z))
 
 	-- Boost energy
-	boosting = Input.Boosting() and thrust.Magnitude > 0.1 and State.Boost > 1
-	if boosting then
-		State.Boost = math.max(0, State.Boost - M.BoostDrain * dt)
-		lastBoostUse = os.clock()
-	elseif os.clock() - lastBoostUse > M.BoostRegenDelay then
-		State.Boost = math.min(boostMax, State.Boost + M.BoostRegen * (player:GetAttribute("BoostRegenMult") or 1) * dt)
-	end
+	local energy, isBoosting, lastUse = Motion.Boost(State.Boost, Input.Boosting() and thrust.Magnitude > 0.1, lastBoostUse, os.clock(), boostMax,
+		player:GetAttribute("BoostRegenMult") or 1, dt)
+	State.Boost, boosting, lastBoostUse = energy, isBoosting, lastUse
 	if thruster then thruster.Rate = boosting and 120 or (thrust.Magnitude > 0.1 and 15 or 0) end
 
 	local tether = State.Tether
@@ -151,24 +148,7 @@ local function step(dt: number)
 		end
 	end
 	if not State.Tether then
-		local accel = (boosting and M.BoostAccel or M.Accel) * speedMult
-		local prevSpeed = v.Magnitude
-		if thrust.Magnitude > 0.05 then
-			v += thrust * accel * dt
-		else
-			v *= math.exp(-M.Drag * dt)
-		end
-		-- Speed cap: thrust can never push past the current cap. Speed already above it (boost just
-		-- ended, explosion shove) bleeds off at 90 studs/s instead of snapping, and thrust can still steer.
-		local cap = (boosting and M.BoostMaxSpeed or M.MaxSpeed) * speedMult
-		local limit = math.max(cap, prevSpeed - 90 * dt)
-		if v.Magnitude > limit then
-			v = v.Unit * limit
-		end
-		if Input.Braking() then
-			v *= math.exp(-M.BrakeRate * dt)
-			if v.Magnitude < M.StopThreshold then v = Vector3.zero end
-		end
+		v = Motion.Step(v, thrust, boosting, Input.Braking(), speedMult, dt)
 	end
 	root.AssemblyLinearVelocity = v
 end

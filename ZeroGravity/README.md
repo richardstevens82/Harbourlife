@@ -15,8 +15,10 @@ the repository.
 2. Open `build/ZeroGravity.rbxlx` in Roblox Studio.
 3. Press **Play**. When the server starts, it generates the whole environment (station, ship,
    asteroids, wrecks and lobby) from code. That takes about a second.
-4. To test multiplayer, use **Test → Clients and Servers** with 2+ players. Matches need 2 queued
-   players. In Studio, 1 player is enough. A solo match ends when you die or the time limit runs out.
+4. Matches are 20 combatants. Bots fill every empty slot, so with just you online there are 19 bots.
+   One queued player is enough to start. To test with real players too, use **Test → Clients and
+   Servers**; each real player replaces a bot from the next match. Bot settings (count, skill,
+   `[BOT]` name tag) are in `Config.Bots`.
 
 **Option B: Rojo.** `default.project.json` maps the same layout. Run `rojo serve` and connect from
 Studio.
@@ -60,7 +62,7 @@ src/
     Services/                     WorldBuilder, Roster, SecurityService, CharacterService,
                                   DataService, InventoryService, CombatService, LootService,
                                   OxygenService, SafeZoneService, EquipmentService,
-                                  HazardService, MatchService
+                                  HazardService, NavGraph, BotService, MatchService
   StarterPlayer/StarterPlayerScripts/
     ClientMain.client.luau        bootstrap + server-message routing
     Controllers/                  Input, Camera, Movement (zero-g), Combat, Effects (VFX/audio,
@@ -80,7 +82,7 @@ content, call the Kit functions and drop markers.
 
 ```
 python3 tools/build_place.py        # build/ZeroGravity.rbxlx + sourcemap.json
-python3 tests/run.py                # 43 headless tests (needs the `luau` CLI)
+python3 tests/run.py                # headless tests incl. a full simulated 20-combatant bot match (needs `luau`)
 python3 tools/render_blockout.py    # docs/blockout/*.png (needs matplotlib)
 luau-lsp analyze --platform roblox --sourcemap sourcemap.json \
   --definitions=@roblox=globalTypes.d.luau --no-strict-dm-types src   # type check

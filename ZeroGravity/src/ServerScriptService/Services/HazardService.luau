@@ -11,6 +11,7 @@ local Combat = require(script.Parent.CombatService)
 local Oxygen = require(script.Parent.OxygenService)
 
 local Hazards = {}
+local airlocks: { [Model]: any } = {} -- model -> { request = fn(doorPart, who), state, inner, outer }
 local H = Config.Hazards
 local barrelFolder: Folder
 
@@ -94,6 +95,19 @@ local function setupAirlock(model: Model)
 	-- Outer doors start closed; inner doors start open so interiors read as connected spaces.
 	move(inner, true)
 	state.open = inner
+	airlocks[model] = { request = request, state = state, inner = inner, outer = outer }
+end
+
+-- Bot entry points: open a given airlock door (same interlock and distance rules as the prompt).
+function Hazards.IsAirlockDoorOpen(model: Model, doorName: string): boolean
+	local a = airlocks[model]
+	return a ~= nil and a.state.open ~= nil and a.state.open.Name == doorName
+end
+
+function Hazards.RequestAirlockDoor(model: Model, doorName: string, who)
+	local a = airlocks[model]
+	if not a or a.state.busy or Hazards.IsAirlockDoorOpen(model, doorName) then return end
+	task.spawn(a.request, doorName == "InnerDoor" and a.inner or a.outer, who)
 end
 
 -- ELECTRICAL FAULTS --------------------------------------------------------------------------------

@@ -13,6 +13,7 @@ local Oxygen = {}
 local O = Config.Oxygen
 local emptySince: { [Player]: number } = {}
 local stationUse: { [Player]: { [Instance]: number } } = {}
+local stationHandlers: { [BasePart]: (any) -> () } = {}
 
 local function inside(part: BasePart, pos: Vector3): boolean
 	local lp = part.CFrame:PointToObjectSpace(pos)
@@ -71,7 +72,7 @@ local function buildStation(marker: BasePart)
 	pr.MaxActivationDistance = 12
 	pr.RequiresLineOfSight = false
 	pr.Parent = unit
-	pr.Triggered:Connect(function(player)
+	local function use(player)
 		if not Roster.IsActive(player) then return end
 		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
 		if not root or (root.Position - unit.Position).Magnitude > 16 then return end
@@ -86,7 +87,21 @@ local function buildStation(marker: BasePart)
 		player:SetAttribute("O2", O.Max)
 		emptySince[player] = nil
 		Remotes.FX:FireClient(player, { t = "notice", text = "Oxygen refilled", color = Color3.fromRGB(80, 230, 150), sound = "o2" })
-	end)
+	end
+	stationHandlers[unit] = use
+	pr.Triggered:Connect(use)
+end
+
+-- Bot entry point (same checks as the prompt).
+function Oxygen.UseStation(c, unit: BasePart)
+	local h = stationHandlers[unit]
+	if h then h(c) end
+end
+
+function Oxygen.Stations(): { BasePart }
+	local out = {}
+	for unit in stationHandlers do table.insert(out, unit) end
+	return out
 end
 
 function Oxygen.Start()

@@ -242,6 +242,8 @@ function Inventory.Clear(player: Player)
 	Remotes.Inventory:FireClient(player, { t = "clear" })
 end
 
+Inventory.Use = useItem -- bot entry point (same checks as the remote)
+
 function Inventory.Start()
 	Remotes.Inventory.OnServerEvent:Connect(function(player, req)
 		if type(req) ~= "table" or not Security.RateLimit(player, "inventory", 8, 6) then return end

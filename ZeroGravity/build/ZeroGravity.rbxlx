@@ -1,4 +1,4 @@
-<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4"><Item class="Workspace" referent="RBX1"><Properties><string name="Name">Workspace</string><float name="Gravity">0</float><bool name="StreamingEnabled">false</bool></Properties></Item><Item class="Lighting" referent="RBX2"><Properties><string name="Name">Lighting</string><token name="Technology">4</token></Properties></Item><Item class="Players" referent="RBX3"><Properties><string name="Name">Players</string><bool name="CharacterAutoLoads">false</bool></Properties></Item><Item class="ReplicatedStorage" referent="RBX14"><Properties><string name="Name">ReplicatedStorage</string></Properties><Item class="Folder" referent="RBX13"><Properties><string name="Name">Shared</string></Properties><Item class="ModuleScript" referent="RBX4"><Properties><string name="Name">Config</string><ProtectedString name="Source"><![CDATA[-- Central tuning values. Everything gameplay-relevant that a designer might tweak lives here.
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4"><Item class="Workspace" referent="RBX1"><Properties><string name="Name">Workspace</string><float name="Gravity">0</float><bool name="StreamingEnabled">false</bool></Properties></Item><Item class="Lighting" referent="RBX2"><Properties><string name="Name">Lighting</string><token name="Technology">4</token></Properties></Item><Item class="Players" referent="RBX3"><Properties><string name="Name">Players</string><bool name="CharacterAutoLoads">false</bool></Properties></Item><Item class="ReplicatedStorage" referent="RBX15"><Properties><string name="Name">ReplicatedStorage</string></Properties><Item class="Folder" referent="RBX14"><Properties><string name="Name">Shared</string></Properties><Item class="ModuleScript" referent="RBX4"><Properties><string name="Name">Config</string><ProtectedString name="Source"><![CDATA[-- Central tuning values. Everything gameplay-relevant that a designer might tweak lives here.
 local Config = {}
 
 Config.GameName = "ZERO GRAVITY: LAST ORBIT"
@@ -6,8 +6,8 @@ Config.DataStoreName = "ZG_Progress_v1"
 
 -- Match ----------------------------------------------------------------------------------------
 Config.Match = {
-	MinPlayers = 2,
-	MaxPlayers = 24,
+	MinPlayers = 2, -- real players needed when bots are disabled
+	MaxPlayers = 20,
 	StudioMinPlayers = 1, -- solo testing in Studio: a match with one player ends when the zone wins
 	LobbyCountdown = 20,
 	PrepareTime = 3,
@@ -17,6 +17,21 @@ Config.Match = {
 	MaxMatchTime = 15 * 60,
 	DeploySpacing = 160, -- minimum distance between two deployment points used in one match
 	TeamSize = 1, -- solo; squads would raise this (MatchService groups players by team id)
+}
+
+-- Bots fill every match (and the lobby) up to FillTo combatants: with 1 player online there are 19
+-- bots; each real player who joins replaces one (after the current match). See BotService.
+Config.Bots = {
+	Enabled = true,
+	FillTo = 20,
+	MinRealPlayers = 1, -- with bots on, one queued player is enough to start a full match
+	SkillMin = 0.72, -- 0..1; shapes reaction time, aim error/settling, headshots, strafing
+	SkillMax = 0.93,
+	ShowTag = true, -- "[BOT]" after bot name tags (set false to hide)
+	ThinkRate = 8, -- decisions per second per bot
+	SightRange = 450,
+	HuntRange = 1100, -- bots track enemies this far away when nothing else needs doing
+	LobbyPractice = true, -- bots shoot the lobby range drones between matches
 }
 
 -- Arena geometry (studs). Arena is centred on the origin.
@@ -376,6 +391,8 @@ return Loot
 --   Equipment: tether / tetherRelease / grenade         (EquipmentService)
 --   Match:     queue / unqueue / cosmetic               (MatchService)      server -> client: phase, results
 --   FX:        server -> clients only (tracers, kill feed, hit markers, damage indicators, notices)
+-- On the server each entry is a thin wrapper (FireClient / FireAllClients / OnServerEvent) so bots can
+-- be addressed like players; on the client each entry is the RemoteEvent itself.
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -397,8 +414,35 @@ if RunService:IsServer() then
 else
 	folder = ReplicatedStorage:WaitForChild("Remotes")
 end
+
+-- Server side: wrap each RemoteEvent so a message addressed to a bot (a server-side combatant that
+-- is not a Player instance) goes to the bot brain via Remotes.BotSink instead of the network.
+Remotes.BotSink = nil :: ((any, string, any) -> ())?
 for _, name in NAMES do
-	Remotes[name] = folder:WaitForChild(name)
+	local remote = folder:WaitForChild(name) :: RemoteEvent
+	if RunService:IsServer() then
+		Remotes[name] = {
+			Instance = remote,
+			OnServerEvent = remote.OnServerEvent,
+			FireClient = function(_, target, msg)
+				if typeof(target) == "Instance" then
+					remote:FireClient(target, msg)
+				elseif Remotes.BotSink then
+					Remotes.BotSink(target, name, msg)
+				end
+			end,
+			FireAllClients = function(_, msg)
+				remote:FireAllClients(msg)
+			end,
+			-- client-side members, unused on a real server (the headless tests run both sides in one VM)
+			OnClientEvent = remote.OnClientEvent,
+			FireServer = function(_, msg)
+				remote:FireServer(msg)
+			end,
+		}
+	else
+		Remotes[name] = remote
+	end
 end
 return Remotes
 ]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX10"><Properties><string name="Name">WeaponDefinitions</string><ProtectedString name="Source"><![CDATA[-- Weapon stats. Damage is per pellet; `pellets` > 1 means a spread shot.
@@ -577,7 +621,52 @@ function Models.Build(id: string, rarity: string?): Model
 end
 
 return Models
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX12"><Properties><string name="Name">ZoneMath</string><ProtectedString name="Source"><![CDATA[-- Safe-zone geometry. Pure functions (Vector3 maths only) so they can be unit-tested.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX12"><Properties><string name="Name">ZeroGMotion</string><ProtectedString name="Source"><![CDATA[-- Zero-gravity translation model shared by player characters (MovementController, client) and
+-- bots (BotService, server), so both obey exactly the same acceleration, caps and braking.
+local Config = require(script.Parent.Config)
+
+local Motion = {}
+local M = Config.Movement
+
+-- One integration step. v: current velocity; thrust: world-space thrust direction (length 0..1).
+-- Returns the new velocity.
+--   * thrust accelerates; no thrust = tiny drag (momentum is kept)
+--   * thrust can never push past the current cap; speed already above it (boost just ended,
+--     explosion shove) bleeds off at 90 studs/s instead of snapping, and thrust can still steer
+--   * braking decays velocity exponentially to a full stop
+function Motion.Step(v: Vector3, thrust: Vector3, boosting: boolean, braking: boolean, speedMult: number, dt: number): Vector3
+	local accel = (boosting and M.BoostAccel or M.Accel) * speedMult
+	local prevSpeed = v.Magnitude
+	if thrust.Magnitude > 0.05 then
+		v += thrust * accel * dt
+	else
+		v *= math.exp(-M.Drag * dt)
+	end
+	local cap = (boosting and M.BoostMaxSpeed or M.MaxSpeed) * speedMult
+	local limit = math.max(cap, prevSpeed - 90 * dt)
+	if v.Magnitude > limit then
+		v = v.Unit * limit
+	end
+	if braking then
+		v *= math.exp(-M.BrakeRate * dt)
+		if v.Magnitude < M.StopThreshold then v = Vector3.zero end
+	end
+	return v
+end
+
+-- Boost energy bookkeeping. Returns (energy, boostingThisFrame, lastUse).
+function Motion.Boost(energy: number, wantBoost: boolean, lastUse: number, now: number, maxEnergy: number, regenMult: number, dt: number)
+	local boosting = wantBoost and energy > 1
+	if boosting then
+		return math.max(0, energy - M.BoostDrain * dt), true, now
+	elseif now - lastUse > M.BoostRegenDelay then
+		return math.min(maxEnergy, energy + M.BoostRegen * regenMult * dt), false, lastUse
+	end
+	return energy, false, lastUse
+end
+
+return Motion
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX13"><Properties><string name="Name">ZoneMath</string><ProtectedString name="Source"><![CDATA[-- Safe-zone geometry. Pure functions (Vector3 maths only) so they can be unit-tested.
 local Zone = {}
 
 -- Next stage centre: move toward `target` but keep the new sphere entirely inside the old one,
@@ -639,7 +728,884 @@ function Zone.Evaluate(schedule, now: number, startCenter: Vector3, startRadius:
 end
 
 return Zone
-]]></ProtectedString></Properties></Item></Item></Item><Item class="ServerScriptService" referent="RBX38"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Folder" referent="RBX28"><Properties><string name="Name">Services</string></Properties><Item class="ModuleScript" referent="RBX15"><Properties><string name="Name">CharacterService</string><ProtectedString name="Source"><![CDATA[-- Character spawning (characters never auto-load; MatchService decides where everyone goes),
+]]></ProtectedString></Properties></Item></Item></Item><Item class="ServerScriptService" referent="RBX41"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Folder" referent="RBX31"><Properties><string name="Name">Services</string></Properties><Item class="ModuleScript" referent="RBX16"><Properties><string name="Name">BotService</string><ProtectedString name="Source"><![CDATA[-- Bots: server-simulated combatants that keep every lobby and match at Config.Bots.FillTo (20).
+--
+-- Fair by construction: bots act ONLY through the same server entry points players use
+-- (Combat.Fire / Reload / Equip / Melee, Loot.Search / Take, Inventory.Use, Equipment.ThrowGrenade,
+-- Oxygen.UseStation, airlock requests) so fire rate, ammo, spread, aim cone, pickup range and
+-- cooldowns are validated exactly as for a human. They move with the shared ZeroGMotion model
+-- (same acceleration, caps, boost energy and braking).
+--
+-- Skill (0..1 per bot, Config.Bots.SkillMin..SkillMax) shapes reaction time, aim error and its
+-- settling, headshot preference, strafing and tactical choices. Behaviour priority each think:
+--   storm > oxygen > fight > heal > loot > hunt, with navigation through station and ship
+--   interiors (NavGraph, airlocks cycled like a player would), obstacle avoidance and unsticking.
+-- Between matches bots float around the lobby and practise on the range drones.
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local CollectionService = game:GetService("CollectionService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared.Config)
+local Weapons = require(Shared.WeaponDefinitions)
+local Items = require(Shared.ItemDefinitions)
+local Cosmetics = require(Shared.Cosmetics)
+local Loadouts = require(Shared.Loadouts)
+local Motion = require(Shared.ZeroGMotion)
+local Remotes = require(Shared.Remotes)
+local Kit = require(script.Parent.Parent:WaitForChild("Builders"):WaitForChild("Kit"))
+local Roster = require(script.Parent.Roster)
+local CharacterService = require(script.Parent.CharacterService)
+local Inventory = require(script.Parent.InventoryService)
+local Combat = require(script.Parent.CombatService)
+local Loot = require(script.Parent.LootService)
+local Oxygen = require(script.Parent.OxygenService)
+local Equipment = require(script.Parent.EquipmentService)
+local Hazards = require(script.Parent.HazardService)
+local Nav = require(script.Parent.NavGraph)
+
+local Bots = {}
+local B = Config.Bots
+local MV = Config.Movement
+local bots: { any } = {}
+local cfgFolder: Folder
+local charFolder: Folder
+local rng = Random.new()
+local nextId = 0
+local claims: { [Instance]: any } = {} -- container -> bot heading for it (spreads bots out)
+
+local NAMES = {
+	"Vex", "Orion", "Kestrel", "Nyx", "Rook", "Halcyon", "Juno", "Talon", "Ash", "Vega", "Sable", "Quill", "Echo", "Rune", "Cobalt",
+	"Wraith", "Lumen", "Pike", "Nova", "Drift", "Hex", "Zephyr", "Kite", "Onyx", "Saber", "Flint", "Iris", "Corvus", "Ember", "Atlas",
+	"Mako", "Specter", "Lyra", "Grit", "Tycho", "Rhea", "Bishop", "Comet", "Vanta", "Shrike", "Ion", "Wren", "Banshee", "Strix",
+	"Polaris", "Torque", "Raptor", "Cinder", "Moth", "Kairo", "Delta", "Tamsin", "Brink", "Caspian", "Riven", "Solace", "Jett", "Voss",
+	"Marlow", "Quasar", "Zeal", "Ronin", "Tessa", "Fable",
+}
+local SUFFIX = { "", "_7", "X", "-9", "01", "_rx", "42", "Prime", "_v2", "77", "", "", "" }
+
+-- Preferred engagement distance per weapon (studs).
+local PREF_RANGE = { shotgun = 12, arc = 11, smg = 34, pistol = 40, assault = 75, burst = 85, helios = 90, precision = 230 }
+local WEAPON_TIER = { pistol = 1, arc = 2, smg = 3, shotgun = 3, assault = 4, burst = 4, precision = 4, helios = 5 }
+
+local BotMeta = {}
+BotMeta.__index = BotMeta
+function BotMeta:GetAttribute(k: string) return self._cfg:GetAttribute(k) end
+function BotMeta:SetAttribute(k: string, v: any) self._cfg:SetAttribute(k, v) end
+
+local function lerp(a: number, b: number, t: number): number return a + (b - a) * t end
+
+local function uniqueName(): string
+	local used = {}
+	for _, b in bots do used[b.Name] = true end
+	for _, p in Players:GetPlayers() do used[p.Name] = true end
+	for _ = 1, 200 do
+		local n = NAMES[rng:NextInteger(1, #NAMES)] .. SUFFIX[rng:NextInteger(1, #SUFFIX)]
+		if not used[n] then return n end
+	end
+	nextId += 1
+	return "Pilot" .. nextId
+end
+
+local function newBrain()
+	return {
+		mode = "lobby", moveDir = Vector3.zero, boost = false, brake = false, face = CFrame.new(),
+		energy = MV.BoostMax, lastBoostUse = 0, nextThink = 0,
+		path = nil, pathI = 1, pathGoal = nil, pathAt = 0,
+		task = "", taskObj = nil,
+		target = nil, acquiredAt = 0, seenAt = 0, lastSeenPos = nil, aimHead = false, errDeg = 8, errDir = Vector3.xAxis,
+		strafe = 1, strafeUntil = 0, vert = 0,
+		wantFire = false, nextShot = 0, burstLeft = 0,
+		hurtAt = -100, threatPos = nil,
+		progressPos = nil, progressAt = 0, escapeUntil = 0, escapeDir = Vector3.zero,
+		nextGrenadeAt = 0, nextEquipAt = 0, nextUseAt = 0,
+		lobbyGoal = nil, lobbyWaitUntil = 0, practiceAt = 0, practiceShots = 0,
+		avoidDir = nil, avoidUntil = 0,
+	}
+end
+
+local function newBot()
+	nextId += 1
+	local name = uniqueName()
+	local cfg = Instance.new("Configuration")
+	cfg.Name = name
+	local charRef = Instance.new("ObjectValue")
+	charRef.Name = "Character"
+	charRef.Parent = cfg
+	cfg.Parent = cfgFolder
+	local suits = Cosmetics.Suits
+	local bot: any = setmetatable({
+		IsBot = true, Name = name, DisplayName = name, UserId = -nextId, Parent = cfg, Character = nil,
+		_cfg = cfg, _charRef = charRef,
+		skill = rng:NextNumber(B.SkillMin, B.SkillMax),
+		suit = suits[rng:NextInteger(1, #suits)].id,
+		loadout = Loadouts.List[rng:NextInteger(1, #Loadouts.List)].id,
+		brain = newBrain(),
+	}, BotMeta)
+	bot:SetAttribute("IsBot", true)
+	bot:SetAttribute("Skill", math.floor(bot.skill * 100))
+	local r = Roster.Get(bot)
+	r.queued = false -- bots are drafted by MatchService, never queued
+	Roster.Sync(bot)
+	table.insert(bots, bot)
+	return bot
+end
+
+local function displayName(bot): string
+	return B.ShowTag and (bot.Name .. " [BOT]") or bot.Name
+end
+
+local function setCharacter(bot, char: Model?)
+	bot._charRef.Value = char
+end
+
+local function lobbyPoint(): Vector3
+	local c = Config.Arena.LobbyCenter
+	return c + Vector3.new(rng:NextNumber(-44, 44), rng:NextNumber(-14, 14), rng:NextNumber(-28, 30))
+end
+
+-- Spawn (or respawn) a bot floating in the lobby with the practice kit.
+function Bots.ToLobby(bot)
+	if not bot.Parent then return end
+	local p = lobbyPoint()
+	local char = CharacterService.SpawnBot(bot, CFrame.lookAt(p, p + Vector3.new(0, 0, -1)), charFolder, displayName(bot))
+	setCharacter(bot, char)
+	bot.brain = newBrain()
+	bot.brain.face = CFrame.lookAt(Vector3.zero, Vector3.new(0, 0, -1))
+	if char then
+		Combat.ResetPlayer(bot)
+		Inventory.Reset(bot, "practice")
+		Oxygen.Reset(bot)
+	end
+end
+
+-- Body for a match deployment. MatchService resets inventory/oxygen and hooks death afterwards.
+function Bots.Deploy(bot, cf: CFrame): Model?
+	local char = CharacterService.SpawnBot(bot, cf, charFolder, displayName(bot))
+	setCharacter(bot, char)
+	bot.brain = newBrain()
+	bot.brain.mode = "match"
+	bot.brain.face = cf.Rotation
+	bot.brain.deployedAt = os.clock()
+	return char
+end
+
+function Bots.Remove(bot)
+	if bot.Character then
+		Roster.UnbindCharacter(bot.Character)
+		bot.Character:Destroy()
+	end
+	for box, owner in claims do
+		if owner == bot then claims[box] = nil end
+	end
+	local i = table.find(bots, bot)
+	if i then table.remove(bots, i) end
+	Roster.Remove(bot)
+	bot._cfg:Destroy()
+	bot.Parent = nil
+end
+
+function Bots.All(): { any }
+	return bots
+end
+
+-- Bots available to draft into a match (alive in the lobby, not already in a match).
+function Bots.ForMatch(n: number): { any }
+	local out = {}
+	for _, b in bots do
+		if #out >= n then break end
+		local r = Roster.Get(b)
+		if r and not r.inMatch and b.Character then table.insert(out, b) end
+	end
+	return out
+end
+
+-- Keep (players + bots) at FillTo. Only lobby bots are removed; match bots finish their match.
+function Bots.Rebalance()
+	if not B.Enabled then
+		for i = #bots, 1, -1 do
+			if not Roster.Get(bots[i]).inMatch then Bots.Remove(bots[i]) end
+		end
+		return
+	end
+	local want = math.max(0, B.FillTo - #Players:GetPlayers())
+	while #bots < want do
+		Bots.ToLobby(newBot())
+	end
+	for i = #bots, 1, -1 do
+		if #bots <= want then break end
+		if not Roster.Get(bots[i]).inMatch then Bots.Remove(bots[i]) end
+	end
+end
+
+------------------------------------------------------------------------------------------- perception
+local function rootOf(c): BasePart?
+	local ch = c and c.Character
+	return ch and ch:FindFirstChild("HumanoidRootPart") :: BasePart?
+end
+
+local function humOf(c): Humanoid?
+	local ch = c and c.Character
+	return ch and ch:FindFirstChildOfClass("Humanoid")
+end
+
+local function rayParams(bot): RaycastParams
+	local p = RaycastParams.new()
+	p.FilterType = Enum.RaycastFilterType.Exclude
+	p.FilterDescendantsInstances = { bot.Character :: Model }
+	return p
+end
+
+-- Can `bot` see `enemy`? (ray from the bot's head to the enemy's torso)
+local function canSee(bot, enemy, params: RaycastParams): boolean
+	local head = bot.Character and bot.Character:FindFirstChild("Head") :: BasePart?
+	local er = rootOf(enemy)
+	if not (head and er) then return false end
+	local d = er.Position - head.Position
+	local hit = workspace:Raycast(head.Position, d, params)
+	if not hit then return true end
+	local model = hit.Instance:FindFirstAncestorOfClass("Model")
+	while model do
+		if model == enemy.Character then return true end
+		model = model:FindFirstAncestorOfClass("Model")
+	end
+	return false
+end
+
+local function enemiesOf(bot): { any }
+	local out = {}
+	local team = Roster.Get(bot).team
+	for _, c in Roster.Active() do
+		if c ~= bot then
+			local r = Roster.Get(c)
+			if not (team ~= 0 and r.team == team) then table.insert(out, c) end
+		end
+	end
+	return out
+end
+
+-------------------------------------------------------------------------------------------- inventory
+local function weaponDps(w, dist: number): number
+	local def = Weapons.Get(w.id)
+	return Weapons.DamageAt(w.id, w.rarity, dist) * def.pellets * def.rpm / 60
+end
+
+local function bestSlotFor(bot, dist: number): number?
+	local inv = Inventory.Get(bot)
+	if not inv then return nil end
+	local best, bestScore = nil, 0
+	for slot = 1, Config.Inventory.WeaponSlots do
+		local w = inv.weapons[slot]
+		if w then
+			local def = Weapons.Get(w.id)
+			local hasAmmo = w.mag > 0 or inv.practice or inv.ammo[def.ammo] > 0
+			local score = hasAmmo and weaponDps(w, dist) or 0
+			if slot == inv.active then score *= 1.2 end -- avoid flip-flopping
+			if score > bestScore then best, bestScore = slot, score end
+		end
+	end
+	return best
+end
+
+local function weaponValue(id: string, rarity: string): number
+	return (WEAPON_TIER[id] or 1) + (table.find(Items.Rarities, rarity) or 1) * 0.35
+end
+
+-- Would picking this loot entry improve the bot's kit?
+local function wants(bot, entry): boolean
+	local inv = Inventory.Get(bot)
+	local def = entry and Items.Get(entry.id)
+	if not (inv and def) then return false end
+	local IC = Config.Inventory
+	if def.kind == "weapon" then
+		local worst, count = math.huge, 0
+		for slot = 1, IC.WeaponSlots do
+			local w = inv.weapons[slot]
+			if w then
+				count += 1
+				worst = math.min(worst, weaponValue(w.id, w.rarity))
+			end
+		end
+		return count < IC.WeaponSlots or weaponValue(def.weapon, entry.rarity or "common") > worst + 0.6
+	elseif def.kind == "ammo" then
+		for _, w in inv.weapons do
+			if Weapons.Get(w.id).ammo == def.ammo and inv.ammo[def.ammo] < IC.AmmoCap[def.ammo] then return true end
+		end
+		return false
+	elseif def.kind == "consumable" or (def.kind == "utility" and def.stack) then
+		local key = def.stack or entry.id
+		return inv.items[key] < (IC.ConsumableStack[key] or 1)
+	elseif def.kind == "utility" then
+		return inv.tether < Config.Tether.MaxCharges
+	elseif def.kind == "armor" then
+		return def.armorMax > inv.armorMax or (bot:GetAttribute("Armor") or 0) < inv.armorMax
+	elseif def.kind == "upgrade" then
+		return not inv.upgrades[entry.id]
+	end
+	return false
+end
+
+local function needsLoot(bot): boolean
+	local inv = Inventory.Get(bot)
+	if not inv then return false end
+	local best = 0
+	for _, w in inv.weapons do best = math.max(best, weaponValue(w.id, w.rarity)) end
+	if best < 4 or inv.armorMax < 50 then return true end
+	local w = inv.weapons[inv.active]
+	if w and inv.ammo[Weapons.Get(w.id).ammo] < 20 then return true end
+	return (inv.items.medkit + inv.items.stim) == 0
+end
+
+--------------------------------------------------------------------------------------------- movement
+-- Steer around obstacles: probe ahead along `dir`, try deflections if blocked.
+local function avoid(bot, root: BasePart, dir: Vector3, params: RaycastParams): Vector3
+	local brain = bot.brain
+	if dir.Magnitude < 0.01 then return Vector3.zero end
+	dir = dir.Unit
+	local now = os.clock()
+	if brain.avoidDir and now < brain.avoidUntil then return brain.avoidDir end
+	local speed = root.AssemblyLinearVelocity.Magnitude
+	local probe = math.clamp(speed * 0.7, 9, 40)
+	local origin = root.Position
+	local function clear(d: Vector3): boolean
+		local hit = workspace:Raycast(origin, d * probe, params)
+		return hit == nil or Roster.FromCharacter(hit.Instance:FindFirstAncestorOfClass("Model")) ~= nil
+	end
+	if clear(dir) then return dir end
+	local up = math.abs(dir.Y) > 0.9 and Vector3.xAxis or Vector3.yAxis
+	local side = dir:Cross(up).Unit
+	local vert = side:Cross(dir).Unit
+	for _, cand in { (dir + side * 0.7).Unit, (dir - side * 0.7).Unit, (dir + vert * 0.7).Unit, (dir - vert * 0.7).Unit, side, -side, vert, -vert } do
+		if clear(cand) then
+			brain.avoidDir, brain.avoidUntil = cand, now + 0.35
+			return cand
+		end
+	end
+	brain.avoidDir, brain.avoidUntil = -dir, now + 0.5
+	return -dir
+end
+
+-- Navigate toward `goal` (through interiors and airlocks when needed). Returns remaining distance.
+local function navigate(bot, root: BasePart, goal: Vector3, params: RaycastParams, urgent: boolean): number
+	local brain = bot.brain
+	local now = os.clock()
+	local pos = root.Position
+	if not brain.path or not brain.pathGoal or (brain.pathGoal - goal).Magnitude > 25 or now - brain.pathAt > 5 then
+		brain.path = Nav.Path(pos, goal) or { { pos = goal } }
+		brain.pathI, brain.pathGoal, brain.pathAt = 1, goal, now
+	end
+	local path = brain.path
+	local wp = path[brain.pathI]
+	while wp and brain.pathI < #path and (wp.pos - pos).Magnitude < 5 do
+		brain.pathI += 1
+		wp = path[brain.pathI]
+	end
+	if not wp then
+		brain.moveDir = Vector3.zero
+		return 0
+	end
+	-- airlock door on the way: request it, hold short until it opens
+	if wp.door and wp.airlock and not Hazards.IsAirlockDoorOpen(wp.airlock, wp.door) then
+		local door = wp.airlock:FindFirstChild(wp.door) :: BasePart?
+		local dd = door and (door.Position - pos).Magnitude or math.huge
+		if dd < 16 then
+			Hazards.RequestAirlockDoor(wp.airlock, wp.door, bot)
+			brain.moveDir, brain.brake = Vector3.zero, true
+			return (goal - pos).Magnitude
+		end
+	end
+	local to = wp.pos - pos
+	local remaining = (goal - pos).Magnitude
+	local dir = avoid(bot, root, to, params)
+	-- slow down for the final waypoint and inside tight spaces
+	local speed = root.AssemblyLinearVelocity.Magnitude
+	brain.brake = brain.pathI == #path and to.Magnitude < 14 and speed > to.Magnitude * 1.5
+	brain.moveDir = dir
+	brain.boost = urgent and to.Magnitude > 60 and brain.energy > 25
+	if not brain.target then brain.face = CFrame.lookAt(Vector3.zero, dir) end
+	return remaining
+end
+
+-- Unstick: if a moving bot makes no progress for 2 s, take a random escape burst and re-path.
+local function unstick(bot, root: BasePart)
+	local brain = bot.brain
+	local now = os.clock()
+	if now < brain.escapeUntil then
+		brain.moveDir = brain.escapeDir
+		return true
+	end
+	if now - brain.progressAt > 2 then
+		local moved = brain.progressPos and (root.Position - brain.progressPos).Magnitude or math.huge
+		brain.progressPos, brain.progressAt = root.Position, now
+		if moved < 3 and brain.moveDir.Magnitude > 0.1 and not brain.wantFire then
+			brain.escapeDir = rng:NextUnitVector()
+			brain.escapeUntil = now + 0.9
+			brain.path = nil
+			return true
+		end
+	end
+	return false
+end
+
+------------------------------------------------------------------------------------------------ combat
+local function pickTarget(bot, root: BasePart, params: RaycastParams)
+	local brain = bot.brain
+	local now = os.clock()
+	local enemies = enemiesOf(bot)
+	table.sort(enemies, function(a, b)
+		local ra, rb = rootOf(a), rootOf(b)
+		return (ra and (ra.Position - root.Position).Magnitude or math.huge) < (rb and (rb.Position - root.Position).Magnitude or math.huge)
+	end)
+	local best, bestScore = nil, math.huge
+	for i = 1, math.min(#enemies, 4) do
+		local e = enemies[i]
+		local er = rootOf(e)
+		local d = er and (er.Position - root.Position).Magnitude or math.huge
+		if d <= B.SightRange and canSee(bot, e, params) then
+			local hum = humOf(e)
+			local score = d * (0.6 + 0.4 * ((hum and hum.Health or 100) / 100))
+			if e == brain.target then score *= 0.6 end -- stick with the current target
+			if score < bestScore then best, bestScore = e, score end
+		end
+	end
+	if best then
+		if best ~= brain.target then
+			brain.target = best
+			brain.acquiredAt = now
+			-- fresh target: big initial error that settles while tracking
+			brain.errDeg = lerp(9, 3.5, bot.skill)
+			brain.aimHead = rng:NextNumber() < 0.15 + 0.4 * bot.skill
+		end
+		brain.seenAt = now
+		local br = rootOf(best)
+		brain.lastSeenPos = br and br.Position
+	elseif brain.target and (now - brain.seenAt > 2.5 or not Roster.IsActive(brain.target)) then
+		brain.target = nil
+	end
+	return brain.target, brain.target ~= nil and now - brain.seenAt < 0.3
+end
+
+local function aimPartOf(bot, target): BasePart?
+	local ch = target.Character
+	if not ch then return nil end
+	if bot.brain.aimHead then
+		local head = ch:FindFirstChild("Head") :: BasePart?
+		if head then return head end
+	end
+	return (ch:FindFirstChild("UpperTorso") or ch:FindFirstChild("Torso") or ch:FindFirstChild("HumanoidRootPart")) :: BasePart?
+end
+
+local function fight(bot, root: BasePart, target, visible: boolean, params: RaycastParams)
+	local brain = bot.brain
+	local now = os.clock()
+	local tr = rootOf(target)
+	if not tr then return end
+	local toT = tr.Position - root.Position
+	local dist = toT.Magnitude
+	local inv = Inventory.Get(bot)
+	-- weapon for this range
+	if now >= brain.nextEquipAt then
+		local slot = bestSlotFor(bot, dist)
+		if inv and slot and slot ~= inv.active then
+			Combat.Equip(bot, slot)
+			brain.nextEquipAt = now + 1.5
+		end
+	end
+	local w = inv and inv.weapons[inv.active]
+	local pref = w and PREF_RANGE[w.id] or 40
+	-- range keeping + strafing (unpredictable lateral jinks, more for skilled bots)
+	if now > brain.strafeUntil then
+		brain.strafe = -brain.strafe
+		brain.strafeUntil = now + lerp(2.4, 0.9, bot.skill) * rng:NextNumber(0.6, 1.4)
+		brain.vert = rng:NextNumber() < 0.35 and (rng:NextNumber() < 0.5 and -1 or 1) or 0
+	end
+	local fwd = toT.Unit
+	local up = math.abs(fwd.Y) > 0.9 and Vector3.xAxis or Vector3.yAxis
+	local side = fwd:Cross(up).Unit
+	local vert = side:Cross(fwd).Unit
+	local radial = 0
+	if dist > pref * 1.3 then radial = 1 elseif dist < pref * 0.6 then radial = -1 end
+	local hum = humOf(bot)
+	local lowHealth = hum and hum.Health < 30
+	if lowHealth and dist < 150 then radial = -1 end -- break off and survive
+	local dir = fwd * radial + side * brain.strafe * 0.8 + vert * brain.vert * 0.5
+	if not visible and brain.lastSeenPos then
+		-- lost sight: push toward the last known position
+		dir = (brain.lastSeenPos - root.Position)
+		if dir.Magnitude < 8 then brain.target = nil end
+	end
+	brain.moveDir = avoid(bot, root, dir, params)
+	local recentlyHurt = now - brain.hurtAt < 0.8
+	brain.boost = (recentlyHurt or dist > 180 or lowHealth) and brain.energy > 30
+	brain.brake = false
+	brain.face = CFrame.lookAt(Vector3.zero, fwd)
+	-- aim settles while tracking; worse while either side moves fast
+	local floor = lerp(3.0, 0.65, bot.skill)
+	local motionPenalty = (tr.AssemblyLinearVelocity.Magnitude / 50) * lerp(2.2, 0.7, bot.skill)
+		+ (root.AssemblyLinearVelocity.Magnitude / 50) * lerp(1.2, 0.4, bot.skill)
+	brain.errDeg = math.max(floor + motionPenalty, brain.errDeg * lerp(0.82, 0.62, bot.skill))
+	brain.errDir = (brain.errDir + rng:NextUnitVector() * 0.6).Unit
+	-- fire once reaction time has passed and the target is in range
+	local reaction = lerp(0.5, 0.17, bot.skill)
+	local def = w and Weapons.Get(w.id)
+	brain.wantFire = visible and def ~= nil and now - brain.acquiredAt >= reaction and dist <= def.maxRange * 0.9
+	-- pulse charge at mid range, melee up close
+	if visible and inv and inv.items.grenade > 0 and dist > 16 and dist < 48 and now >= brain.nextGrenadeAt and rng:NextNumber() < 0.25 then
+		brain.nextGrenadeAt = now + 6
+		local lead = tr.Position + tr.AssemblyLinearVelocity * (dist / Config.Grenade.Speed)
+		Equipment.ThrowGrenade(bot, (lead - root.Position).Unit)
+	end
+	if visible and dist < Config.Melee.Range - 1 then
+		root.CFrame = CFrame.lookAt(root.Position, tr.Position)
+		Combat.Melee(bot)
+	end
+end
+
+-- Called every Heartbeat for bots that want to fire: paces shots exactly like a player's trigger.
+local function fireStep(bot, root: BasePart)
+	local brain = bot.brain
+	local now = os.clock()
+	local target = brain.target
+	if not (brain.wantFire and target and now >= brain.nextShot) then return end
+	local weapon = Inventory.ActiveWeapon(bot)
+	if not weapon or Combat.ReadyIn(bot) > 0 then return end
+	if weapon.mag <= 0 then
+		Combat.Reload(bot)
+		brain.nextShot = now + 0.3
+		return
+	end
+	local part = aimPartOf(bot, target)
+	if not part then return end
+	local def = Weapons.Get(weapon.id)
+	local head = bot.Character:FindFirstChild("Head") :: BasePart?
+	local held = bot.Character:FindFirstChild("HeldWeapon")
+	local muzzle = held and held:FindFirstChild("Muzzle", true) :: Attachment?
+	local origin = muzzle and muzzle.WorldPosition or (head and head.Position) or root.Position
+	local dist = (part.Position - origin).Magnitude
+	-- aim error as an angular offset around the line of fire
+	local aimDir = (part.Position - origin).Unit
+	local perp = brain.errDir - aimDir * brain.errDir:Dot(aimDir)
+	if perp.Magnitude > 1e-3 then aimDir = (aimDir + perp.Unit * math.tan(math.rad(brain.errDeg))).Unit end
+	-- face the shot (the server checks the body faces where it fires)
+	root.CFrame = CFrame.lookAt(root.Position, root.Position + aimDir)
+	brain.face = CFrame.lookAt(Vector3.zero, aimDir)
+	local steady = root.AssemblyLinearVelocity.Magnitude < 15 and dist > 50
+	local spread = steady and def.adsSpread or def.spread
+	local dirs = {}
+	for i = 1, def.pellets do
+		local cf = CFrame.lookAt(Vector3.zero, aimDir)
+		local r = math.rad(spread) * math.sqrt(rng:NextNumber())
+		local a = rng:NextNumber(0, math.pi * 2)
+		dirs[i] = (cf * CFrame.Angles(math.sin(a) * r, math.cos(a) * r, 0)).LookVector
+	end
+	Combat.Fire(bot, origin, dirs, weapon.mag - 1)
+	local interval = Weapons.FireInterval(weapon.id)
+	if def.mode == "burst" then
+		if brain.burstLeft <= 0 then brain.burstLeft = def.burstCount end
+		brain.burstLeft -= 1
+		brain.nextShot = now + (brain.burstLeft > 0 and def.burstDelay or interval - def.burstDelay * (def.burstCount - 1))
+	elseif def.mode == "semi" then
+		-- human-like trigger pulls: a little slower than the cap, less so for skilled bots
+		brain.nextShot = now + interval + rng:NextNumber(0.03, 0.2) * (1.3 - bot.skill)
+	else
+		brain.nextShot = now + interval
+	end
+end
+
+------------------------------------------------------------------------------------------------- think
+local function zoneInfo()
+	local zs = ReplicatedStorage:FindFirstChild("ZoneState")
+	if not zs or not zs:GetAttribute("Active") then return nil end
+	return {
+		c = zs:GetAttribute("Center") :: Vector3, r = zs:GetAttribute("Radius") :: number,
+		nc = zs:GetAttribute("NextCenter") :: Vector3?, nr = zs:GetAttribute("NextRadius") :: number?,
+		phase = zs:GetAttribute("Phase"), nextT = zs:GetAttribute("NextTime") or 0,
+	}
+end
+
+local function nearestOf(list: { BasePart }, pos: Vector3, maxDist: number, filter: ((BasePart) -> boolean)?): BasePart?
+	local best, bestD = nil, maxDist
+	for _, p in list do
+		local d = (p.Position - pos).Magnitude
+		if d < bestD and (not filter or filter(p)) then best, bestD = p, d end
+	end
+	return best
+end
+
+local function useIfHave(bot, item: string): boolean
+	local inv = Inventory.Get(bot)
+	if inv and (inv.items[item] or 0) > 0 and os.clock() >= bot.brain.nextUseAt then
+		Inventory.Use(bot, item)
+		bot.brain.nextUseAt = os.clock() + (Items.List[item].useTime or 1) + 0.3
+		return true
+	end
+	return false
+end
+
+local function thinkLobby(bot, root: BasePart, params: RaycastParams)
+	local brain = bot.brain
+	local now = os.clock()
+	brain.wantFire = false
+	if not brain.lobbyGoal or (root.Position - brain.lobbyGoal).Magnitude < 4 then
+		if not brain.lobbyGoal or now > brain.lobbyWaitUntil then
+			brain.lobbyGoal = lobbyPoint()
+			brain.lobbyWaitUntil = now + rng:NextNumber(2, 7)
+		end
+		brain.moveDir, brain.brake = Vector3.zero, true
+	else
+		local to = brain.lobbyGoal - root.Position
+		brain.moveDir = avoid(bot, root, to, params) * 0.45
+		brain.brake = root.AssemblyLinearVelocity.Magnitude > 14
+		brain.face = CFrame.lookAt(Vector3.zero, to.Unit)
+	end
+	brain.boost = false
+	-- occasional practice on the range drones (the same validated fire path as players)
+	if B.LobbyPractice and now >= brain.practiceAt then
+		brain.practiceAt = now + rng:NextNumber(5, 12)
+		local drone = nearestOf(CollectionService:GetTagged("PracticeTarget"), root.Position, 100, function(d)
+			return (d:GetAttribute("Health") or 0) > 0
+		end)
+		local weapon = Inventory.ActiveWeapon(bot)
+		local head = bot.Character:FindFirstChild("Head") :: BasePart?
+		if drone and weapon and head and Combat.ReadyIn(bot) == 0 then
+			local dir = (drone.Position - head.Position).Unit
+			root.CFrame = CFrame.lookAt(root.Position, drone.Position)
+			brain.face = CFrame.lookAt(Vector3.zero, dir)
+			local pellets = {}
+			for i = 1, Weapons.Get(weapon.id).pellets do pellets[i] = dir end
+			if weapon.mag <= 0 then Combat.Reload(bot) else Combat.Fire(bot, head.Position, pellets, weapon.mag - 1) end
+		end
+	end
+end
+
+local function thinkMatch(bot, root: BasePart, params: RaycastParams)
+	local brain = bot.brain
+	local now = os.clock()
+	local hum = humOf(bot)
+	if not hum then return end
+	brain.brake = false
+	brain.boost = false
+	local target, visible = pickTarget(bot, root, params)
+	local zone = zoneInfo()
+	local pos = root.Position
+	local o2 = bot:GetAttribute("O2") or 100
+	local inv = Inventory.Get(bot)
+	if not inv then return end
+
+	local pressurized = bot:GetAttribute("Pressurized") == true
+	-- Refill: canister if carried, else fly to the nearest O2 station (stations sit in pressurised rooms).
+	local function seekOxygen(): boolean
+		if pressurized or useIfHave(bot, "o2canister") then return false end
+		local station = nearestOf(Oxygen.Stations(), pos, 3000)
+		if not station then return false end
+		brain.task = "o2"
+		local d = navigate(bot, root, station.Position, params, true)
+		if d < 10 then Oxygen.UseStation(bot, station) end
+		brain.wantFire = visible and target ~= nil
+		return true
+	end
+	-- 0. critical oxygen beats everything except being deep inside the storm
+	local deepInStorm = zone ~= nil and (pos - zone.c).Magnitude > zone.r + 60
+	if o2 < 20 and not deepInStorm and seekOxygen() then return end
+
+	-- 1. the storm: get inside (and ahead of the next contraction)
+	if zone then
+		local margin = 25
+		local outside = (pos - zone.c).Magnitude > zone.r - margin
+		local nextOutside = zone.nc and zone.nr and zone.phase == "waiting" and zone.nextT - workspace:GetServerTimeNow() < 25
+			and (pos - zone.nc).Magnitude > zone.nr - margin
+		if outside or nextOutside then
+			brain.task = "zone"
+			local goal = (outside or not zone.nc) and zone.c or zone.nc
+			navigate(bot, root, goal, params, true)
+			brain.wantFire = visible and target ~= nil
+			if visible and target then
+				local tr = rootOf(target)
+				if tr then brain.face = CFrame.lookAt(Vector3.zero, (tr.Position - pos).Unit) end
+			end
+			return
+		end
+	end
+	-- 2. oxygen: plan a refill before it becomes critical (unless something is shooting at us)
+	if o2 < 38 and now - brain.hurtAt > 2 and seekOxygen() then return end
+	-- 3. fight, but only within effective range of our best weapon, when shot at, or up close.
+	--    Far-off contacts are remembered and hunted later instead of plinking at them.
+	if target and (visible or now - brain.seenAt < 2.5) then
+		local tr = rootOf(target)
+		local dist = tr and (tr.Position - pos).Magnitude or math.huge
+		local slot = bestSlotFor(bot, dist)
+		local w = slot and inv.weapons[slot]
+		local engage = w and math.min(B.SightRange, Weapons.Get(w.id).maxRange * 0.75) or 0
+		local early = brain.deployedAt ~= nil and now - brain.deployedAt < 45
+		local hurt = now - brain.hurtAt < 3
+		if hurt or dist < 90 or (dist <= engage and not (early and dist > 140)) then
+			brain.task = "fight"
+			fight(bot, root, target, visible, params)
+			return
+		end
+	end
+	brain.wantFire = false
+	-- 4. heal / recharge when safe
+	if now - brain.hurtAt > 2 then
+		if hum.Health < 55 and (useIfHave(bot, hum.Health < 35 and "medkit" or "stim") or useIfHave(bot, "medkit")) then
+			brain.moveDir, brain.brake = Vector3.zero, true
+			return
+		end
+		if inv.armorMax > 0 and (bot:GetAttribute("Armor") or 0) < inv.armorMax - 20 and useIfHave(bot, "shieldcell") then
+			brain.moveDir, brain.brake = Vector3.zero, true
+			return
+		end
+		-- reload while nothing is around
+		local w = inv.weapons[inv.active]
+		if w and w.mag < Weapons.MagSize(w.id, w.rarity) * 0.5 and inv.ammo[Weapons.Get(w.id).ammo] > 0 and not Combat.IsReloading(bot) then
+			Combat.Reload(bot)
+		end
+	end
+	-- If hurt by something unseen, turn toward the threat and look for it
+	if now - brain.hurtAt < 3 and brain.threatPos then
+		brain.face = CFrame.lookAt(Vector3.zero, (brain.threatPos - pos).Unit)
+	end
+	-- 5. loot: grab useful pickups nearby, then search containers
+	local early = brain.deployedAt and now - brain.deployedAt < 150
+	if early or needsLoot(bot) then
+		local pick = nearestOf(Loot.PickupsNear(pos, 140), pos, 140, function(p) return wants(bot, Loot.EntryOf(p)) end)
+		if pick then
+			brain.task = "pickup"
+			local d = navigate(bot, root, pick.Position, params, false)
+			if d < Config.Inventory.PickupRange - 2 then Loot.Take(bot, pick) end
+			return
+		end
+		local box = brain.taskObj
+		if not (box and box.Parent and not box:GetAttribute("Searched")) then
+			if box and claims[box] == bot then claims[box] = nil end
+			box = nearestOf(Loot.OpenContainers(), pos, 650, function(b) return claims[b] == nil or claims[b] == bot end)
+			brain.taskObj = box
+			if box then claims[box] = bot end
+		end
+		if box then
+			brain.task = "loot"
+			local d = navigate(bot, root, box.Position + Vector3.new(0, 3, 0), params, false)
+			if d < Config.Inventory.SearchRange - 3 then
+				Loot.Search(bot, box)
+				claims[box] = nil
+				brain.taskObj = nil
+			end
+			return
+		end
+	end
+	-- 6. hunt: head for the nearest known enemy (suit radar), else the safe zone's heart
+	local prey, preyD = nil, B.HuntRange
+	for _, e in enemiesOf(bot) do
+		local er = rootOf(e)
+		if er and (er.Position - pos).Magnitude < preyD then prey, preyD = e, (er.Position - pos).Magnitude end
+	end
+	brain.task = "hunt"
+	if prey then
+		local er = rootOf(prey) :: BasePart
+		navigate(bot, root, er.Position, params, preyD > 200)
+	elseif zone then
+		navigate(bot, root, zone.nc or zone.c, params, false)
+	else
+		brain.moveDir, brain.brake = Vector3.zero, true
+	end
+end
+
+local function think(bot)
+	local root = rootOf(bot)
+	local hum = humOf(bot)
+	if not (root and hum) or hum.Health <= 0 then return end
+	local params = rayParams(bot)
+	if unstick(bot, root) then return end
+	if bot.brain.mode == "match" and Roster.IsActive(bot) then
+		thinkMatch(bot, root, params)
+	else
+		thinkLobby(bot, root, params)
+	end
+end
+
+-- Per-frame: physics for every bot body, and trigger pacing for bots in a fight.
+local function step(dt: number)
+	dt = math.min(dt, 0.1)
+	local now = os.clock()
+	for _, bot in bots do
+		local root = rootOf(bot)
+		local hum = humOf(bot)
+		if root and hum and hum.Health > 0 then
+			local brain = bot.brain
+			if now >= brain.nextThink then
+				brain.nextThink = now + (1 / B.ThinkRate) * rng:NextNumber(0.85, 1.15)
+				local ok, err = pcall(think, bot)
+				if not ok then warn("[ZG] bot " .. bot.Name .. " think error: " .. tostring(err)) end
+			end
+			if hum:GetState() ~= Enum.HumanoidStateType.Physics then hum:ChangeState(Enum.HumanoidStateType.Physics) end
+			local thrust = brain.moveDir
+			if thrust.Magnitude > 1 then thrust = thrust.Unit end
+			local boostMax = MV.BoostMax * (bot:GetAttribute("BoostMaxMult") or 1)
+			local energy, boosting, lastUse = Motion.Boost(brain.energy, brain.boost and thrust.Magnitude > 0.1, brain.lastBoostUse, now, boostMax,
+				bot:GetAttribute("BoostRegenMult") or 1, dt)
+			brain.energy, brain.lastBoostUse = energy, lastUse
+			root.AssemblyLinearVelocity = Motion.Step(root.AssemblyLinearVelocity, thrust, boosting, brain.brake, bot:GetAttribute("SpeedMult") or 1, dt)
+			local align = root:FindFirstChild("ZG_Align") :: AlignOrientation?
+			if align then align.CFrame = brain.face end
+			if brain.wantFire then
+				local ok, err = pcall(fireStep, bot, root)
+				if not ok then warn("[ZG] bot " .. bot.Name .. " fire error: " .. tostring(err)) end
+			end
+		end
+	end
+end
+
+-- Server messages addressed to a bot (via Remotes.BotSink): react to damage and impulses.
+local function onMessage(bot, remote: string, msg)
+	if type(msg) ~= "table" or remote ~= "FX" then return end
+	local brain = bot.brain
+	if msg.t == "damaged" then
+		brain.hurtAt = os.clock()
+		brain.threatPos = msg.from
+	elseif msg.t == "impulse" then
+		local root = rootOf(bot)
+		if root then
+			root.AssemblyLinearVelocity = msg.set and msg.v or root.AssemblyLinearVelocity + msg.v
+		end
+	end
+end
+
+function Bots.Start()
+	cfgFolder = Instance.new("Folder")
+	cfgFolder.Name = "Bots"
+	cfgFolder.Parent = ReplicatedStorage
+	charFolder = Instance.new("Folder")
+	charFolder.Name = "BotCharacters"
+	charFolder.Parent = workspace
+	Remotes.BotSink = onMessage
+	-- Navigation graph from the generated world (ignores the lobby; glass and hull plates block doors)
+	local overlap = OverlapParams.new()
+	overlap.RespectCanCollide = true
+	local lobby = workspace:FindFirstChild("Lobby")
+	local losParams = RaycastParams.new()
+	losParams.FilterType = Enum.RaycastFilterType.Exclude
+	losParams.FilterDescendantsInstances = { charFolder, lobby or charFolder }
+	local stats = Nav.Build(Kit.NavSpaces, function(pos)
+		for _, p in workspace:GetPartBoundsInRadius(pos, 0.75, overlap) do
+			-- airlock doors open on demand and characters move; anything else solid closes the opening
+			if p.Name ~= "InnerDoor" and p.Name ~= "OuterDoor" and not Roster.FromCharacter(p:FindFirstAncestorOfClass("Model")) then
+				return true
+			end
+		end
+		return false
+	end, function(space)
+		return lobby ~= nil and space.model ~= nil and space.model:IsDescendantOf(lobby)
+	end, function(a, b)
+		return workspace:Raycast(a, b - a, losParams) == nil
+	end)
+	print(string.format("[ZG] bot nav graph: %d nodes, %d edges, %d exits, %d spaces", stats.nodes, stats.edges, stats.exits, stats.spaces))
+	Players.PlayerAdded:Connect(function() task.defer(Bots.Rebalance) end)
+	Players.PlayerRemoving:Connect(function() task.defer(Bots.Rebalance) end)
+	RunService.Heartbeat:Connect(step)
+	task.defer(Bots.Rebalance)
+end
+
+return Bots
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX17"><Properties><string name="Name">CharacterService</string><ProtectedString name="Source"><![CDATA[-- Character spawning (characters never auto-load; MatchService decides where everyone goes),
 -- space-suit visuals (helmet, life-support pack, suit colours) and the held-weapon visual.
 local Players = game:GetService("Players")
 local StarterPlayer = game:GetService("StarterPlayer")
@@ -648,6 +1614,7 @@ local Config = require(Shared.Config)
 local Cosmetics = require(Shared.Cosmetics)
 local WeaponModels = require(Shared.WeaponModels)
 local Security = require(script.Parent.SecurityService)
+local Roster = require(script.Parent.Roster)
 
 local CharacterService = {}
 local spawnSerial: { [Player]: number } = {}
@@ -770,6 +1737,66 @@ function CharacterService.Spawn(player: Player, cf: CFrame): Model?
 	return char
 end
 
+-- Bot bodies: an R15 rig built from a default HumanoidDescription, simulated by the server.
+local BOT_DISABLED_STATES = {
+	Enum.HumanoidStateType.FallingDown, Enum.HumanoidStateType.Ragdoll, Enum.HumanoidStateType.GettingUp,
+	Enum.HumanoidStateType.Climbing, Enum.HumanoidStateType.Seated, Enum.HumanoidStateType.Swimming,
+	Enum.HumanoidStateType.Freefall, Enum.HumanoidStateType.Jumping, Enum.HumanoidStateType.Running,
+	Enum.HumanoidStateType.RunningNoPhysics, Enum.HumanoidStateType.Landed, Enum.HumanoidStateType.Flying,
+	Enum.HumanoidStateType.StrafingNoPhysics,
+}
+
+function CharacterService.SpawnBot(bot, cf: CFrame, parent: Instance, displayName: string): Model?
+	local old = bot.Character
+	if old then
+		Roster.UnbindCharacter(old)
+		old:Destroy()
+		bot.Character = nil
+	end
+	local ok, char = pcall(function()
+		return Players:CreateHumanoidModelFromDescription(Instance.new("HumanoidDescription"), Enum.HumanoidRigType.R15)
+	end)
+	if not ok or not char then
+		warn("[ZG] could not build bot body: " .. tostring(char))
+		return nil
+	end
+	char.Name = bot.Name
+	local root = char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not (root and hum) then
+		char:Destroy()
+		return nil
+	end
+	char.PrimaryPart = root
+	hum.DisplayName = displayName
+	hum.MaxHealth = Config.Health.Max
+	hum.Health = Config.Health.Max
+	hum.AutoRotate = false
+	hum.BreakJointsOnDeath = false
+	for _, st in BOT_DISABLED_STATES do hum:SetStateEnabled(st, false) end
+	local att = Instance.new("Attachment")
+	att.Name = "ZG_Align"
+	att.Parent = root
+	local align = Instance.new("AlignOrientation")
+	align.Name = "ZG_Align"
+	align.Mode = Enum.OrientationAlignmentMode.OneAttachment
+	align.Attachment0 = att
+	align.RigidityEnabled = false
+	align.Responsiveness = Config.Movement.TurnResponsiveness
+	align.MaxTorque = math.huge
+	align.MaxAngularVelocity = 20
+	align.CFrame = cf.Rotation
+	align.Parent = root
+	char:PivotTo(cf)
+	char.Parent = parent
+	pcall(function() root:SetNetworkOwner(nil) end) -- the server simulates bots
+	hum:ChangeState(Enum.HumanoidStateType.Physics)
+	bot.Character = char
+	Roster.BindCharacter(char, bot)
+	CharacterService.ApplySuit(bot, char, bot.suit)
+	return char
+end
+
 function CharacterService.Start()
 	Players.CharacterAutoLoads = false
 	-- Disable Roblox's default health regeneration (our regen rules live in CombatService).
@@ -783,7 +1810,7 @@ function CharacterService.Start()
 end
 
 return CharacterService
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX16"><Properties><string name="Name">CombatService</string><ProtectedString name="Source"><![CDATA[-- Server-authoritative combat. Clients send aim rays; the server checks fire rate, ammunition,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX18"><Properties><string name="Name">CombatService</string><ProtectedString name="Source"><![CDATA[-- Server-authoritative combat. Clients send aim rays; the server checks fire rate, ammunition,
 -- reload state, origin position and aim plausibility, then performs its own raycasts and applies
 -- damage. All damage in the game (weapons, explosions, zone, oxygen, hazards) goes through
 -- Combat.ApplyDamage so shields, spawn protection and kill attribution behave consistently.
@@ -868,8 +1895,8 @@ function Combat.Explode(pos: Vector3, radius: number, damage: number, attacker: 
 	Remotes.FX:FireAllClients({ t = "explosion", pos = pos, radius = radius })
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	for _, p in Players:GetPlayers() do
-		if p ~= ignore and Roster.IsActive(p) then
+	for _, p in Roster.Active() do
+		if p ~= ignore then
 			local root = p.Character and p.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
 			if root then
 				local d = (root.Position - pos).Magnitude
@@ -981,7 +2008,7 @@ local function onFire(player: Player, req)
 			local dist = (result.Position - origin).Magnitude
 			local dmg = Weapons.DamageAt(weapon.id, weapon.rarity, dist)
 			local model, hum = charOf(result.Instance)
-			local victim = model and Players:GetPlayerFromCharacter(model)
+			local victim = Roster.FromCharacter(model) -- player or bot
 			if victim and hum and dmg > 0 then
 				if result.Instance.Name == "Head" then dmg *= 1.5 end
 				if not practice then
@@ -1083,6 +2110,25 @@ local function onMelee(player: Player)
 	end
 end
 
+-- Direct entry points for bots: the same validation path the RemoteEvent handlers use.
+function Combat.Fire(c, origin: Vector3, dirs: { Vector3 }, expectMag: number?)
+	onFire(c, { origin = origin, dirs = dirs, expectMag = expectMag })
+end
+Combat.Reload = function(c) onReload(c) end
+Combat.Equip = function(c, slot: number) onEquip(c, slot) end
+Combat.Melee = function(c) onMelee(c) end
+
+-- Seconds until this combatant may fire again (reload / equip / fire interval), for bot pacing.
+function Combat.ReadyIn(c): number
+	local s = st(c)
+	local now = os.clock()
+	return math.max(0, s.reloadUntil - now, s.equipAt - now)
+end
+
+function Combat.IsReloading(c): boolean
+	return os.clock() < st(c).reloadUntil
+end
+
 function Combat.ResetPlayer(player: Player)
 	state[player] = nil
 end
@@ -1121,7 +2167,7 @@ function Combat.Start()
 end
 
 return Combat
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX17"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[-- Persistent progression (XP, level, credits, lifetime stats, cosmetic choice, loadout choice).
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX19"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[-- Persistent progression (XP, level, credits, lifetime stats, cosmetic choice, loadout choice).
 -- Match state is never saved here. UpdateAsync with retries; temporary data in Studio when
 -- DataStores are unavailable; never overwrites real data after a failed load.
 local DataStoreService = game:GetService("DataStoreService")
@@ -1309,7 +2355,7 @@ function DataService.Start()
 end
 
 return DataService
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX18"><Properties><string name="Name">EquipmentService</string><ProtectedString name="Source"><![CDATA[-- Equipment: tether (grapple to an approved surface, then the client reels itself in) and the
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX20"><Properties><string name="Name">EquipmentService</string><ProtectedString name="Source"><![CDATA[-- Equipment: tether (grapple to an approved surface, then the client reels itself in) and the
 -- thrown pulse charge. Boost energy is simulated on the client for responsiveness; the server's
 -- speed ceiling in SecurityService bounds it.
 local Players = game:GetService("Players")
@@ -1437,6 +2483,8 @@ local function onGrenade(player: Player, dir)
 	end)
 end
 
+Equipment.ThrowGrenade = onGrenade -- bot entry point (same checks as the remote)
+
 function Equipment.Start()
 	Remotes.Equipment.OnServerEvent:Connect(function(player, req)
 		if type(req) ~= "table" or not Security.RateLimit(player, "equipment", 6, 4) then return end
@@ -1454,7 +2502,7 @@ function Equipment.Start()
 end
 
 return Equipment
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX19"><Properties><string name="Name">HazardService</string><ProtectedString name="Source"><![CDATA[-- Environmental systems: interlocked airlocks, telegraphed electrical faults, reactor radiation,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX21"><Properties><string name="Name">HazardService</string><ProtectedString name="Source"><![CDATA[-- Environmental systems: interlocked airlocks, telegraphed electrical faults, reactor radiation,
 -- explosive cargo barrels, breachable weak hull plates and smoke in damaged compartments.
 -- Reset() restores barrels and hull plates between matches.
 local CollectionService = game:GetService("CollectionService")
@@ -1467,6 +2515,7 @@ local Combat = require(script.Parent.CombatService)
 local Oxygen = require(script.Parent.OxygenService)
 
 local Hazards = {}
+local airlocks: { [Model]: any } = {} -- model -> { request = fn(doorPart, who), state, inner, outer }
 local H = Config.Hazards
 local barrelFolder: Folder
 
@@ -1550,6 +2599,19 @@ local function setupAirlock(model: Model)
 	-- Outer doors start closed; inner doors start open so interiors read as connected spaces.
 	move(inner, true)
 	state.open = inner
+	airlocks[model] = { request = request, state = state, inner = inner, outer = outer }
+end
+
+-- Bot entry points: open a given airlock door (same interlock and distance rules as the prompt).
+function Hazards.IsAirlockDoorOpen(model: Model, doorName: string): boolean
+	local a = airlocks[model]
+	return a ~= nil and a.state.open ~= nil and a.state.open.Name == doorName
+end
+
+function Hazards.RequestAirlockDoor(model: Model, doorName: string, who)
+	local a = airlocks[model]
+	if not a or a.state.busy or Hazards.IsAirlockDoorOpen(model, doorName) then return end
+	task.spawn(a.request, doorName == "InnerDoor" and a.inner or a.outer, who)
 end
 
 -- ELECTRICAL FAULTS --------------------------------------------------------------------------------
@@ -1729,7 +2791,7 @@ function Hazards.Start()
 end
 
 return Hazards
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX20"><Properties><string name="Name">InventoryService</string><ProtectedString name="Source"><![CDATA[-- Server-authoritative inventory: three weapon slots, ammo reserves, consumables (with backpack
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX22"><Properties><string name="Name">InventoryService</string><ProtectedString name="Source"><![CDATA[-- Server-authoritative inventory: three weapon slots, ammo reserves, consumables (with backpack
 -- stack limits), utility (pulse charges, tether charges), armour tier and suit upgrades.
 -- Clients only ever see a synced copy and send "use"/"drop" requests, all validated here.
 local Players = game:GetService("Players")
@@ -1973,6 +3035,8 @@ function Inventory.Clear(player: Player)
 	Remotes.Inventory:FireClient(player, { t = "clear" })
 end
 
+Inventory.Use = useItem -- bot entry point (same checks as the remote)
+
 function Inventory.Start()
 	Remotes.Inventory.OnServerEvent:Connect(function(player, req)
 		if type(req) ~= "table" or not Security.RateLimit(player, "inventory", 8, 6) then return end
@@ -2010,7 +3074,7 @@ function Inventory.Start()
 end
 
 return Inventory
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX21"><Properties><string name="Name">LootService</string><ProtectedString name="Source"><![CDATA[-- Loot containers and world pickups. Every match re-seeds containers on LootSpot markers
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX23"><Properties><string name="Name">LootService</string><ProtectedString name="Source"><![CDATA[-- Loot containers and world pickups. Every match re-seeds containers on LootSpot markers
 -- (not every spot is filled, so routes vary). Searching and picking up use ProximityPrompts that
 -- the server validates (active combatant, distance, container state, inventory capacity).
 local CollectionService = game:GetService("CollectionService")
@@ -2027,6 +3091,10 @@ local Inventory = require(script.Parent.InventoryService)
 local Loot = {}
 local folder: Folder
 local pickups: { [BasePart]: any } = {}
+-- Interaction handlers keyed by container / pickup part, shared by ProximityPrompts (players) and
+-- Loot.Search / Loot.Take (bots), so both go through identical validation.
+local searchHandlers: { [BasePart]: (any) -> () } = {}
+local takeHandlers: { [BasePart]: (any) -> () } = {}
 local rng = Random.new()
 
 local CATEGORY_COLOR = {
@@ -2127,7 +3195,7 @@ function Loot.SpawnPickup(pos: Vector3, entry)
 	base:SetAttribute("Spawned", os.clock())
 	CollectionService:AddTag(base, "Pickup")
 	base.Parent = folder
-	pr.Triggered:Connect(function(player)
+	local function take(player)
 		local e = pickups[base]
 		if not e or not canInteract(player, base.Position, Config.Inventory.PickupRange) then return end
 		local accepted, leftover, dropped = Inventory.Add(player, e)
@@ -2146,7 +3214,9 @@ function Loot.SpawnPickup(pos: Vector3, entry)
 		if dropped then
 			Loot.SpawnPickup(base.Position + Vector3.new(0, 2.5, 0), dropped)
 		end
-	end)
+	end
+	takeHandlers[base] = take
+	pr.Triggered:Connect(take)
 	return base
 end
 
@@ -2194,7 +3264,7 @@ local function container(cf: CFrame, kind: string, tier: string, contents, title
 	CollectionService:AddTag(box, "LootContainer")
 	box.Parent = folder
 	local pr = prompt(box, "Search", title or look.label, kind == "suit" and 0.4 or 0.8, Config.Inventory.SearchRange)
-	pr.Triggered:Connect(function(player)
+	local function search(player)
 		if box:GetAttribute("Searched") or not canInteract(player, box.Position, Config.Inventory.SearchRange) then return end
 		box:SetAttribute("Searched", true)
 		pr.Enabled = false
@@ -2202,8 +3272,42 @@ local function container(cf: CFrame, kind: string, tier: string, contents, title
 		local items = contents or LootTables.RollContainer(rng, tier, Config.Loot.ItemsPerContainer.min, Config.Loot.ItemsPerContainer.max)
 		scatter(box.Position + cf.UpVector * (look.size.Y / 2 + 1.2), items, box)
 		Remotes.FX:FireAllClients({ t = "search", pos = box.Position })
-	end)
+	end
+	searchHandlers[box] = search
+	pr.Triggered:Connect(search)
 	return box
+end
+
+-- Bot entry points (same checks as the prompts: active combatant, distance, state, capacity).
+function Loot.Search(c, box: BasePart)
+	local h = searchHandlers[box]
+	if h then h(c) end
+end
+
+function Loot.Take(c, part: BasePart)
+	local h = takeHandlers[part]
+	if h then h(c) end
+end
+
+function Loot.EntryOf(part: BasePart)
+	return pickups[part]
+end
+
+-- Unsearched containers and live pickups (for bot decision making).
+function Loot.OpenContainers(): { BasePart }
+	local out = {}
+	for box in searchHandlers do
+		if box.Parent and not box:GetAttribute("Searched") then table.insert(out, box) end
+	end
+	return out
+end
+
+function Loot.PickupsNear(pos: Vector3, radius: number): { BasePart }
+	local out = {}
+	for part in pickups do
+		if part.Parent and (part.Position - pos).Magnitude <= radius then table.insert(out, part) end
+	end
+	return out
 end
 
 -- Drop everything an eliminated player carried in a suit locker at their position.
@@ -2220,6 +3324,8 @@ function Loot.ClearAll()
 		if p.Parent then p:Destroy() end
 	end
 	table.clear(pickups)
+	table.clear(searchHandlers)
+	table.clear(takeHandlers)
 	folder:ClearAllChildren()
 end
 
@@ -2258,7 +3364,7 @@ function Loot.Start()
 end
 
 return Loot
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX22"><Properties><string name="Name">MatchService</string><ProtectedString name="Source"><![CDATA[-- Match lifecycle:
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">MatchService</string><ProtectedString name="Source"><![CDATA[-- Match lifecycle:
 --   Waiting -> Countdown -> Preparing -> Deploying -> Active -> Final -> Ending -> Results -> Waiting
 -- Solo battle royale today; players carry a team id so duos/squads only need team assignment and
 -- the "teams alive" check below to change.
@@ -2280,6 +3386,7 @@ local Loot = require(script.Parent.LootService)
 local Oxygen = require(script.Parent.OxygenService)
 local SafeZone = require(script.Parent.SafeZoneService)
 local Hazards = require(script.Parent.HazardService)
+local Bots = require(script.Parent.BotService)
 local Lobby = require(script.Parent.Parent:WaitForChild("Builders"):WaitForChild("Lobby"))
 
 local Match = {}
@@ -2295,7 +3402,9 @@ local function setPhase(phase: string, duration: number?)
 	stateObj:SetAttribute("PhaseEndsAt", duration and workspace:GetServerTimeNow() + duration or 0)
 end
 
+-- Real (queued) players needed to start: with bots enabled one player gets a full 20-combatant match.
 local function minPlayers(): number
+	if Config.Bots.Enabled then return Config.Bots.MinRealPlayers end
 	return RunService:IsStudio() and M.StudioMinPlayers or M.MinPlayers
 end
 
@@ -2308,6 +3417,10 @@ end
 
 -- Spawn in the lobby with the practice kit.
 function Match.SendToLobby(player: Player)
+	if Roster.IsBot(player) then
+		Bots.ToLobby(player)
+		return
+	end
 	task.spawn(function()
 		local char = CharacterService.Spawn(player, lobbySpawnCFrame())
 		if not char then return end
@@ -2344,6 +3457,8 @@ local function updateCounts()
 	stateObj:SetAttribute("Participants", #participants)
 	stateObj:SetAttribute("Queued", #eligibleQueued())
 	stateObj:SetAttribute("MinPlayers", minPlayers())
+	stateObj:SetAttribute("Bots", #Bots.All())
+	stateObj:SetAttribute("MaxPlayers", M.MaxPlayers)
 end
 
 -- Free of solid geometry and terrain?
@@ -2474,7 +3589,7 @@ end
 local function awardAndReport(winner: Player?)
 	local total = #participants
 	for _, p in participants do
-		if p.Parent then
+		if p.Parent and not Roster.IsBot(p) then
 			local r = Roster.Get(p)
 			if p == winner then r.placement = 1 end
 			local survived = (r.eliminatedAt > 0 and r.eliminatedAt or os.clock()) - r.deployedAt
@@ -2526,6 +3641,11 @@ local function runMatch()
 		if i > M.MaxPlayers then break end
 		table.insert(participants, p)
 	end
+	-- top up with bots so every match is full
+	if Config.Bots.Enabled then
+		Bots.Rebalance()
+		for _, b in Bots.ForMatch(M.MaxPlayers - #participants) do table.insert(participants, b) end
+	end
 	Loot.Seed()
 	Hazards.Reset()
 	local finals = CollectionService:GetTagged("FinalZone")
@@ -2550,13 +3670,15 @@ local function runMatch()
 			r.protectUntil = os.clock() + M.DeployProtection
 			table.insert(deployed, p)
 			task.spawn(function()
-				local char = CharacterService.Spawn(p, points[i] or CFrame.new(0, 600, 0))
+				local cf = points[i] or CFrame.new(0, 600, 0)
+				local isBot = Roster.IsBot(p)
+				local char = if isBot then Bots.Deploy(p, cf) else CharacterService.Spawn(p, cf)
 				if not char or matchSerial ~= serial then return end
 				hookDeath(p, char)
 				Combat.ResetPlayer(p)
 				Oxygen.Reset(p)
-				local profile = DataService.Get(p)
-				Inventory.Reset(p, "match", profile and profile.loadout or "scout")
+				local profile = not isBot and DataService.Get(p)
+				Inventory.Reset(p, "match", if isBot then p.loadout else (profile and profile.loadout or "scout"))
 				Roster.Sync(p)
 				Remotes.Match:FireClient(p, { t = "deployed", protect = M.DeployProtection })
 			end)
@@ -2629,6 +3751,7 @@ local function loop()
 			Lobby.SetStatus(string.format("WAITING FOR PLAYERS  %d / %d", #eligibleQueued(), minPlayers()))
 			task.wait(1)
 		end
+		Bots.Rebalance() -- players may have joined or left during the last match
 		-- COUNTDOWN -----------------------------------------------------------------------------------
 		setPhase("Countdown", M.LobbyCountdown)
 		local t0 = os.clock()
@@ -2639,7 +3762,8 @@ local function loop()
 				aborted = true
 				break
 			end
-			Lobby.SetStatus(string.format("DEPLOYMENT IN %d", math.ceil(M.LobbyCountdown - (os.clock() - t0))))
+			Lobby.SetStatus(string.format("DEPLOYMENT IN %d   |   %d PILOTS + %d BOTS", math.ceil(M.LobbyCountdown - (os.clock() - t0)),
+				#eligibleQueued(), math.max(0, math.min(#Bots.All(), M.MaxPlayers - #eligibleQueued()))))
 			task.wait(0.5)
 		end
 		if not aborted then
@@ -2714,7 +3838,233 @@ function Match.Start()
 end
 
 return Match
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX23"><Properties><string name="Name">OxygenService</string><ProtectedString name="Source"><![CDATA[-- Suit oxygen. Drains outside pressurised volumes, refills inside them, refill stations top up
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX25"><Properties><string name="Name">NavGraph</string><ProtectedString name="Source"><![CDATA[-- Bot navigation graph, generated from the construction kit's registry of hollow spaces
+-- (Kit.NavSpaces: rooms, corridors, tubes, airlock chambers).
+--   * every passable opening becomes a door node (doors of adjoining spaces merge)
+--   * each space links its centre and doors; airlock chambers mark their edges with the door
+--     that must be open (bots cycle the airlock like players do)
+--   * door nodes that open onto space are "exits"; all exits link to each other through open space
+-- Path queries start/end inside a space (via its doors) or in open space (via the exits).
+local Kit = require(script.Parent.Parent:WaitForChild("Builders"):WaitForChild("Kit"))
+
+local Nav = {}
+local nodes = {} -- { pos, edges = { { to, cost, airlock, door } }, door = bool, exit = bool }
+local spaces = {} -- { cf, half, volume, center, doors = { node idx } }
+local exits = {} -- node indices
+local MERGE = 3
+local MIN_HOLE = 6 -- smallest opening a suited character fits through
+local losFn: ((Vector3, Vector3) -> boolean)? = nil
+
+local function addNode(pos: Vector3, isDoor: boolean): number
+	if isDoor then
+		for i, n in nodes do
+			if n.door and (n.pos - pos).Magnitude <= MERGE then return i end
+		end
+	end
+	table.insert(nodes, { pos = pos, edges = {}, door = isDoor, exit = false })
+	return #nodes
+end
+
+local function link(a: number, b: number, info, costScale: number?)
+	if a == b then return end
+	for _, e in nodes[a].edges do
+		if e.to == b then return end
+	end
+	local cost = (nodes[a].pos - nodes[b].pos).Magnitude * (costScale or 1)
+	table.insert(nodes[a].edges, { to = b, cost = cost, airlock = info and info.airlock, door = info and info.door })
+	table.insert(nodes[b].edges, { to = a, cost = cost, airlock = info and info.airlock, door = info and info.door })
+end
+
+local function inBox(cf: CFrame, half: Vector3, pos: Vector3, pad: number): boolean
+	local lp = cf:PointToObjectSpace(pos)
+	return math.abs(lp.X) <= half.X + pad and math.abs(lp.Y) <= half.Y + pad and math.abs(lp.Z) <= half.Z + pad
+end
+
+-- isBlocked(pos) -> true when solid geometry (glass, breach plates...) fills an opening.
+-- exclude(space) -> true for spaces bots must ignore (the lobby).
+-- los(a, b) -> true when the straight flight a->b is clear (exits only link when it is).
+function Nav.Build(navSpaces, isBlocked: (Vector3) -> boolean, exclude: (any) -> boolean, los: ((Vector3, Vector3) -> boolean)?)
+	losFn = los
+	table.clear(nodes)
+	table.clear(spaces)
+	table.clear(exits)
+	for _, s in navSpaces do
+		if not exclude(s) then
+			local sp = { cf = s.cf, half = s.size / 2, pad = (s.wall or 2) + 0.6, volume = s.size.X * s.size.Y * s.size.Z, doors = {}, airlock = s.airlock }
+			sp.center = addNode(s.cf.Position, false)
+			for face, o in s.openings or {} do
+				local passable = o == true or (type(o) == "table" and o.w >= MIN_HOLE and o.h >= MIN_HOLE)
+				if passable then
+					local hx = type(o) == "table" and (o.x or 0) or 0
+					local hy = type(o) == "table" and (o.y or 0) or 0
+					local pos = Kit.faceCFrame(s.cf, s.size, face, s.wall or 2) * Vector3.new(hx, hy, 0)
+					if not isBlocked(pos) then
+						local d = addNode(pos, true)
+						nodes[d].out = -Kit.faceCFrame(s.cf, s.size, face, 0).LookVector -- outward normal of the face
+						table.insert(sp.doors, d)
+						-- airlock chamber: +Z is the inner door, -Z the outer door
+						local info = s.airlock and { airlock = s.airlock, door = face == "+Z" and "InnerDoor" or "OuterDoor" } or nil
+						link(sp.center, d, info)
+					end
+				end
+			end
+			if not s.airlock then
+				for i = 1, #sp.doors do
+					for j = i + 1, #sp.doors do link(sp.doors[i], sp.doors[j]) end
+				end
+			end
+			table.insert(spaces, sp)
+		end
+	end
+	-- Door nodes that sit inside another space (tube ends inside ring joints, airlock inner ends inside
+	-- their host room) link to that space; doors that no other space contains open onto space: exits.
+	for i, n in nodes do
+		if n.door then
+			local containing = 0
+			for _, sp in spaces do
+				if inBox(sp.cf, sp.half, n.pos, sp.pad) then
+					containing += 1
+					if not table.find(sp.doors, i) then link(i, sp.center) end
+				end
+			end
+			if containing <= 1 then
+				n.exit = true
+				table.insert(exits, i)
+			end
+		end
+	end
+	for a = 1, #exits do
+		for b = a + 1, #exits do
+			local pa, pb = Nav.ExitPoint(exits[a]), Nav.ExitPoint(exits[b])
+			if not losFn or losFn(pa, pb) then link(exits[a], exits[b], nil, 1.15) end
+		end
+	end
+	return Nav.Stats()
+end
+
+-- A point just outside an exit, used for line-of-sight tests through open space.
+function Nav.ExitPoint(i: number): Vector3
+	local n = nodes[i]
+	return n.pos + (n.out or Vector3.zero) * 4
+end
+
+-- Exits a point in open space can fly to directly (nearest first, line of sight checked).
+local function visibleExits(p: Vector3): { number }
+	local sorted = table.clone(exits)
+	table.sort(sorted, function(a, b) return (nodes[a].pos - p).Magnitude < (nodes[b].pos - p).Magnitude end)
+	local out = {}
+	for k = 1, math.min(#sorted, 8) do
+		local i = sorted[k]
+		if not losFn or losFn(p, Nav.ExitPoint(i)) then table.insert(out, i) end
+		if #out >= 4 then break end
+	end
+	if #out == 0 then
+		for k = 1, math.min(#sorted, 3) do table.insert(out, sorted[k]) end
+	end
+	return out
+end
+
+function Nav.Stats()
+	local edges = 0
+	for _, n in nodes do edges += #n.edges end
+	return { nodes = #nodes, edges = edges / 2, exits = #exits, spaces = #spaces }
+end
+
+-- Smallest space whose interior contains pos (nil = open space).
+function Nav.SpaceOf(pos: Vector3)
+	local best, bestV = nil, math.huge
+	for _, sp in spaces do
+		if sp.volume < bestV and inBox(sp.cf, sp.half, pos, 0) then best, bestV = sp, sp.volume end
+	end
+	return best
+end
+
+-- Binary-heap Dijkstra over the graph with virtual start/goal connections.
+local function heapPush(h, item)
+	table.insert(h, item)
+	local i = #h
+	while i > 1 do
+		local p = i // 2
+		if h[p][1] <= h[i][1] then break end
+		h[p], h[i] = h[i], h[p]
+		i = p
+	end
+end
+local function heapPop(h)
+	local top = h[1]
+	local last = table.remove(h)
+	if #h > 0 then
+		h[1] = last
+		local i = 1
+		while true do
+			local l, r, m = i * 2, i * 2 + 1, i
+			if l <= #h and h[l][1] < h[m][1] then m = l end
+			if r <= #h and h[r][1] < h[m][1] then m = r end
+			if m == i then break end
+			h[m], h[i] = h[i], h[m]
+			i = m
+		end
+	end
+	return top
+end
+
+-- Returns a list of waypoints { pos, airlock?, door? } from `from` to `to` (last waypoint is `to`),
+-- or nil when no route exists. door/airlock: that airlock door must be open to cross into pos.
+function Nav.Path(from: Vector3, to: Vector3)
+	local sFrom, sTo = Nav.SpaceOf(from), Nav.SpaceOf(to)
+	if sFrom == sTo then return { { pos = to } } end
+	local startSet = sFrom and sFrom.doors or visibleExits(from)
+	local goalSet = sTo and sTo.doors or visibleExits(to)
+	if #startSet == 0 or #goalSet == 0 then return nil end
+	local dist, prev, prevEdge = {}, {}, {}
+	local h = {}
+	for _, i in startSet do
+		local d = (nodes[i].pos - from).Magnitude
+		if d < (dist[i] or math.huge) then
+			dist[i] = d
+			heapPush(h, { d, i })
+		end
+	end
+	local goalBonus = {}
+	for _, g in goalSet do goalBonus[g] = (nodes[g].pos - to).Magnitude end
+	local best, bestCost = nil, math.huge
+	while #h > 0 do
+		local top = heapPop(h)
+		local d, i = top[1], top[2]
+		if d <= (dist[i] or math.huge) and d < bestCost then
+			if goalBonus[i] and d + goalBonus[i] < bestCost then best, bestCost = i, d + goalBonus[i] end
+			for _, e in nodes[i].edges do
+				local nd = d + e.cost
+				if nd < (dist[e.to] or math.huge) then
+					dist[e.to] = nd
+					prev[e.to] = i
+					prevEdge[e.to] = e
+					heapPush(h, { nd, e.to })
+				end
+			end
+		end
+	end
+	if not best then return nil end
+	local out = {}
+	local i = best
+	local first = best
+	while i do
+		local e = prevEdge[i]
+		table.insert(out, 1, { pos = nodes[i].pos, airlock = e and e.airlock, door = e and e.door })
+		first = i
+		i = prev[i]
+	end
+	-- entering from open space: line up just outside the exit first so the approach is straight in
+	if not sFrom and nodes[first].exit then table.insert(out, 1, { pos = Nav.ExitPoint(first) }) end
+	if not sTo and nodes[best].exit then table.insert(out, { pos = Nav.ExitPoint(best) }) end
+	table.insert(out, { pos = to })
+	return out
+end
+
+Nav.Exits = function() return exits end
+Nav.Nodes = function() return nodes end
+return Nav
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX26"><Properties><string name="Name">OxygenService</string><ProtectedString name="Source"><![CDATA[-- Suit oxygen. Drains outside pressurised volumes, refills inside them, refill stations top up
 -- instantly (with per-player cooldown). At zero the suit warns for GraceSeconds before hypoxia
 -- damage begins, so oxygen is a pressure to act, not a random death.
 local CollectionService = game:GetService("CollectionService")
@@ -2729,6 +4079,7 @@ local Oxygen = {}
 local O = Config.Oxygen
 local emptySince: { [Player]: number } = {}
 local stationUse: { [Player]: { [Instance]: number } } = {}
+local stationHandlers: { [BasePart]: (any) -> () } = {}
 
 local function inside(part: BasePart, pos: Vector3): boolean
 	local lp = part.CFrame:PointToObjectSpace(pos)
@@ -2787,7 +4138,7 @@ local function buildStation(marker: BasePart)
 	pr.MaxActivationDistance = 12
 	pr.RequiresLineOfSight = false
 	pr.Parent = unit
-	pr.Triggered:Connect(function(player)
+	local function use(player)
 		if not Roster.IsActive(player) then return end
 		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
 		if not root or (root.Position - unit.Position).Magnitude > 16 then return end
@@ -2802,7 +4153,21 @@ local function buildStation(marker: BasePart)
 		player:SetAttribute("O2", O.Max)
 		emptySince[player] = nil
 		Remotes.FX:FireClient(player, { t = "notice", text = "Oxygen refilled", color = Color3.fromRGB(80, 230, 150), sound = "o2" })
-	end)
+	end
+	stationHandlers[unit] = use
+	pr.Triggered:Connect(use)
+end
+
+-- Bot entry point (same checks as the prompt).
+function Oxygen.UseStation(c, unit: BasePart)
+	local h = stationHandlers[unit]
+	if h then h(c) end
+end
+
+function Oxygen.Stations(): { BasePart }
+	local out = {}
+	for unit in stationHandlers do table.insert(out, unit) end
+	return out
 end
 
 function Oxygen.Start()
@@ -2849,12 +4214,15 @@ function Oxygen.Start()
 end
 
 return Oxygen
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">Roster</string><ProtectedString name="Source"><![CDATA[-- Per-player match state (never persisted). The single source of truth for "is this player an
--- active combatant right now". Mirrors the fields clients need onto Player attributes.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX27"><Properties><string name="Name">Roster</string><ProtectedString name="Source"><![CDATA[-- Per-combatant match state (never persisted). The single source of truth for "is this combatant
+-- active right now". A combatant is a Player or a bot (BotService): bots are tables that expose the
+-- same surface the services use (Name, UserId, Parent, Character, GetAttribute, SetAttribute).
+-- Mirrors the fields clients need onto attributes.
 local Players = game:GetService("Players")
 
 local Roster = {}
-local records: { [Player]: any } = {}
+local records: { [any]: any } = {}
+local characterOwner: { [Model]: any } = {} -- bot characters -> bot
 
 local function fresh()
 	return {
@@ -2873,6 +4241,28 @@ local function fresh()
 		lastAttackerAt = 0,
 		loadout = "scout",
 	}
+end
+
+function Roster.IsBot(c): boolean
+	return type(c) == "table" and c.IsBot == true
+end
+
+-- Player or bot owning a character model (nil for anything else).
+function Roster.FromCharacter(model: Instance?)
+	if not model or not model:IsA("Model") then return nil end
+	return Players:GetPlayerFromCharacter(model) or characterOwner[model :: Model]
+end
+
+function Roster.BindCharacter(model: Model, bot)
+	characterOwner[model] = bot
+end
+
+function Roster.UnbindCharacter(model: Model)
+	characterOwner[model] = nil
+end
+
+function Roster.Remove(c)
+	records[c] = nil
 end
 
 function Roster.Get(player: Player)
@@ -2939,7 +4329,7 @@ function Roster.Start()
 end
 
 return Roster
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX25"><Properties><string name="Name">SafeZoneService</string><ProtectedString name="Source"><![CDATA[-- The orbital radiation storm: a shrinking SPHERE of safe space. Its schedule is computed once
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX28"><Properties><string name="Name">SafeZoneService</string><ProtectedString name="Source"><![CDATA[-- The orbital radiation storm: a shrinking SPHERE of safe space. Its schedule is computed once
 -- per match (ZoneMath), state is published as attributes on ReplicatedStorage.ZoneState for the
 -- client visual, countdown and tactical map. Damage outside escalates each stage.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -3028,7 +4418,7 @@ function SafeZone.Start()
 end
 
 return SafeZone
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX26"><Properties><string name="Name">SecurityService</string><ProtectedString name="Source"><![CDATA[-- Request validation helpers and the server's movement sanity checks.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX29"><Properties><string name="Name">SecurityService</string><ProtectedString name="Source"><![CDATA[-- Request validation helpers and the server's movement sanity checks.
 --   * RateLimit: token buckets per player per channel (drops floods of remote requests)
 --   * Arg checks for remote payloads
 --   * Movement: speed ceiling and arena hard boundary. Characters are client-owned physics (needed
@@ -3129,7 +4519,7 @@ function Security.Teleported(player: Player)
 end
 
 return Security
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX27"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- Builds the whole battlefield once at server start: lighting, lobby, station, exploration ship,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX30"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- Builds the whole battlefield once at server start: lighting, lobby, station, exploration ship,
 -- asteroid field, derelicts and debris. Gameplay systems discover what they need through
 -- CollectionService tags on markers (LootSpot, DeployPoint, FinalZone, OxygenStation,
 -- Pressurized, Airlock, ElectricHazard, ReactorHazard, ExplosiveBarrel, Breachable, ...).
@@ -3190,7 +4580,7 @@ function WorldBuilder.Start()
 end
 
 return WorldBuilder
-]]></ProtectedString></Properties></Item></Item><Item class="Folder" referent="RBX36"><Properties><string name="Name">Builders</string></Properties><Item class="ModuleScript" referent="RBX29"><Properties><string name="Name">AsteroidField</string><ProtectedString name="Source"><![CDATA[-- Asteroid mining & salvage field plus scattered asteroids across the arena.
+]]></ProtectedString></Properties></Item></Item><Item class="Folder" referent="RBX39"><Properties><string name="Name">Builders</string></Properties><Item class="ModuleScript" referent="RBX32"><Properties><string name="Name">AsteroidField</string><ProtectedString name="Source"><![CDATA[-- Asteroid mining & salvage field plus scattered asteroids across the arena.
 -- Asteroids are Terrain (lumpy multi-ball rock with craters and mineral veins) so they cost no parts
 -- and collide cheaply. "The Anvil", the largest rock, has a mining tunnel bored through it.
 local Kit = require(script.Parent.Kit)
@@ -3396,7 +4786,7 @@ function Field.Build(arena: Instance, markers: Instance, terrain: Terrain, exclu
 end
 
 return Field
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX30"><Properties><string name="Name">Backdrop</string><ProtectedString name="Source"><![CDATA[-- Server-side lighting and sky. The planet itself is rendered client-side (BackdropController)
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX33"><Properties><string name="Name">Backdrop</string><ProtectedString name="Source"><![CDATA[-- Server-side lighting and sky. The planet itself is rendered client-side (BackdropController)
 -- relative to the camera, so it always reads as an enormous, distant body that players can
 -- never fly into, regardless of render distance.
 local Lighting = game:GetService("Lighting")
@@ -3441,7 +4831,7 @@ function Backdrop.Apply()
 end
 
 return Backdrop
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX31"><Properties><string name="Name">Debris</string><ProtectedString name="Source"><![CDATA[-- Derelict spacecraft and orbital debris: two explorable wrecks, satellites, damaged cargo
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX34"><Properties><string name="Name">Debris</string><ProtectedString name="Source"><![CDATA[-- Derelict spacecraft and orbital debris: two explorable wrecks, satellites, damaged cargo
 -- modules, broken solar panels, escape pods, industrial equipment, cargo platforms and a
 -- communications array. Each small location carries loot so space between landmarks is never dead.
 local Kit = require(script.Parent.Kit)
@@ -3705,7 +5095,7 @@ function Debris.Build(arena: Instance, markers: Instance, exclusion)
 end
 
 return Debris
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX32"><Properties><string name="Name">Kit</string><ProtectedString name="Source"><![CDATA[-- Procedural construction kit: reusable functions for rooms, corridors, octagonal habitat tubes,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX35"><Properties><string name="Name">Kit</string><ProtectedString name="Source"><![CDATA[-- Procedural construction kit: reusable functions for rooms, corridors, octagonal habitat tubes,
 -- airlocks, solar arrays, crates, lights, signs and gameplay markers. All builders use this so the
 -- station, ship and wrecks share one consistent visual language and one scale.
 --
@@ -3734,6 +5124,9 @@ Kit.Palette = {
 local P = Kit.Palette
 
 Kit.Stats = { parts = 0 }
+-- Navigation registry: every hollow space the kit builds (rooms, corridors, tubes, airlocks), with its
+-- openings. NavGraph turns this into the bot navigation graph after the world is built.
+Kit.NavSpaces = {} :: { any }
 
 local DEFAULTS = {
 	Anchored = true,
@@ -3887,6 +5280,7 @@ function Kit.room(parent: Instance, cf: CFrame, size: Vector3, opts)
 	if opts.pressurized then
 		Kit.zone(m, cf, size, opts.pressurized)
 	end
+	table.insert(Kit.NavSpaces, { cf = cf, size = size, openings = openings, wall = t, model = m })
 	return m
 end
 
@@ -3970,6 +5364,9 @@ function Kit.octTube(parent: Instance, cf: CFrame, radius: number, length: numbe
 	if opts.pressurized then
 		Kit.zone(m, cf, Vector3.new(radius * 2, radius * 2, length), opts.pressurized)
 	end
+	local caps = opts.caps or {}
+	table.insert(Kit.NavSpaces, { cf = cf, size = Vector3.new(radius * 2, radius * 2, length), wall = t, model = m, tube = true,
+		openings = { ["-Z"] = caps.front, ["+Z"] = caps.back } })
 	return m
 end
 
@@ -4087,6 +5484,7 @@ function Kit.airlock(parent: Instance, cf: CFrame, opts)
 	Kit.light(lamp, P.Green, 14, 1)
 	local _ = panel
 	CollectionService:AddTag(m, "Airlock")
+	Kit.NavSpaces[#Kit.NavSpaces].airlock = m -- the chamber room registered by Kit.room above
 	return m
 end
 
@@ -4100,7 +5498,7 @@ function Kit.brokenLight(parent: Instance, cf: CFrame)
 end
 
 return Kit
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX33"><Properties><string name="Name">Lobby</string><ProtectedString name="Source"><![CDATA[-- Staging lobby: a sealed observation hall outside the arena, with a panoramic window toward the
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX36"><Properties><string name="Name">Lobby</string><ProtectedString name="Source"><![CDATA[-- Staging lobby: a sealed observation hall outside the arena, with a panoramic window toward the
 -- station, weapon display pedestals (equipment previews), a practice range with moving drone
 -- targets, a match status board and a controls board. Players float here between matches.
 local CollectionService = game:GetService("CollectionService")
@@ -4190,7 +5588,7 @@ function Lobby.SetStatus(text: string)
 end
 
 return Lobby
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX34"><Properties><string name="Name">Ship</string><ProtectedString name="Source"><![CDATA[-- Exploration vessel "ESV Long Horizon": a 550-stud ship parked near the station.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX37"><Properties><string name="Name">Ship</string><ProtectedString name="Source"><![CDATA[-- Exploration vessel "ESV Long Horizon": a 550-stud ship parked near the station.
 -- Interior chain along the ship's local X axis (bow at -X):
 --   Bridge -> Crew Quarters -> Medical/Research -> Cargo Hold -> Engineering -> Engine Room
 -- All linked by pressurised corridors. Exterior: dorsal spine (creates a covered hull-traversal
@@ -4437,7 +5835,7 @@ function Ship.Build(arena: Instance, markers: Instance, shipCf: CFrame)
 end
 
 return Ship
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX35"><Properties><string name="Name">Station</string><ProtectedString name="Source"><![CDATA[-- Orbital station "Meridian". Layout (station centred on the origin):
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX38"><Properties><string name="Name">Station</string><ProtectedString name="Source"><![CDATA[-- Orbital station "Meridian". Layout (station centred on the origin):
 --   Hub (central command & docking junction) with six branches:
 --     +Y Command Module (observation windows, top airlock)
 --     -Y Docking Bay (open hangar to space, reached through an airlock)
@@ -4805,7 +6203,7 @@ function Station.Build(arena: Instance, markers: Instance)
 end
 
 return Station
-]]></ProtectedString></Properties></Item></Item><Item class="Script" referent="RBX37"><Properties><string name="Name">Main</string><ProtectedString name="Source"><![CDATA[-- ZERO GRAVITY: LAST ORBIT - server bootstrap.
+]]></ProtectedString></Properties></Item></Item><Item class="Script" referent="RBX40"><Properties><string name="Name">Main</string><ProtectedString name="Source"><![CDATA[-- ZERO GRAVITY: LAST ORBIT - server bootstrap.
 -- Builds the world, then starts each service on its own so one failure is reported in Output
 -- without stopping the rest.
 local Services = script.Parent:WaitForChild("Services")
@@ -4832,9 +6230,10 @@ start("OxygenService")
 start("SafeZoneService")
 start("EquipmentService")
 start("HazardService")
+start("BotService")
 start("MatchService")
 print("[ZG] server started")
-]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX53"><Properties><string name="Name">StarterPlayer</string><bool name="EnableMouseLockOption">false</bool></Properties><Item class="StarterPlayerScripts" referent="RBX50"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX39"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ZERO GRAVITY: LAST ORBIT - client bootstrap. Starts the controllers and routes server
+]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX56"><Properties><string name="Name">StarterPlayer</string><bool name="EnableMouseLockOption">false</bool></Properties><Item class="StarterPlayerScripts" referent="RBX53"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX42"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ZERO GRAVITY: LAST ORBIT - client bootstrap. Starts the controllers and routes server
 -- messages (FX / Match / Inventory remotes) into ClientState signals and effects.
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
@@ -4943,7 +6342,7 @@ game:GetService("RunService").Heartbeat:Connect(function()
 		Effects.TetherBeam(player, State.Tether and State.Tether.point or nil)
 	end
 end)
-]]></ProtectedString></Properties></Item><Item class="Folder" referent="RBX49"><Properties><string name="Name">Controllers</string></Properties><Item class="ModuleScript" referent="RBX40"><Properties><string name="Name">CameraController</string><ProtectedString name="Source"><![CDATA[-- Over-the-shoulder camera with a yaw/pitch model (pitch clamped short of vertical) so the view
+]]></ProtectedString></Properties></Item><Item class="Folder" referent="RBX52"><Properties><string name="Name">Controllers</string></Properties><Item class="ModuleScript" referent="RBX43"><Properties><string name="Name">CameraController</string><ProtectedString name="Source"><![CDATA[-- Over-the-shoulder camera with a yaw/pitch model (pitch clamped short of vertical) so the view
 -- can never flip or roll unpredictably. Collision-aware, aim zoom, recoil, and spectate mode.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -5042,7 +6441,7 @@ function CameraController.Start()
 end
 
 return CameraController
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX41"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- Client-side shared state and tiny signal helper, used by every controller.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX44"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- Client-side shared state and tiny signal helper, used by every controller.
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
 
@@ -5127,7 +6526,7 @@ function State.IsModalOpen(name: string): boolean
 end
 
 return State
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX42"><Properties><string name="Name">CombatController</string><ProtectedString name="Source"><![CDATA[-- Client combat input and prediction. Sends aim rays to the server (which validates and decides
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX45"><Properties><string name="Name">CombatController</string><ProtectedString name="Source"><![CDATA[-- Client combat input and prediction. Sends aim rays to the server (which validates and decides
 -- hits); draws the local tracer/muzzle flash immediately so firing feels responsive.
 -- Also handles weapon switching, reload, melee, utilities and consumable hotkeys.
 local Players = game:GetService("Players")
@@ -5388,7 +6787,7 @@ function Combat.Start()
 end
 
 return Combat
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX43"><Properties><string name="Name">EffectsController</string><ProtectedString name="Source"><![CDATA[-- Visual and audio presentation: tracers, muzzle flashes, impacts, explosions, tether beams,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX46"><Properties><string name="Name">EffectsController</string><ProtectedString name="Source"><![CDATA[-- Visual and audio presentation: tracers, muzzle flashes, impacts, explosions, tether beams,
 -- the radiation-storm sphere, the planet backdrop, flickering damaged lights, electrical crackle
 -- and suit audio. Purely cosmetic; never affects gameplay state.
 --
@@ -5773,7 +7172,7 @@ function Effects.Start()
 end
 
 return Effects
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX44"><Properties><string name="Name">HUDController</string><ProtectedString name="Source"><![CDATA[-- In-match HUD, inventory screen, results screen and spectating.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX47"><Properties><string name="Name">HUDController</string><ProtectedString name="Source"><![CDATA[-- In-match HUD, inventory screen, results screen and spectating.
 --   Vitals (health, shield, oxygen, boost, tether, suit status) bottom-left
 --   Weapon, ammo, slots, utility bottom-right
 --   Phase / timer / survivors top-centre; kill feed top-right; tactical map top-left
@@ -6199,17 +7598,31 @@ local function updateSpectate()
 		refs.spectate.Visible = false
 		return
 	end
+	-- living combatants: other players plus bots (bots publish their state under ReplicatedStorage.Bots)
 	local alive = {}
-	for _, p in Players:GetPlayers() do
-		if p ~= player and p:GetAttribute("Alive") == true and p:GetAttribute("InMatch") == true and p.Character then table.insert(alive, p) end
+	local function add(name: string, char: Instance?, kills: number?)
+		if char then
+			table.insert(alive, { Name = name, Character = char, kills = kills or 0, GetAttribute = function(self, k)
+				return k == "Kills" and self.kills or nil
+			end })
+		end
 	end
+	for _, p in Players:GetPlayers() do
+		if p ~= player and p:GetAttribute("Alive") == true and p:GetAttribute("InMatch") == true then add(p.Name, p.Character, p:GetAttribute("Kills")) end
+	end
+	local botFolder = ReplicatedStorage:FindFirstChild("Bots")
+	for _, cfg in botFolder and botFolder:GetChildren() or {} do
+		local ref = cfg:FindFirstChild("Character") :: ObjectValue?
+		if cfg:GetAttribute("Alive") == true and cfg:GetAttribute("InMatch") == true and ref then add(cfg.Name, ref.Value, cfg:GetAttribute("Kills")) end
+	end
+	table.sort(alive, function(a, b) return a.Name < b.Name end)
 	if #alive == 0 then
 		State.Spectating = nil
 		refs.spectate.Visible = false
 		return
 	end
 	spectateIndex = ((spectateIndex - 1) % #alive) + 1
-	State.Spectating = alive[spectateIndex]
+	State.Spectating = alive[spectateIndex] :: any
 	refs.spectate.Visible = true
 	refs.spectateLabel.Text = string.format("SPECTATING <b>%s</b>  (%d kills)   [Q / E] switch   [Backspace] lobby", State.Spectating.Name,
 		State.Spectating:GetAttribute("Kills") or 0)
@@ -6336,7 +7749,9 @@ local function update()
 		refs.sub.Text = string.format("<b>%d</b> IN ORBIT   |   <font color=\"#C08CFF\">%s</font>   |   KILLS <b>%d</b>", alive, zText, player:GetAttribute("Kills") or 0)
 	elseif phase == "Waiting" then
 		local q, minP = matchState:GetAttribute("Queued") or 0, matchState:GetAttribute("MinPlayers") or 2
-		refs.sub.Text = string.format("%d / %d ready   |   %s", q, minP, player:GetAttribute("Queued") and "You are queued" or "Not queued - open menu (M) and press PLAY")
+		local bots = matchState:GetAttribute("Bots") or 0
+		refs.sub.Text = string.format("%d / %d ready%s   |   %s", q, minP, bots > 0 and string.format(" + %d bots", bots) or "",
+			player:GetAttribute("Queued") and "You are queued" or "Not queued - open menu (M) and press PLAY")
 	elseif endsAt > 0 then
 		refs.sub.Text = string.format("%s   |   %d ready", UI.formatTime(endsAt - serverNow()), (matchState:GetAttribute("Queued") :: number?) or 0)
 	else
@@ -6407,7 +7822,7 @@ function HUD.Start()
 end
 
 return HUD
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX45"><Properties><string name="Name">InputController</string><ProtectedString name="Source"><![CDATA[-- Turns keyboard / gamepad state into abstract movement and look input, so the movement and camera
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX48"><Properties><string name="Name">InputController</string><ProtectedString name="Source"><![CDATA[-- Turns keyboard / gamepad state into abstract movement and look input, so the movement and camera
 -- code never reads devices directly (keeps mobile/controller support a matter of mapping here).
 local UserInputService = game:GetService("UserInputService")
 local State = require(script.Parent.ClientState)
@@ -6474,7 +7889,7 @@ function Input.Start()
 end
 
 return Input
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX46"><Properties><string name="Name">MenuController</string><ProtectedString name="Source"><![CDATA[-- Main menu (opens on join and with M): Play, Practice, Loadout, Locker, Settings, Statistics,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">MenuController</string><ProtectedString name="Source"><![CDATA[-- Main menu (opens on join and with M): Play, Practice, Loadout, Locker, Settings, Statistics,
 -- Tutorial, Credits. Every option shown is implemented. During a match only Resume, Settings and
 -- Tutorial are offered.
 local Players = game:GetService("Players")
@@ -6760,7 +8175,7 @@ function Menu.Start()
 end
 
 return Menu
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX47"><Properties><string name="Name">MovementController</string><ProtectedString name="Source"><![CDATA[-- Six-degree-of-freedom zero-gravity movement for the local character.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX50"><Properties><string name="Name">MovementController</string><ProtectedString name="Source"><![CDATA[-- Six-degree-of-freedom zero-gravity movement for the local character.
 --
 -- Model: the Humanoid is held in the Physics state (no walking/falling logic), the body is turned
 -- toward the camera by an AlignOrientation, and translation is a momentum model integrated here:
@@ -6777,6 +8192,7 @@ local RunService = game:GetService("RunService")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Remotes = require(Shared.Remotes)
+local Motion = require(Shared.ZeroGMotion)
 local State = require(script.Parent.ClientState)
 local Input = require(script.Parent.InputController)
 local CameraController = require(script.Parent.CameraController)
@@ -6893,13 +8309,9 @@ local function step(dt: number)
 	local thrust = rot:VectorToWorldSpace(Vector3.new(move.X, move.Y, -move.Z))
 
 	-- Boost energy
-	boosting = Input.Boosting() and thrust.Magnitude > 0.1 and State.Boost > 1
-	if boosting then
-		State.Boost = math.max(0, State.Boost - M.BoostDrain * dt)
-		lastBoostUse = os.clock()
-	elseif os.clock() - lastBoostUse > M.BoostRegenDelay then
-		State.Boost = math.min(boostMax, State.Boost + M.BoostRegen * (player:GetAttribute("BoostRegenMult") or 1) * dt)
-	end
+	local energy, isBoosting, lastUse = Motion.Boost(State.Boost, Input.Boosting() and thrust.Magnitude > 0.1, lastBoostUse, os.clock(), boostMax,
+		player:GetAttribute("BoostRegenMult") or 1, dt)
+	State.Boost, boosting, lastBoostUse = energy, isBoosting, lastUse
 	if thruster then thruster.Rate = boosting and 120 or (thrust.Magnitude > 0.1 and 15 or 0) end
 
 	local tether = State.Tether
@@ -6913,24 +8325,7 @@ local function step(dt: number)
 		end
 	end
 	if not State.Tether then
-		local accel = (boosting and M.BoostAccel or M.Accel) * speedMult
-		local prevSpeed = v.Magnitude
-		if thrust.Magnitude > 0.05 then
-			v += thrust * accel * dt
-		else
-			v *= math.exp(-M.Drag * dt)
-		end
-		-- Speed cap: thrust can never push past the current cap. Speed already above it (boost just
-		-- ended, explosion shove) bleeds off at 90 studs/s instead of snapping, and thrust can still steer.
-		local cap = (boosting and M.BoostMaxSpeed or M.MaxSpeed) * speedMult
-		local limit = math.max(cap, prevSpeed - 90 * dt)
-		if v.Magnitude > limit then
-			v = v.Unit * limit
-		end
-		if Input.Braking() then
-			v *= math.exp(-M.BrakeRate * dt)
-			if v.Magnitude < M.StopThreshold then v = Vector3.zero end
-		end
+		v = Motion.Step(v, thrust, boosting, Input.Braking(), speedMult, dt)
 	end
 	root.AssemblyLinearVelocity = v
 end
@@ -6958,7 +8353,7 @@ function Movement.Start()
 end
 
 return Movement
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX48"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Small UI construction helpers so every screen shares one look: transparent dark panels,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Small UI construction helpers so every screen shares one look: transparent dark panels,
 -- thin cyan strokes, clean Gotham type, restrained neon accents.
 local UIKit = {}
 
@@ -7063,6 +8458,6 @@ function UIKit.formatTime(seconds: number): string
 end
 
 return UIKit
-]]></ProtectedString></Properties></Item></Item></Item><Item class="StarterCharacterScripts" referent="RBX52"><Properties><string name="Name">StarterCharacterScripts</string></Properties><Item class="Script" referent="RBX51"><Properties><string name="Name">Health</string><ProtectedString name="Source"><![CDATA[-- Intentionally empty: replaces Roblox's default "Health" regeneration script.
+]]></ProtectedString></Properties></Item></Item></Item><Item class="StarterCharacterScripts" referent="RBX55"><Properties><string name="Name">StarterCharacterScripts</string></Properties><Item class="Script" referent="RBX54"><Properties><string name="Name">Health</string><ProtectedString name="Source"><![CDATA[-- Intentionally empty: replaces Roblox's default "Health" regeneration script.
 -- Health regeneration rules (delay, rate, cap) live in CombatService.
 ]]></ProtectedString></Properties></Item></Item></Item></roblox>

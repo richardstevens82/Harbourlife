@@ -255,8 +255,7 @@ function task.cancel(co)
 	end
 end
 -- Advance simulated time, resuming due threads in time order.
-function Mock.advance(dt)
-	local target = now + dt
+local function runThreads(target)
 	while true do
 		local bestI, best = nil, nil
 		for i, q in queue do
@@ -267,6 +266,20 @@ function Mock.advance(dt)
 		now = math.max(now, best.at)
 		if coroutine.status(best.co) == "suspended" then resume(best.co, table.unpack(best.args, 1, best.args.n)) end
 	end
+end
+Mock.physicsStep = 1 / 20
+-- Advance simulated time in physics steps: run due threads, then Mock.onPhysics(dt) (fires
+-- RunService.Heartbeat and moves character bodies by their velocity; no collision response).
+function Mock.advance(dt)
+	local target = now + dt
+	while now < target - 1e-9 do
+		local stepEnd = math.min(target, now + Mock.physicsStep)
+		local h = stepEnd - now
+		runThreads(stepEnd)
+		now = stepEnd
+		if Mock.onPhysics then Mock.onPhysics(h) end
+	end
+	runThreads(target)
 	now = target
 end
 Mock.task = task
@@ -277,6 +290,9 @@ local INSTANCEmt = {}
 local tags: { [string]: { [any]: boolean } } = {}
 local allParts = {}
 Mock.allParts = allParts
+local gridDirty = true
+local loose, looseCount = {}, 0 -- parts moved/added since the last grid rebuild (tested individually)
+local STATIC_KEYS = { CFrame = true, Size = true, Anchored = true, Parent = true, CanQuery = true, CanCollide = true, Position = true }
 
 local HIER = {
 	Part = { "BasePart", "PVInstance" }, WedgePart = { "BasePart", "PVInstance" }, MeshPart = { "BasePart", "PVInstance" },
@@ -344,6 +360,11 @@ INSTANCEmt.__index = function(self, k)
 end
 INSTANCEmt.__newindex = function(self, k, v)
 	local props = rawget(self, "_props")
+	if STATIC_KEYS[k] and props.CFrame and props.Size and (props.Anchored or k == "Anchored" or k == "Parent") and not loose[self] then
+		loose[self] = true
+		looseCount += 1
+		if looseCount > 400 then gridDirty = true end
+	end
 	if k == "Parent" then
 		local old = props.Parent
 		if old then
@@ -493,7 +514,8 @@ function methods.SetStateEnabled() end
 -- RemoteEvent
 function methods.FireClient(self, player, msg)
 	Mock.sent = Mock.sent or {}
-	table.insert(Mock.sent, { remote = self._props.Name, player = player, msg = msg })
+	-- tracers are by far the most frequent message: keep only their type
+	table.insert(Mock.sent, { remote = self._props.Name, player = player, msg = msg.t == "tracer" and { t = "tracer" } or msg })
 end
 function methods.FireServer(self, msg)
 	Mock.sent = Mock.sent or {}
@@ -558,10 +580,109 @@ function Mock.pointInPart(p, part)
 	return math.abs(lp.X) <= h.X and math.abs(lp.Y) <= h.Y and math.abs(lp.Z) <= h.Z
 end
 
+-- Broadphase: anchored parts live in a uniform grid (rebuilt when any part's placement changes);
+-- unanchored parts (character bodies, held weapons) are tested individually.
+local GRID = 48
+local grid = {}
+local dynamic = {}
+local function key(x, y, z) return (x + 2000) * 16000000 + (y + 2000) * 4000 + (z + 2000) end
+local function aabb(part)
+	local c, h = part._props.CFrame, part._props.Size / 2
+	local m = c.m
+	local ex = math.abs(m[1]) * h.X + math.abs(m[2]) * h.Y + math.abs(m[3]) * h.Z
+	local ey = math.abs(m[4]) * h.X + math.abs(m[5]) * h.Y + math.abs(m[6]) * h.Z
+	local ez = math.abs(m[7]) * h.X + math.abs(m[8]) * h.Y + math.abs(m[9]) * h.Z
+	return c.p.X - ex, c.p.Y - ey, c.p.Z - ez, c.p.X + ex, c.p.Y + ey, c.p.Z + ez
+end
+Mock.stats = { rays = 0, rebuilds = 0 }
+local function rebuildGrid()
+	table.clear(grid)
+	table.clear(dynamic)
+	table.clear(loose)
+	looseCount = 0
+	Mock.stats.rebuilds += 1
+	-- forget destroyed parts for good (keeps long simulations from growing without bound)
+	for i = #allParts, 1, -1 do
+		if allParts[i]._props.Destroyed then
+			allParts[i] = allParts[#allParts]
+			allParts[#allParts] = nil
+		end
+	end
+	for _, part in allParts do
+		local pr = part._props
+		if pr.Parent and not pr.Destroyed and pr.ClassName ~= "Terrain" then
+			if pr.Anchored then
+				local x0, y0, z0, x1, y1, z1 = aabb(part)
+				for x = math.floor(x0 / GRID), math.floor(x1 / GRID) do
+					for y = math.floor(y0 / GRID), math.floor(y1 / GRID) do
+						for z = math.floor(z0 / GRID), math.floor(z1 / GRID) do
+							local k = key(x, y, z)
+							local cell = grid[k]
+							if not cell then
+								cell = {}
+								grid[k] = cell
+							end
+							table.insert(cell, part)
+						end
+					end
+				end
+			else
+				table.insert(dynamic, part)
+			end
+		end
+	end
+	gridDirty = false
+end
+-- candidate parts near a segment (or, with dir = nil, near a sphere of radius r around origin)
+local function candidates(origin, dir, r)
+	if gridDirty then rebuildGrid() end
+	local seen, out = {}, {}
+	for _, p in dynamic do
+		if p._props.Parent and not p._props.Destroyed then
+			seen[p] = true
+			table.insert(out, p)
+		end
+	end
+	for p in loose do
+		if not seen[p] and p._props.Parent and not p._props.Destroyed then
+			seen[p] = true
+			table.insert(out, p)
+		end
+	end
+	local function addCell(k)
+		for _, p in grid[k] or {} do
+			if not seen[p] then
+				seen[p] = true
+				table.insert(out, p)
+			end
+		end
+	end
+	if dir then
+		local steps = math.max(1, math.ceil(dir.Magnitude / (GRID * 0.25)))
+		local lastK
+		for i = 0, steps do
+			local q = origin + dir * (i / steps)
+			local k = key(math.floor(q.X / GRID), math.floor(q.Y / GRID), math.floor(q.Z / GRID))
+			if k ~= lastK then
+				lastK = k
+				addCell(k)
+			end
+		end
+	else
+		for x = math.floor((origin.X - r) / GRID), math.floor((origin.X + r) / GRID) do
+			for y = math.floor((origin.Y - r) / GRID), math.floor((origin.Y + r) / GRID) do
+				for z = math.floor((origin.Z - r) / GRID), math.floor((origin.Z + r) / GRID) do addCell(key(x, y, z)) end
+			end
+		end
+	end
+	return out
+end
+
 function methods.Raycast(_self, origin, dir, params)
+	Mock.stats.rays += 1
 	local filter = params and params.FilterDescendantsInstances or {}
 	local bestT, bestPart = math.huge, nil
-	for _, part in allParts do
+	for _, part in candidates(origin, dir) do
 		local pr = part._props
 		if pr.Parent and not pr.Destroyed and pr.CanQuery ~= false and pr.ClassName ~= "Terrain" then
 			local skip = false
@@ -579,7 +700,20 @@ function methods.Raycast(_self, origin, dir, params)
 	end
 	return nil
 end
-function methods.GetPartBoundsInRadius() return {} end
+function methods.GetPartBoundsInRadius(_self, pos, radius, params)
+	local out = {}
+	for _, part in candidates(pos, nil, radius) do
+		local pr = part._props
+		if pr.Parent and not pr.Destroyed and pr.ClassName ~= "Terrain" and not (params and params.RespectCanCollide and pr.CanCollide == false) then
+			local lp = pr.CFrame:PointToObjectSpace(pos)
+			local h = pr.Size / 2
+			if math.abs(lp.X) <= h.X + radius and math.abs(lp.Y) <= h.Y + radius and math.abs(lp.Z) <= h.Z + radius then table.insert(out, part) end
+		end
+	end
+	return out
+end
+function methods.SetNetworkOwner() end
+function methods.CreateHumanoidModelFromDescription(_self, _desc, _rig) return Mock.buildRig("Rig", CF.identity) end
 function methods.GetServerTimeNow() return now end
 function methods.GetPlayers(self) return table.clone(self._players) end
 function methods.GetPlayerFromCharacter(self, char)
@@ -682,7 +816,31 @@ function Mock.removePlayer(p)
 	if i then table.remove(players._players, i) end
 	p.Parent = nil
 end
--- R15-ish character: HumanoidRootPart, Head, UpperTorso, Humanoid
+-- R15-ish rig: HumanoidRootPart, Head, UpperTorso, Humanoid (not parented)
+function Mock.buildRig(name, at)
+	local char = Inst.new("Model")
+	char._props.Name = name
+	local root = Inst.new("Part")
+	root._props.Name = "HumanoidRootPart"
+	root._props.Size = v3(2, 2, 1)
+	root._props.CFrame = at
+	root.Parent = char
+	char._props.PrimaryPart = root
+	local head = Inst.new("Part")
+	head._props.Name = "Head"
+	head._props.Size = v3(1.2, 1.2, 1.2)
+	head._props.CFrame = at * CF.new(0, 2, 0)
+	head.Parent = char
+	local torso = Inst.new("Part")
+	torso._props.Name = "UpperTorso"
+	torso._props.Size = v3(2, 1.6, 1)
+	torso._props.CFrame = at * CF.new(0, 0.6, 0)
+	torso.Parent = char
+	local hum = Inst.new("Humanoid")
+	hum.Parent = char
+	return char
+end
+
 function Mock.makeCharacter(player, at)
 	local old = player._props.Character
 	if old then old:Destroy() end
@@ -790,6 +948,46 @@ GLOBAL = setmetatable({
 }, { __index = _G })
 
 Mock.game, Mock.workspace, Mock.services, Mock.GLOBAL = game, workspace, services, GLOBAL
+Mock.warnings = {}
+GLOBAL.warn = function(...)
+	local parts = {}
+	for i = 1, select("#", ...) do parts[i] = tostring((select(i, ...))) end
+	local msg = table.concat(parts, " ")
+	table.insert(Mock.warnings, msg)
+	print("[warn] " .. msg)
+end
+local function bodies()
+	local out = {}
+	local function scan(folder)
+		for _, m in folder._children do
+			if m._props.ClassName == "Model" and not m._props.Destroyed then
+				local root = m:FindFirstChild("HumanoidRootPart")
+				if root and not root._props.Anchored then table.insert(out, { m, root }) end
+			end
+		end
+	end
+	scan(workspace) -- player characters
+	local botChars = workspace:FindFirstChild("BotCharacters")
+	if botChars then scan(botChars) end
+	return out
+end
+Mock.onPhysics = function(dt)
+	local ok, err = pcall(function() services.RunService.Heartbeat:Fire(dt) end)
+	if not ok then
+		Mock.errors = Mock.errors or {}
+		table.insert(Mock.errors, "Heartbeat: " .. tostring(err))
+		print("[mock] heartbeat error: " .. tostring(err))
+	end
+	for _, b in bodies() do
+		local v = b[2]._props.AssemblyLinearVelocity
+		if v and v.Magnitude > 0 then
+			local delta = v * dt
+			for _, d in b[1]:GetDescendants() do
+				if d._props.CFrame then d._props.CFrame = d._props.CFrame + delta end
+			end
+		end
+	end
+end
 Mock.require = requireModule
 Mock.Vector3, Mock.CFrame, Mock.Instance = V3, CF, Inst
 Mock.tags = tags
