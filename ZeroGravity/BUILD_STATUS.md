@@ -106,7 +106,16 @@ procedurally each frame (`Motor6D.Transform`, in PreSimulation):
   hit (skilled bots more often).
 - **Cost and limits:** characters beyond 420 studs aren't updated, and beyond 160 studs they update at
   30 Hz. Arms and legs don't collide, so swinging limbs can't push the body.
-- The place forces R15 avatars (`StarterPlayer.GameSettingsAvatar`).
+- **Joints:** the place forces R15 avatars (`StarterPlayer.GameSettingsAvatar`) and opts out of
+  Roblox's avatar joint upgrade. Any upgraded `AnimationConstraint` joints are converted back to
+  `Motor6D`s when a body spawns (`CharacterService.UseMotorJoints`). The animator finds joints by
+  the body part they move and can drive either kind.
+- **Rounded pressure suit:** the blocky R15 body parts are hidden and covered with smooth ellipsoid
+  shells, with armoured balls on the shoulders, elbows and knees, plus gloves and boots. The shells
+  are welded to each limb, so they bend with it. The hidden parts still collide and take hits.
+- **Output diagnostics:** about 6 s after joining, Output shows
+  `[ZG] animator: posing N of M characters`. A character it can't animate gets a warning with its
+  joint counts, and an R6 avatar gets a warning with the setting to change.
 - `docs/animation/pose_sheet.png` is rendered from the real code by `tools/render_poses.py`.
 
 **Bots** (`BotService`, `NavGraph`, `Config.Bots`). Every match and the lobby are kept at 20
@@ -188,7 +197,7 @@ in Studio, with a warning shown. Cosmetics only: no paid items and no random rew
 
 ## Tests performed
 
-**Automated: `python3 tests/run.py` → 59 passed, 0 failed** (about 3 minutes, most of it the simulated bot match).
+**Automated: `python3 tests/run.py` → 62 passed, 0 failed** (about 3 minutes, most of it the simulated bot match).
 Every run checks member access against Roblox's real API tables, so an invalid property name or a
 write to a read-only property fails the test that reaches it.
 - *Pure logic:* the CFrame mock; all 8 weapons complete; damage falloff is monotonic; time-to-kill is
@@ -227,6 +236,11 @@ write to a read-only property fails the test that reaches it.
     upside down mid-roll and settles upright afterwards.
   - Aim, shots and rolls reach other clients, and bots are animated the same way.
   - Dead bodies tumble with limbs spread, and no transform is ever non-finite.
+  - The mock can build Roblox's upgraded rigs, with `AnimationConstraint` joints between rig
+    attachments. They are converted to 15 `Motor6D`s on spawn, matching the attachments, and the
+    animator also poses an unconverted upgraded rig with the hands on the gun.
+  - The suit hides all 14 blocky parts and adds at least 14 smooth shells and 6 joint balls, none of
+    which block shots. The knee pad stays on the knee while the knee bends.
 - *Client:* the real MovementController is driven frame by frame. Thrust caps at cruise speed, drift
   persists, X stops fully, all six directions are camera-relative, diagonal thrust isn't faster,
   boost is capped and runs out of energy then bleeds back to cruise, the tether pulls and releases,
@@ -279,6 +293,20 @@ the `LoadCharacter` fallback.
     property, or assigning the wrong value type now throws, as it does in Roblox. Every UI, builder
     and server path in the suite passes under it.
   - The client boot test now fails when a controller only logs a startup failure.
+
+**Studio playtest report 2: "characters are still blocky, no knees or elbows, guns are not in
+hands, characters have no animation at all".**
+- *Probable cause: Roblox's avatar joint upgrade.* New characters can use `AnimationConstraint`
+  joints instead of `Motor6D`s, and the animator only looked for `Motor6D`s. On upgraded bodies it
+  found no joints, so nothing was posed. Limbs stayed straight with no visible knee or elbow bends,
+  the hands never reached the gun, and the gun floated in front of the chest.
+- The headless rig only had `Motor6D`s, so the tests couldn't see this.
+- *Fixes:* opt-out in the place, conversion on spawn, an animator that handles both joint kinds, and
+  Output diagnostics (see **Character animation**). Upgraded rigs are now part of the tests.
+- *Blocky look:* the rounded pressure suit replaces the blocky body. Knees, elbows and shoulders are
+  armoured joint balls, so bends are obvious.
+- *Still unverified in Studio.* If the Output line doesn't say "posing N of N", or the animator
+  prints a warning, that text pinpoints the remaining problem.
 
 **Defects found and fixed by these tests:**
 - Corridor "ribs" were solid slabs that sealed every straight corridor. They are now open frames.

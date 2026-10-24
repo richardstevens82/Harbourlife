@@ -64,7 +64,9 @@ body = "".join([
          item("StarterPlayerScripts", "StarterPlayerScripts", folder_children(src("StarterPlayer", "StarterPlayerScripts")))
          + item("StarterCharacterScripts", "StarterCharacterScripts", folder_children(src("StarterPlayer", "StarterCharacterScripts"))),
          # R15 bodies: the CharacterAnimator poses R15 joints (1 = Enum.GameAvatarType.R15)
-         extra=prop_bool("EnableMouseLockOption", False) + '<token name="GameSettingsAvatar">1</token>'),
+         # and classic Motor6D joints: opt out of Roblox's avatar joint upgrade (RolloutState 1 = Disabled)
+         extra=prop_bool("EnableMouseLockOption", False) + '<token name="GameSettingsAvatar">1</token>'
+         + '<token name="AvatarJointUpgrade_SerializedRollout">1</token>'),
 ])
 xml = ('<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
        'xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">' + body + "</roblox>")

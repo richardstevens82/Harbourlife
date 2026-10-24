@@ -33,7 +33,98 @@ local function attach(char: Model, to: BasePart, name: string, size: Vector3, of
 	return p
 end
 
--- Space suit: recolours the body, removes clothing/accessories, adds helmet and life-support pack.
+-- Roblox's avatar joint upgrade builds characters with AnimationConstraint joints instead of
+-- Motor6Ds. The CharacterAnimator and the weapon mount are built on Motor6Ds (rigid joints posed
+-- through Transform on every client), so upgraded joints are converted back when a body spawns.
+-- (The place also opts out of the upgrade: StarterPlayer.AvatarJointUpgrade_SerializedRollout.)
+function CharacterService.UseMotorJoints(char: Model): number
+	local n = 0
+	for _, j in char:GetDescendants() do
+		if j:IsA("AnimationConstraint") then
+			local a0, a1 = j.Attachment0, j.Attachment1
+			local p0 = a0 and a0.Parent
+			local p1 = a1 and a1.Parent
+			if a0 and a1 and p0 and p1 and p0:IsA("BasePart") and p1:IsA("BasePart") then
+				local m = Instance.new("Motor6D")
+				m.Name = j.Name
+				m.Part0, m.Part1 = p0, p1
+				m.C0, m.C1 = a0.CFrame, a1.CFrame
+				m.Parent = p1
+				j:Destroy()
+				n += 1
+			end
+		end
+	end
+	return n
+end
+
+local BODY = {
+	"UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand",
+	"LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot",
+}
+
+-- A suit shell welded to a body part: "round" = smooth ellipsoid filling size, "ball" = sphere.
+local function shell(char: Model, to: BasePart, size: Vector3, offset: CFrame, color: Color3, material, kind: string)
+	local p = attach(char, to, "SuitPart", size, offset, color, material, if kind == "ball" then Enum.PartType.Ball else nil)
+	if kind == "round" then
+		local mesh = Instance.new("SpecialMesh")
+		mesh.MeshType = Enum.MeshType.Sphere
+		mesh.Parent = p
+	end
+	return p
+end
+
+-- Rounded pressure suit over the R15 body: each blocky body part is hidden and covered by smooth
+-- shells welded to it, with armoured balls on the shoulders, elbows and knees, plus gloves and
+-- boots, so the joints read clearly when the CharacterAnimator bends them. The hidden parts still
+-- collide and take hits. Sizes follow each part's own size, so scaled avatars fit too.
+local function suitBody(char: Model, suit)
+	local dark = Color3.fromRGB(46, 50, 58)
+	local function part(name: string): BasePart?
+		local p = char:FindFirstChild(name)
+		return if p and p:IsA("BasePart") then p else nil
+	end
+	local function round(p: BasePart, mul: Vector3, off: Vector3, color: Color3)
+		local sz = p.Size
+		shell(char, p, sz * mul, CFrame.new(sz * off), color, Enum.Material.SmoothPlastic, "round")
+	end
+	-- a joint ball centred on the joint's pivot (its rig attachment) or a fraction up the part
+	local function ball(p: BasePart, scale: number, attachment: string, fallbackY: number, color: Color3)
+		local a = p:FindFirstChild(attachment)
+		local at = if a and a:IsA("Attachment") then a.Position else Vector3.new(0, p.Size.Y * fallbackY, 0)
+		shell(char, p, Vector3.one * math.min(p.Size.X, p.Size.Z) * scale, CFrame.new(at), color, Enum.Material.Metal, "ball")
+	end
+	local ut, lt = part("UpperTorso"), part("LowerTorso")
+	if not (ut and lt) then return end -- R6 or a custom rig: keep the plain body
+	for _, n in BODY do
+		local p = part(n)
+		if p then p.Transparency = 1 end
+	end
+	round(ut, Vector3.new(1.02, 1.12, 1.35), Vector3.new(0, 0.04, 0), suit.suit)
+	round(lt, Vector3.new(0.95, 2.4, 1.25), Vector3.zero, dark)
+	for _, side in { "Left", "Right" } do
+		local ua, la, hand = part(side .. "UpperArm"), part(side .. "LowerArm"), part(side .. "Hand")
+		local ul, ll, foot = part(side .. "UpperLeg"), part(side .. "LowerLeg"), part(side .. "Foot")
+		if ua then
+			round(ua, Vector3.new(0.78, 1.05, 0.78), Vector3.zero, suit.suit)
+			ball(ua, 1.05, side .. "ShoulderRigAttachment", 0.3, suit.trim) -- shoulder pad
+		end
+		if la then
+			round(la, Vector3.new(0.7, 1.02, 0.7), Vector3.new(0, -0.03, 0), suit.suit)
+			ball(la, 0.8, side .. "ElbowRigAttachment", 0.3, dark) -- elbow joint
+		end
+		if hand then round(hand, Vector3.new(0.72, 2.6, 0.8), Vector3.new(0, -0.15, 0), dark) end -- glove
+		if ul then round(ul, Vector3.new(0.86, 1.08, 0.86), Vector3.zero, suit.suit) end
+		if ll then
+			round(ll, Vector3.new(0.78, 1.04, 0.78), Vector3.new(0, -0.03, 0), suit.suit)
+			ball(ll, 0.86, side .. "KneeRigAttachment", 0.3, suit.trim) -- knee pad
+		end
+		if foot then round(foot, Vector3.new(0.92, 2.8, 1.3), Vector3.new(0, 0.1, -0.08), dark) end -- boot
+	end
+end
+
+-- Space suit: removes clothing/accessories, replaces the body with a rounded pressure suit (above),
+-- and adds the helmet, collar, life-support pack and chest light.
 function CharacterService.ApplySuit(player: Player, char: Model, suitId: string?)
 	local suit = Cosmetics.GetSuit(suitId or tostring(player:GetAttribute("Suit") or "navy"))
 	for _, c in char:GetChildren() do
@@ -55,7 +146,7 @@ function CharacterService.ApplySuit(player: Player, char: Model, suitId: string?
 		local visor = attach(char, head, "SuitPart", Vector3.new(1.7, 0.9, 0.3), CFrame.new(0, 0.15, -1.05), Color3.fromRGB(60, 120, 200), Enum.Material.Glass)
 		visor.Transparency = 0.3
 		visor.Reflectance = 0.3
-		attach(char, head, "SuitPart", Vector3.new(0.35, 2.6, 2.6), CFrame.new(0, -0.95, 0) * CFrame.Angles(0, 0, math.rad(90)), suit.trim,
+		attach(char, head, "SuitPart", Vector3.new(0.3, 2.15, 2.15), CFrame.new(0, -0.92, 0) * CFrame.Angles(0, 0, math.rad(90)), suit.trim,
 			Enum.Material.Metal, Enum.PartType.Cylinder) -- neck ring
 	end
 	if torso then
@@ -68,8 +159,9 @@ function CharacterService.ApplySuit(player: Player, char: Model, suitId: string?
 		local pl = Instance.new("PointLight")
 		pl.Range, pl.Brightness, pl.Color = 10, 0.6, Color3.fromRGB(150, 200, 255)
 		pl.Parent = light
-		attach(char, torso, "SuitPart", Vector3.new(0.25, 1.4, 0.1), CFrame.new(0.35, 0, -0.52), suit.trim, Enum.Material.SmoothPlastic)
+		attach(char, torso, "SuitPart", Vector3.new(0.25, 1.1, 0.1), CFrame.new(0.32, 0.1, -0.64), suit.trim, Enum.Material.SmoothPlastic)
 	end
+	suitBody(char, suit)
 	-- Arms and legs are posed every frame by the CharacterAnimator; they must not shove the body
 	-- against walls while they swing (the root, torso and head keep their collisions).
 	for _, c in char:GetChildren() do
@@ -131,11 +223,16 @@ function CharacterService.Spawn(player: Player, cf: CFrame): Model?
 	if not char then return nil end
 	local root = char:WaitForChild("HumanoidRootPart", 5) :: BasePart?
 	if not root then return nil end
+	CharacterService.UseMotorJoints(char)
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	if hum then
 		hum.MaxHealth = Config.Health.Max
 		hum.Health = Config.Health.Max
 		hum.BreakJointsOnDeath = false -- the body stays in one piece and tumbles (CharacterAnimator)
+		if hum.RigType ~= Enum.HumanoidRigType.R15 then
+			warn("[ZG] " .. player.Name .. " spawned with an R6 body (no elbows or knees, so no zero-g animation). "
+				.. "Set Game Settings > Avatar > Avatar Type to R15.")
+		end
 	end
 	Security.Teleported(player)
 	char:PivotTo(cf)
@@ -168,6 +265,7 @@ function CharacterService.SpawnBot(bot, cf: CFrame, parent: Instance, displayNam
 		return nil
 	end
 	char.Name = bot.Name
+	CharacterService.UseMotorJoints(char)
 	local root = char:FindFirstChild("HumanoidRootPart") :: BasePart?
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	if not (root and hum) then

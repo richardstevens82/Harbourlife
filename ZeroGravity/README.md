@@ -20,7 +20,10 @@ the repository.
    it's 20 bots. To test with real players too, use **Test → Clients and Servers**. Each real player
    replaces a bot from the next match. Bot settings (count, skill, `[BOT]` name tag) are in
    `Config.Bots`.
-5. You're queued as soon as you join. The countdown at the top of the screen runs for 30 seconds,
+5. About 6 seconds after you join, the Output window should show
+   `[ZG] animator: posing N of N characters`. If it shows fewer, or a `[ZG]` warning about joints or
+   an R6 body, that line explains why characters aren't animated.
+6. You're queued as soon as you join. The countdown at the top of the screen runs for 30 seconds,
    then everyone deploys. Lobby practice can't hurt other pilots or bots; damage only counts in a
    match. If every real player is eliminated, the storm collapses so the bots finish within about
    half a minute, and the next countdown starts.

@@ -72,6 +72,9 @@ local function pose(label, opts)
 			local c, m = pr.CFrame, pr.CFrame.m
 			local col = pr.Color or (pr.Name == "Head" and { R = 0.9, G = 0.78, B = 0.68 } or { R = 0.28, G = 0.36, B = 0.56 })
 			local shape = pr.Shape and pr.Shape.Name or "Block"
+			local mesh = p:FindFirstChildOfClass("SpecialMesh")
+			if mesh and mesh.MeshType and mesh.MeshType.Name == "Sphere" then shape = "Ellipsoid" end
+			if pr.Name == "Head" then shape = "Ellipsoid" end -- Roblox heads are rounded meshes; the mock's is a box
 			print(table.concat({ "P", pr.Name, shape, f(c.p.X), f(c.p.Y), f(c.p.Z), f(pr.Size.X), f(pr.Size.Y), f(pr.Size.Z),
 				f(m[1]), f(m[2]), f(m[3]), f(m[4]), f(m[5]), f(m[6]), f(m[7]), f(m[8]), f(m[9]), f(col.R), f(col.G), f(col.B),
 				f(pr.Transparency or 0) }, "|"))
@@ -167,9 +170,64 @@ def sphere(part):
     return [(c[2], pts, 0.9)]
 
 
+def ellipsoid(part):
+    # silhouette = convex hull of the projected surface; shaded by the light on its centre-facing side
+    (x, y, z), (sx, sy, sz), m = part["pos"], part["size"], part["m"]
+    pts, depth = [], 0.0
+    for i in range(9):
+        th = math.pi * i / 8
+        for j in range(16):
+            ph = 2 * math.pi * j / 16
+            lx, ly, lz = sx / 2 * math.sin(th) * math.cos(ph), sy / 2 * math.cos(th), sz / 2 * math.sin(th) * math.sin(ph)
+            w = (x + m[0] * lx + m[1] * ly + m[2] * lz, y + m[3] * lx + m[4] * ly + m[5] * lz, z + m[6] * lx + m[7] * ly + m[8] * lz)
+            v = view(w)
+            pts.append((v[0], v[1]))
+            depth += v[2]
+    return [(depth / len(pts), hull2d(pts), 0.95)]
+
+
+def hull2d(pts):
+    pts = sorted(set(pts))
+    if len(pts) <= 2:
+        return pts
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower, upper = [], []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
+
+
+def cylinder(part):
+    # axis along the part's X; silhouette = hull of both end circles
+    (x, y, z), (sx, sy, sz), m = part["pos"], part["size"], part["m"]
+    r = min(sy, sz) / 2
+    pts, depth = [], 0.0
+    for lx in (-sx / 2, sx / 2):
+        for j in range(20):
+            a = 2 * math.pi * j / 20
+            ly, lz = r * math.cos(a), r * math.sin(a)
+            v = view((x + m[0] * lx + m[1] * ly + m[2] * lz, y + m[3] * lx + m[4] * ly + m[5] * lz, z + m[6] * lx + m[7] * ly + m[8] * lz))
+            pts.append((v[0], v[1]))
+            depth += v[2]
+    return [(depth / len(pts), hull2d(pts), 0.9)]
+
+
 def boxes(part):
     if part["shape"] == "Ball":
         return sphere(part)
+    if part["shape"] == "Cylinder":
+        return cylinder(part)
+    if part["shape"] == "Ellipsoid":
+        return ellipsoid(part)
     (x, y, z), (sx, sy, sz), m = part["pos"], part["size"], part["m"]
     corners = []
     for dx in (-0.5, 0.5):

@@ -1036,12 +1036,25 @@ function Mock.buildRig(name, at)
 		p._props.CanCollide = false
 		p.Parent = char
 		parts[j[1]] = p
-		local m = Inst.new("Motor6D")
-		m._props.Name = j[4]
-		m._props.Part0, m._props.Part1 = parts[j[3]], p
-		m._props.C0, m._props.C1, m._props.Transform = CF.new(j[5]), CF.new(j[6]), CF.identity
-		m.Parent = p
-		p._props.CFrame = parts[j[3]]._props.CFrame * m._props.C0 * m._props.C1:Inverse()
+		-- rig attachments on both sides of the joint, as Roblox's R15 rigs have
+		local a0, a1 = Inst.new("Attachment"), Inst.new("Attachment")
+		a0._props.Name, a1._props.Name = j[4] .. "RigAttachment", j[4] .. "RigAttachment"
+		a0._props.Position, a1._props.Position = j[5], j[6]
+		a0.Parent, a1.Parent = parts[j[3]], p
+		if Mock.jointUpgrade then
+			-- Roblox's avatar joint upgrade: AnimationConstraints between the rig attachments
+			local c = Inst.new("AnimationConstraint")
+			c._props.Name = j[4]
+			c._props.Attachment0, c._props.Attachment1, c._props.Transform = a0, a1, CF.identity
+			c.Parent = p
+		else
+			local m = Inst.new("Motor6D")
+			m._props.Name = j[4]
+			m._props.Part0, m._props.Part1 = parts[j[3]], p
+			m._props.C0, m._props.C1, m._props.Transform = CF.new(j[5]), CF.new(j[6]), CF.identity
+			m.Parent = p
+		end
+		p._props.CFrame = parts[j[3]]._props.CFrame * CF.new(j[5]) * CF.new(j[6]):Inverse()
 	end
 	for _, side in { "Right", "Left" } do
 		local a = Inst.new("Attachment")
@@ -1050,6 +1063,7 @@ function Mock.buildRig(name, at)
 		a.Parent = parts[side .. "Hand"]
 	end
 	local hum = Inst.new("Humanoid")
+	hum._props.RigType = Enum.HumanoidRigType.R15
 	hum.Parent = char
 	return char
 end
@@ -1063,7 +1077,7 @@ function Mock.solveJoints(model)
 	local joints = {}
 	for _, d in model:GetDescendants() do
 		local c = d._props.ClassName
-		if c == "Motor6D" or c == "Weld" or (c == "WeldConstraint" and d._props._offset) then table.insert(joints, d) end
+		if c == "Motor6D" or c == "Weld" or c == "AnimationConstraint" or (c == "WeldConstraint" and d._props._offset) then table.insert(joints, d) end
 	end
 	local solved = { [root] = true }
 	local progress = true
@@ -1072,11 +1086,17 @@ function Mock.solveJoints(model)
 		for _, j in joints do
 			local pr = j._props
 			local p0, p1 = pr.Part0, pr.Part1
+			local c0, c1 = pr.C0, pr.C1
+			if pr.ClassName == "AnimationConstraint" then
+				local a0, a1 = pr.Attachment0, pr.Attachment1
+				p0, p1 = a0 and a0._props.Parent, a1 and a1._props.Parent
+				c0, c1 = a0 and CF.new(a0._props.Position), a1 and CF.new(a1._props.Position)
+			end
 			if p0 and p1 and solved[p0] and not solved[p1] then
 				if pr.ClassName == "WeldConstraint" then
 					p1._props.CFrame = p0._props.CFrame * pr._offset
 				else
-					p1._props.CFrame = p0._props.CFrame * (pr.C0 or CF.identity) * (pr.Transform or CF.identity) * (pr.C1 or CF.identity):Inverse()
+					p1._props.CFrame = p0._props.CFrame * (c0 or CF.identity) * (pr.Transform or CF.identity) * (c1 or CF.identity):Inverse()
 				end
 				solved[p1] = true
 				progress = true

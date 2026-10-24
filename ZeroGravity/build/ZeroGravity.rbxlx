@@ -1721,7 +1721,98 @@ local function attach(char: Model, to: BasePart, name: string, size: Vector3, of
 	return p
 end
 
--- Space suit: recolours the body, removes clothing/accessories, adds helmet and life-support pack.
+-- Roblox's avatar joint upgrade builds characters with AnimationConstraint joints instead of
+-- Motor6Ds. The CharacterAnimator and the weapon mount are built on Motor6Ds (rigid joints posed
+-- through Transform on every client), so upgraded joints are converted back when a body spawns.
+-- (The place also opts out of the upgrade: StarterPlayer.AvatarJointUpgrade_SerializedRollout.)
+function CharacterService.UseMotorJoints(char: Model): number
+	local n = 0
+	for _, j in char:GetDescendants() do
+		if j:IsA("AnimationConstraint") then
+			local a0, a1 = j.Attachment0, j.Attachment1
+			local p0 = a0 and a0.Parent
+			local p1 = a1 and a1.Parent
+			if a0 and a1 and p0 and p1 and p0:IsA("BasePart") and p1:IsA("BasePart") then
+				local m = Instance.new("Motor6D")
+				m.Name = j.Name
+				m.Part0, m.Part1 = p0, p1
+				m.C0, m.C1 = a0.CFrame, a1.CFrame
+				m.Parent = p1
+				j:Destroy()
+				n += 1
+			end
+		end
+	end
+	return n
+end
+
+local BODY = {
+	"UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand",
+	"LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot",
+}
+
+-- A suit shell welded to a body part: "round" = smooth ellipsoid filling size, "ball" = sphere.
+local function shell(char: Model, to: BasePart, size: Vector3, offset: CFrame, color: Color3, material, kind: string)
+	local p = attach(char, to, "SuitPart", size, offset, color, material, if kind == "ball" then Enum.PartType.Ball else nil)
+	if kind == "round" then
+		local mesh = Instance.new("SpecialMesh")
+		mesh.MeshType = Enum.MeshType.Sphere
+		mesh.Parent = p
+	end
+	return p
+end
+
+-- Rounded pressure suit over the R15 body: each blocky body part is hidden and covered by smooth
+-- shells welded to it, with armoured balls on the shoulders, elbows and knees, plus gloves and
+-- boots, so the joints read clearly when the CharacterAnimator bends them. The hidden parts still
+-- collide and take hits. Sizes follow each part's own size, so scaled avatars fit too.
+local function suitBody(char: Model, suit)
+	local dark = Color3.fromRGB(46, 50, 58)
+	local function part(name: string): BasePart?
+		local p = char:FindFirstChild(name)
+		return if p and p:IsA("BasePart") then p else nil
+	end
+	local function round(p: BasePart, mul: Vector3, off: Vector3, color: Color3)
+		local sz = p.Size
+		shell(char, p, sz * mul, CFrame.new(sz * off), color, Enum.Material.SmoothPlastic, "round")
+	end
+	-- a joint ball centred on the joint's pivot (its rig attachment) or a fraction up the part
+	local function ball(p: BasePart, scale: number, attachment: string, fallbackY: number, color: Color3)
+		local a = p:FindFirstChild(attachment)
+		local at = if a and a:IsA("Attachment") then a.Position else Vector3.new(0, p.Size.Y * fallbackY, 0)
+		shell(char, p, Vector3.one * math.min(p.Size.X, p.Size.Z) * scale, CFrame.new(at), color, Enum.Material.Metal, "ball")
+	end
+	local ut, lt = part("UpperTorso"), part("LowerTorso")
+	if not (ut and lt) then return end -- R6 or a custom rig: keep the plain body
+	for _, n in BODY do
+		local p = part(n)
+		if p then p.Transparency = 1 end
+	end
+	round(ut, Vector3.new(1.02, 1.12, 1.35), Vector3.new(0, 0.04, 0), suit.suit)
+	round(lt, Vector3.new(0.95, 2.4, 1.25), Vector3.zero, dark)
+	for _, side in { "Left", "Right" } do
+		local ua, la, hand = part(side .. "UpperArm"), part(side .. "LowerArm"), part(side .. "Hand")
+		local ul, ll, foot = part(side .. "UpperLeg"), part(side .. "LowerLeg"), part(side .. "Foot")
+		if ua then
+			round(ua, Vector3.new(0.78, 1.05, 0.78), Vector3.zero, suit.suit)
+			ball(ua, 1.05, side .. "ShoulderRigAttachment", 0.3, suit.trim) -- shoulder pad
+		end
+		if la then
+			round(la, Vector3.new(0.7, 1.02, 0.7), Vector3.new(0, -0.03, 0), suit.suit)
+			ball(la, 0.8, side .. "ElbowRigAttachment", 0.3, dark) -- elbow joint
+		end
+		if hand then round(hand, Vector3.new(0.72, 2.6, 0.8), Vector3.new(0, -0.15, 0), dark) end -- glove
+		if ul then round(ul, Vector3.new(0.86, 1.08, 0.86), Vector3.zero, suit.suit) end
+		if ll then
+			round(ll, Vector3.new(0.78, 1.04, 0.78), Vector3.new(0, -0.03, 0), suit.suit)
+			ball(ll, 0.86, side .. "KneeRigAttachment", 0.3, suit.trim) -- knee pad
+		end
+		if foot then round(foot, Vector3.new(0.92, 2.8, 1.3), Vector3.new(0, 0.1, -0.08), dark) end -- boot
+	end
+end
+
+-- Space suit: removes clothing/accessories, replaces the body with a rounded pressure suit (above),
+-- and adds the helmet, collar, life-support pack and chest light.
 function CharacterService.ApplySuit(player: Player, char: Model, suitId: string?)
 	local suit = Cosmetics.GetSuit(suitId or tostring(player:GetAttribute("Suit") or "navy"))
 	for _, c in char:GetChildren() do
@@ -1743,7 +1834,7 @@ function CharacterService.ApplySuit(player: Player, char: Model, suitId: string?
 		local visor = attach(char, head, "SuitPart", Vector3.new(1.7, 0.9, 0.3), CFrame.new(0, 0.15, -1.05), Color3.fromRGB(60, 120, 200), Enum.Material.Glass)
 		visor.Transparency = 0.3
 		visor.Reflectance = 0.3
-		attach(char, head, "SuitPart", Vector3.new(0.35, 2.6, 2.6), CFrame.new(0, -0.95, 0) * CFrame.Angles(0, 0, math.rad(90)), suit.trim,
+		attach(char, head, "SuitPart", Vector3.new(0.3, 2.15, 2.15), CFrame.new(0, -0.92, 0) * CFrame.Angles(0, 0, math.rad(90)), suit.trim,
 			Enum.Material.Metal, Enum.PartType.Cylinder) -- neck ring
 	end
 	if torso then
@@ -1756,8 +1847,9 @@ function CharacterService.ApplySuit(player: Player, char: Model, suitId: string?
 		local pl = Instance.new("PointLight")
 		pl.Range, pl.Brightness, pl.Color = 10, 0.6, Color3.fromRGB(150, 200, 255)
 		pl.Parent = light
-		attach(char, torso, "SuitPart", Vector3.new(0.25, 1.4, 0.1), CFrame.new(0.35, 0, -0.52), suit.trim, Enum.Material.SmoothPlastic)
+		attach(char, torso, "SuitPart", Vector3.new(0.25, 1.1, 0.1), CFrame.new(0.32, 0.1, -0.64), suit.trim, Enum.Material.SmoothPlastic)
 	end
+	suitBody(char, suit)
 	-- Arms and legs are posed every frame by the CharacterAnimator; they must not shove the body
 	-- against walls while they swing (the root, torso and head keep their collisions).
 	for _, c in char:GetChildren() do
@@ -1819,11 +1911,16 @@ function CharacterService.Spawn(player: Player, cf: CFrame): Model?
 	if not char then return nil end
 	local root = char:WaitForChild("HumanoidRootPart", 5) :: BasePart?
 	if not root then return nil end
+	CharacterService.UseMotorJoints(char)
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	if hum then
 		hum.MaxHealth = Config.Health.Max
 		hum.Health = Config.Health.Max
 		hum.BreakJointsOnDeath = false -- the body stays in one piece and tumbles (CharacterAnimator)
+		if hum.RigType ~= Enum.HumanoidRigType.R15 then
+			warn("[ZG] " .. player.Name .. " spawned with an R6 body (no elbows or knees, so no zero-g animation). "
+				.. "Set Game Settings > Avatar > Avatar Type to R15.")
+		end
 	end
 	Security.Teleported(player)
 	char:PivotTo(cf)
@@ -1856,6 +1953,7 @@ function CharacterService.SpawnBot(bot, cf: CFrame, parent: Instance, displayNam
 		return nil
 	end
 	char.Name = bot.Name
+	CharacterService.UseMotorJoints(char)
 	local root = char:FindFirstChild("HumanoidRootPart") :: BasePart?
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	if not (root and hum) then
@@ -6733,7 +6831,7 @@ start("HazardService")
 start("BotService")
 start("MatchService")
 print("[ZG] server started")
-]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX59"><Properties><string name="Name">StarterPlayer</string><bool name="EnableMouseLockOption">false</bool><token name="GameSettingsAvatar">1</token></Properties><Item class="StarterPlayerScripts" referent="RBX55"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX43"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ZERO GRAVITY: LAST ORBIT - client bootstrap. Starts the controllers and routes server
+]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX59"><Properties><string name="Name">StarterPlayer</string><bool name="EnableMouseLockOption">false</bool><token name="GameSettingsAvatar">1</token><token name="AvatarJointUpgrade_SerializedRollout">1</token></Properties><Item class="StarterPlayerScripts" referent="RBX55"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX43"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ZERO GRAVITY: LAST ORBIT - client bootstrap. Starts the controllers and routes server
 -- messages (FX / Match / Inventory remotes) into ClientState signals and effects.
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
@@ -6988,10 +7086,44 @@ local function lerp(a: number, b: number, t: number): number
 	return a + (b - a) * t
 end
 
-local function motor(char: Model, part: string, name: string): Motor6D?
-	local p = char:FindFirstChild(part)
-	local j = p and p:FindFirstChild(name)
-	return if j and j:IsA("Motor6D") then j else nil
+-- A character joint. Classic rigs use Motor6Ds; Roblox's avatar joint upgrade uses
+-- AnimationConstraints instead (C0/C1 come from its attachments). Both are posed through Transform.
+-- (CharacterService converts upgraded joints back to Motor6Ds on spawn; this handles either.)
+local Joint = {}
+Joint.__index = function(self, k)
+	local inst = rawget(self, "inst")
+	if k == "C0" then
+		return if self.anim then inst.Attachment0.CFrame else inst.C0
+	elseif k == "C1" then
+		return if self.anim then inst.Attachment1.CFrame else inst.C1
+	elseif k == "Parent" then
+		return inst.Parent
+	end
+	return nil
+end
+Joint.__newindex = function(self, k, v)
+	if k == "Transform" then
+		(rawget(self, "inst") :: any).Transform = v
+	else
+		rawset(self, k, v)
+	end
+end
+
+-- Every posable joint in a character, keyed by the name of the body part it moves (its Part1), so
+-- joint names and where Roblox parents them don't matter.
+local function jointsOf(char: Model): ({ [string]: any }, number, number)
+	local byPart, motors, constraints = {}, 0, 0
+	for _, d in char:GetDescendants() do
+		if d:IsA("Motor6D") then
+			motors += 1
+			if d.Part1 and d.Part0 and d.Name ~= "WeaponMount" then byPart[d.Part1.Name] = setmetatable({ inst = d, anim = false }, Joint) end
+		elseif d:IsA("AnimationConstraint") then
+			constraints += 1
+			local a0, a1 = d.Attachment0, d.Attachment1
+			if a0 and a1 and a1.Parent and a1.Parent:IsA("BasePart") then byPart[a1.Parent.Name] = setmetatable({ inst = d, anim = true }, Joint) end
+		end
+	end
+	return byPart, motors, constraints
 end
 
 -- Rotation taking local direction a onto ta, and the component of b perpendicular to a onto the
@@ -7005,13 +7137,16 @@ local function basis(a: Vector3, b: Vector3, ta: Vector3, tb: Vector3): CFrame
 	return CFrame.fromMatrix(Vector3.zero, v1, v2, v1:Cross(v2)) * CFrame.fromMatrix(Vector3.zero, u1, u2, u1:Cross(u2)):Inverse()
 end
 
+local warned: { [string]: boolean } = {}
+
 local function newRig(char: Model)
 	local root = char:FindFirstChild("HumanoidRootPart") :: BasePart?
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	if not (root and hum) then return nil end
+	local J, motors, constraints = jointsOf(char)
 	local r = {
 		char = char, root = root, hum = hum,
-		rootJ = motor(char, "LowerTorso", "Root"), waist = motor(char, "UpperTorso", "Waist"), neck = motor(char, "Head", "Neck"),
+		rootJ = J.LowerTorso, waist = J.UpperTorso, neck = J.Head,
 		legs = {}, arms = {},
 		phase = math.random() * 20, acc = 0,
 		s = { fwd = 0, side = 0, up = 0, boost = 0, aim = 0, armed = 0, dead = 0 },
@@ -7019,19 +7154,20 @@ local function newRig(char: Model)
 		rollAt = char:GetAttribute("RollAt"), diedAt = nil :: number?,
 	}
 	for side in SIDES do
-		r.legs[side] = {
-			hip = motor(char, side .. "UpperLeg", side .. "Hip"), knee = motor(char, side .. "LowerLeg", side .. "Knee"),
-			ankle = motor(char, side .. "Foot", side .. "Ankle"),
-		}
+		r.legs[side] = { hip = J[side .. "UpperLeg"], knee = J[side .. "LowerLeg"], ankle = J[side .. "Foot"] }
 		local hand = char:FindFirstChild(side .. "Hand") :: BasePart?
 		local grip = hand and hand:FindFirstChild(side .. "GripAttachment") :: Attachment?
 		r.arms[side] = {
-			shoulder = motor(char, side .. "UpperArm", side .. "Shoulder"), elbow = motor(char, side .. "LowerArm", side .. "Elbow"),
-			wrist = motor(char, side .. "Hand", side .. "Wrist"),
+			shoulder = J[side .. "UpperArm"], elbow = J[side .. "LowerArm"], wrist = J[side .. "Hand"],
 			gripPos = if grip then grip.Position elseif hand then Vector3.new(0, -hand.Size.Y * 0.5, 0) else Vector3.zero,
 		}
 	end
 	r.r15 = r.rootJ ~= nil and r.waist ~= nil
+	if not r.r15 and char:FindFirstChild("LowerTorso") and not warned[char.Name] then
+		warned[char.Name] = true
+		warn(string.format("[ZG] animator: %s has no usable R15 joints (%d Motor6D, %d AnimationConstraint) - it will not be animated",
+			char.Name, motors, constraints))
+	end
 	return r
 end
 
@@ -7091,8 +7227,8 @@ local function poseLegs(r, t: number, life: number, speed: number)
 		local L = r.legs[side]
 		if L.hip and L.knee then
 			local flutter = math.sin(t * (1.5 + 2.5 * math.min(speed, 1)) + (sign > 0 and 0 or math.pi)) * (0.16 - 0.1 * s.boost) * life
-			local hip = 0.3 - 0.85 * fwdOn + 0.6 * backOn - 0.25 * upOn + 0.8 * downOn - 0.55 * s.boost + flutter
-			local knee = 0.5 - 0.3 * fwdOn + 0.45 * backOn - 0.3 * upOn + 0.9 * downOn - 0.35 * s.boost + flutter * 0.7
+			local hip = 0.3 - 0.85 * fwdOn + 0.6 * backOn - 0.25 * upOn + 1.0 * downOn - 0.55 * s.boost + flutter
+			local knee = 0.5 - 0.3 * fwdOn + 0.45 * backOn - 0.3 * upOn + 1.3 * downOn - 0.35 * s.boost + flutter * 0.7
 			local spread = sign * 0.07 - 0.35 * math.clamp(s.side, -1, 1)
 			hip = lerp(math.clamp(hip, -1.1, 1.7), 0.45, s.dead)
 			knee = lerp(math.clamp(knee, 0.05, 2.0), 0.7, s.dead)
@@ -7273,6 +7409,15 @@ end
 
 function Anim.Start()
 	RunService.PreSimulation:Connect(step)
+	-- one line in Output so a playtest shows whether characters are being posed
+	task.delay(6, function()
+		local n, posed = 0, 0
+		for _, r in rigs do
+			n += 1
+			if r.r15 then posed += 1 end
+		end
+		print(string.format("[ZG] animator: posing %d of %d characters", posed, n))
+	end)
 end
 
 return Anim

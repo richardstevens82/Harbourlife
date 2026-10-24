@@ -42,10 +42,44 @@ local function lerp(a: number, b: number, t: number): number
 	return a + (b - a) * t
 end
 
-local function motor(char: Model, part: string, name: string): Motor6D?
-	local p = char:FindFirstChild(part)
-	local j = p and p:FindFirstChild(name)
-	return if j and j:IsA("Motor6D") then j else nil
+-- A character joint. Classic rigs use Motor6Ds; Roblox's avatar joint upgrade uses
+-- AnimationConstraints instead (C0/C1 come from its attachments). Both are posed through Transform.
+-- (CharacterService converts upgraded joints back to Motor6Ds on spawn; this handles either.)
+local Joint = {}
+Joint.__index = function(self, k)
+	local inst = rawget(self, "inst")
+	if k == "C0" then
+		return if self.anim then inst.Attachment0.CFrame else inst.C0
+	elseif k == "C1" then
+		return if self.anim then inst.Attachment1.CFrame else inst.C1
+	elseif k == "Parent" then
+		return inst.Parent
+	end
+	return nil
+end
+Joint.__newindex = function(self, k, v)
+	if k == "Transform" then
+		(rawget(self, "inst") :: any).Transform = v
+	else
+		rawset(self, k, v)
+	end
+end
+
+-- Every posable joint in a character, keyed by the name of the body part it moves (its Part1), so
+-- joint names and where Roblox parents them don't matter.
+local function jointsOf(char: Model): ({ [string]: any }, number, number)
+	local byPart, motors, constraints = {}, 0, 0
+	for _, d in char:GetDescendants() do
+		if d:IsA("Motor6D") then
+			motors += 1
+			if d.Part1 and d.Part0 and d.Name ~= "WeaponMount" then byPart[d.Part1.Name] = setmetatable({ inst = d, anim = false }, Joint) end
+		elseif d:IsA("AnimationConstraint") then
+			constraints += 1
+			local a0, a1 = d.Attachment0, d.Attachment1
+			if a0 and a1 and a1.Parent and a1.Parent:IsA("BasePart") then byPart[a1.Parent.Name] = setmetatable({ inst = d, anim = true }, Joint) end
+		end
+	end
+	return byPart, motors, constraints
 end
 
 -- Rotation taking local direction a onto ta, and the component of b perpendicular to a onto the
@@ -59,13 +93,16 @@ local function basis(a: Vector3, b: Vector3, ta: Vector3, tb: Vector3): CFrame
 	return CFrame.fromMatrix(Vector3.zero, v1, v2, v1:Cross(v2)) * CFrame.fromMatrix(Vector3.zero, u1, u2, u1:Cross(u2)):Inverse()
 end
 
+local warned: { [string]: boolean } = {}
+
 local function newRig(char: Model)
 	local root = char:FindFirstChild("HumanoidRootPart") :: BasePart?
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	if not (root and hum) then return nil end
+	local J, motors, constraints = jointsOf(char)
 	local r = {
 		char = char, root = root, hum = hum,
-		rootJ = motor(char, "LowerTorso", "Root"), waist = motor(char, "UpperTorso", "Waist"), neck = motor(char, "Head", "Neck"),
+		rootJ = J.LowerTorso, waist = J.UpperTorso, neck = J.Head,
 		legs = {}, arms = {},
 		phase = math.random() * 20, acc = 0,
 		s = { fwd = 0, side = 0, up = 0, boost = 0, aim = 0, armed = 0, dead = 0 },
@@ -73,19 +110,20 @@ local function newRig(char: Model)
 		rollAt = char:GetAttribute("RollAt"), diedAt = nil :: number?,
 	}
 	for side in SIDES do
-		r.legs[side] = {
-			hip = motor(char, side .. "UpperLeg", side .. "Hip"), knee = motor(char, side .. "LowerLeg", side .. "Knee"),
-			ankle = motor(char, side .. "Foot", side .. "Ankle"),
-		}
+		r.legs[side] = { hip = J[side .. "UpperLeg"], knee = J[side .. "LowerLeg"], ankle = J[side .. "Foot"] }
 		local hand = char:FindFirstChild(side .. "Hand") :: BasePart?
 		local grip = hand and hand:FindFirstChild(side .. "GripAttachment") :: Attachment?
 		r.arms[side] = {
-			shoulder = motor(char, side .. "UpperArm", side .. "Shoulder"), elbow = motor(char, side .. "LowerArm", side .. "Elbow"),
-			wrist = motor(char, side .. "Hand", side .. "Wrist"),
+			shoulder = J[side .. "UpperArm"], elbow = J[side .. "LowerArm"], wrist = J[side .. "Hand"],
 			gripPos = if grip then grip.Position elseif hand then Vector3.new(0, -hand.Size.Y * 0.5, 0) else Vector3.zero,
 		}
 	end
 	r.r15 = r.rootJ ~= nil and r.waist ~= nil
+	if not r.r15 and char:FindFirstChild("LowerTorso") and not warned[char.Name] then
+		warned[char.Name] = true
+		warn(string.format("[ZG] animator: %s has no usable R15 joints (%d Motor6D, %d AnimationConstraint) - it will not be animated",
+			char.Name, motors, constraints))
+	end
 	return r
 end
 
@@ -145,8 +183,8 @@ local function poseLegs(r, t: number, life: number, speed: number)
 		local L = r.legs[side]
 		if L.hip and L.knee then
 			local flutter = math.sin(t * (1.5 + 2.5 * math.min(speed, 1)) + (sign > 0 and 0 or math.pi)) * (0.16 - 0.1 * s.boost) * life
-			local hip = 0.3 - 0.85 * fwdOn + 0.6 * backOn - 0.25 * upOn + 0.8 * downOn - 0.55 * s.boost + flutter
-			local knee = 0.5 - 0.3 * fwdOn + 0.45 * backOn - 0.3 * upOn + 0.9 * downOn - 0.35 * s.boost + flutter * 0.7
+			local hip = 0.3 - 0.85 * fwdOn + 0.6 * backOn - 0.25 * upOn + 1.0 * downOn - 0.55 * s.boost + flutter
+			local knee = 0.5 - 0.3 * fwdOn + 0.45 * backOn - 0.3 * upOn + 1.3 * downOn - 0.35 * s.boost + flutter * 0.7
 			local spread = sign * 0.07 - 0.35 * math.clamp(s.side, -1, 1)
 			hip = lerp(math.clamp(hip, -1.1, 1.7), 0.45, s.dead)
 			knee = lerp(math.clamp(knee, 0.05, 2.0), 0.7, s.dead)
@@ -327,6 +365,15 @@ end
 
 function Anim.Start()
 	RunService.PreSimulation:Connect(step)
+	-- one line in Output so a playtest shows whether characters are being posed
+	task.delay(6, function()
+		local n, posed = 0, 0
+		for _, r in rigs do
+			n += 1
+			if r.r15 then posed += 1 end
+		end
+		print(string.format("[ZG] animator: posing %d of %d characters", posed, n))
+	end)
 end
 
 return Anim

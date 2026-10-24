@@ -1111,6 +1111,72 @@ test("other clients see aiming, shots and rolls; bots are animated the same way"
 	check(#Mock.errors == 0, "errors: %s", table.concat(Mock.errors, "; "))
 end)
 
+test("Roblox's avatar joint upgrade: AnimationConstraint joints become Motor6Ds on spawn", function()
+	Mock.jointUpgrade = true
+	local up = Mock.addPlayer("Upgraded", 77)
+	Mock.advance(3) -- the server loads the profile and spawns the player in the lobby
+	Mock.jointUpgrade = false
+	local char = up.Character
+	check(char ~= nil, "upgraded player did not spawn")
+	local motors, constraints, root = 0, 0, nil
+	for _, d in char:GetDescendants() do
+		if d.ClassName == "AnimationConstraint" then constraints += 1 end
+		if d.ClassName == "Motor6D" and d.Name ~= "WeaponMount" then
+			motors += 1
+			if d.Name == "Root" then root = d end
+		end
+	end
+	check(constraints == 0, "%d AnimationConstraints left", constraints)
+	check(motors == 15 and root ~= nil, "expected 15 Motor6D joints, got %d", motors)
+	check(root.Part0 == char.HumanoidRootPart and root.Part1 == char.LowerTorso, "Root joint parts wrong")
+	check((root.C0.p - char.HumanoidRootPart.RootRigAttachment.Position).Magnitude < 1e-6, "Root C0 does not match its attachment")
+	Mock.removePlayer(up)
+end)
+
+test("the animator also drives AnimationConstraint joints directly (no conversion)", function()
+	Mock.jointUpgrade = true
+	local rig = Mock.buildRig("UpgradedBot", CF.new(-40, 500, 0))
+	Mock.jointUpgrade = false
+	rig.Parent = Mock.workspace:FindFirstChild("BotCharacters")
+	CharacterService.SetWeaponVisual({ Character = rig }, "burst", "rare")
+	rig:SetAttribute("Aiming", true)
+	animate(rig, 0.5)
+	local r, l = handGaps(rig)
+	check(r < 0.05 and l < 0.12, "hands off the gun on an upgraded rig (%.2f / %.2f)", r, l)
+	rig:Destroy()
+end)
+
+test("rounded pressure suit: blocky parts hidden, smooth shells with knee, elbow and shoulder joints that follow the limbs", function()
+	local hidden, shells, balls = 0, 0, 0
+	for _, n in { "UpperTorso", "LowerTorso", "RightUpperArm", "RightLowerArm", "RightHand", "RightUpperLeg", "RightLowerLeg", "RightFoot",
+		"LeftUpperArm", "LeftLowerArm", "LeftHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" } do
+		if pilot:FindFirstChild(n).Transparency == 1 then hidden += 1 end
+	end
+	local kneeBall
+	for _, c in pilot:GetChildren() do
+		if c.Name == "SuitPart" then
+			local mesh = c:FindFirstChildOfClass("SpecialMesh")
+			if mesh and mesh.MeshType == Mock.GLOBAL.Enum.MeshType.Sphere then shells += 1 end
+			if c.Shape == Mock.GLOBAL.Enum.PartType.Ball and c.Size.X < 1.5 then
+				balls += 1
+				local knee = pilot.RightLowerLeg:FindFirstChild("RightKneeRigAttachment")
+				if (c._props.CFrame.p - pilot.RightLowerLeg._props.CFrame * knee._props.Position).Magnitude < 0.05 then kneeBall = c end
+			end
+			check(c.CanQuery == false and c.CanCollide == false, "suit shell %s blocks shots or collides", c.Name)
+		end
+	end
+	check(hidden == 14, "only %d of 14 body parts hidden", hidden)
+	check(shells >= 14, "only %d smooth shells", shells)
+	check(balls >= 6, "only %d shoulder/elbow/knee joints", balls)
+	check(kneeBall ~= nil, "no knee pad on the right knee")
+	-- bend the knee hard: the pad stays on the joint (welded to the lower leg)
+	setVel(V3.new(0, -38, 0))
+	animate(pilot, 1, function() setVel(V3.new(0, -38, 0)) end)
+	local knee = pilot.RightLowerLeg._props.CFrame * pilot.RightLowerLeg:FindFirstChild("RightKneeRigAttachment")._props.Position
+	check((kneeBall._props.CFrame.p - knee).Magnitude < 0.05, "knee pad left the knee when it bent")
+	setVel(V3.zero)
+end)
+
 test("eliminated bodies go limp and tumble", function()
 	local h = pilot:FindFirstChildOfClass("Humanoid")
 	CharacterService.SetWeaponVisual(localPlayer, nil)
