@@ -279,9 +279,9 @@ local function runMatch()
 		if i > M.MaxPlayers then break end
 		table.insert(participants, p)
 	end
-	-- top up with bots so every match is full
+	-- top up with bots so every match is full (exactly MaxPlayers combatants)
 	if Config.Bots.Enabled then
-		Bots.Rebalance()
+		Bots.Rebalance(#participants)
 		for _, b in Bots.ForMatch(M.MaxPlayers - #participants) do table.insert(participants, b) end
 	end
 	Loot.Seed()
@@ -325,7 +325,7 @@ local function runMatch()
 	participants = deployed
 	task.wait(1.5)
 	updateCounts()
-	SafeZone.Begin(finalPos)
+	SafeZone.Begin(finalPos, #participants > 1)
 	Remotes.FX:FireAllClients({ t = "notice", text = "DEPLOYED - " .. #participants .. " combatants. Last one in orbit wins.", color = Color3.fromRGB(110, 190, 255), sound = "start" })
 
 	-- ACTIVE / FINAL ---------------------------------------------------------------------------------
@@ -336,7 +336,10 @@ local function runMatch()
 	for _, p in participants do
 		if not Roster.IsBot(p) then humans += 1 end
 	end
-	local humansOut = false
+	-- Last one standing wins. If every real player is out, or the match runs long, the storm collapses
+	-- so the remaining fight is decided quickly; the hard cap is only a safety net.
+	local collapseHumansOut = Config.Bots.Enabled and Config.Bots.CollapseWhenHumansOut or 0
+	local hardCap = M.MaxMatchTime + M.SuddenDeathTime + 60
 	while true do
 		task.wait(0.5)
 		updateCounts()
@@ -349,17 +352,18 @@ local function runMatch()
 			setPhase("Final")
 			Remotes.FX:FireAllClients({ t = "notice", text = "FINAL COMBAT PHASE", color = Color3.fromRGB(255, 120, 60), sound = "alarm" })
 		end
-		-- Every real player is out: don't keep them waiting in the lobby while bots finish the match.
-		if Config.Bots.Enabled and Config.Bots.EndWhenHumansOut and humans > 0 and teams > 1 then
-			humansOut = true
+		if not SafeZone.IsCollapsing() and teams > 1 then
+			local humansAlive = 0
 			for _, p in aliveList do
-				if not Roster.IsBot(p) then
-					humansOut = false
-					break
-				end
+				if not Roster.IsBot(p) then humansAlive += 1 end
+			end
+			if humans > 0 and humansAlive == 0 and collapseHumansOut > 0 then
+				SafeZone.Collapse(collapseHumansOut, M.CollapseDps) -- don't keep the eliminated waiting on a bots-only fight
+			elseif os.clock() - matchStart > M.MaxMatchTime then
+				SafeZone.Collapse(M.SuddenDeathTime, M.CollapseDps)
 			end
 		end
-		if (solo and alive == 0) or (not solo and teams <= 1) or humansOut or os.clock() - matchStart > M.MaxMatchTime then
+		if (solo and alive == 0) or (not solo and teams <= 1) or os.clock() - matchStart > hardCap then
 			break
 		end
 	end
@@ -380,16 +384,13 @@ local function runMatch()
 	elseif #aliveNow == 1 then
 		winner = aliveNow[1]
 	elseif #aliveNow > 1 then
-		-- time limit: highest health wins; bots-only remainder (every real player out): most kills, then health
+		-- safety cap only (the collapse normally leaves one survivor): highest health wins
 		local best = -1
 		for _, p in aliveNow do
 			local hum = p.Character and p.Character:FindFirstChildOfClass("Humanoid")
-			local score = (hum and hum.Health or 0) + (if humansOut then Roster.Get(p).kills * 1000 else 0)
-			if score > best then best, winner = score, p end
+			local hp = hum and hum.Health or 0
+			if hp > best then best, winner = hp, p end
 		end
-	end
-	if humansOut then
-		Remotes.FX:FireAllClients({ t = "notice", text = "ALL PILOTS DOWN - MATCH OVER", color = Color3.fromRGB(255, 120, 60) })
 	end
 	setPhase("Ending", 4)
 	stateObj:SetAttribute("Winner", winner and winner.Name or "")

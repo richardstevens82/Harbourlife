@@ -9,12 +9,14 @@ Config.Match = {
 	MinPlayers = 2, -- real players needed when bots are disabled
 	MaxPlayers = 20,
 	StudioMinPlayers = 1, -- solo testing in Studio: a match with one player ends when the zone wins
-	LobbyCountdown = 20,
+	LobbyCountdown = 30, -- every round: 30 s in the lobby, then 20 combatants deploy (real players first, bots fill the rest)
 	PrepareTime = 3,
 	DeployProtection = 4, -- seconds of invulnerability after deployment
 	FinalPhaseAtPlayers = 3, -- "final combat phase" begins at this many survivors (or final zone stage)
 	ResultsTime = 12,
-	MaxMatchTime = 15 * 60,
+	MaxMatchTime = 15 * 60, -- then the storm collapses (sudden death) until one combatant is left
+	SuddenDeathTime = 30, -- seconds for the sudden-death collapse
+	CollapseDps = 30, -- storm damage per second during a collapse
 	DeploySpacing = 160, -- minimum distance between two deployment points used in one match
 	TeamSize = 1, -- solo; squads would raise this (MatchService groups players by team id)
 }
@@ -24,7 +26,7 @@ Config.Match = {
 Config.Bots = {
 	Enabled = true,
 	FillTo = 20,
-	MinRealPlayers = 1, -- with bots on, one queued player is enough to start a full match
+	MinRealPlayers = 0, -- with bots on a match always starts after the countdown (bots-only if nobody is queued)
 	SkillMin = 0.72, -- 0..1; shapes reaction time, aim error/settling, headshots, strafing
 	SkillMax = 0.93,
 	ShowTag = true, -- "[BOT]" after bot name tags (set false to hide)
@@ -32,7 +34,9 @@ Config.Bots = {
 	SightRange = 450,
 	HuntRange = 1100, -- bots track enemies this far away when nothing else needs doing
 	LobbyPractice = true, -- bots shoot the lobby range drones between matches
-	EndWhenHumansOut = true, -- once every real player is eliminated, end the match (no waiting on a bots-only fight)
+	-- Once every real player is eliminated the storm collapses over this many seconds, so the bots-only
+	-- remainder is decided quickly - still last one standing. 0 = let the match play out normally.
+	CollapseWhenHumansOut = 25,
 }
 
 -- Arena geometry (studs). Arena is centred on the origin.
@@ -56,6 +60,11 @@ Config.Movement = {
 	Drag = 0.08, -- tiny passive decay so a drifting player eventually settles; momentum still dominates
 	StopThreshold = 0.6,
 	TurnResponsiveness = 35,
+	-- Air roll (Q / E): a barrel-roll dodge that throws you sideways
+	RollImpulse = 34, -- studs/s added sideways (bleeds back to cruise like any overspeed)
+	RollCost = 22, -- boost energy
+	RollCooldown = 0.9,
+	RollTime = 0.5, -- length of the barrel-roll animation
 	-- Server sanity limits (with allowance for tether pulls and network jitter)
 	ServerSpeedTolerance = 1.35,
 	ServerCheckInterval = 0.5,
@@ -128,6 +137,14 @@ Config.Melee = {
 	Range = 8,
 	Damage = 35,
 	Cooldown = 0.8,
+}
+
+-- Character presentation: weapon size in the hands and where the gun sits when shouldered.
+Config.Character = {
+	HeldWeaponScale = 0.45, -- weapon models are built at display size; this scales them to the body
+	-- Grip (right hand) position relative to the HumanoidRootPart while aiming; the barrel points along
+	-- the root's look direction, which follows the camera. The animator lowers it to "ready" otherwise.
+	AimGrip = CFrame.new(0.4, 0.55, -0.9),
 }
 
 -- Lag compensation: a player aims at where their screen shows a target, which is where the server
@@ -549,8 +566,10 @@ function Weapons.DamageAt(id: string, rarity: string, distance: number): number
 end
 
 return Weapons
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX11"><Properties><string name="Name">WeaponModels</string><ProtectedString name="Source"><![CDATA[-- Procedural weapon models (shared: the server welds them to characters, the lobby shows them on
--- display pedestals). Each model has a PrimaryPart "Handle" and an Attachment "Muzzle" on the barrel.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX11"><Properties><string name="Name">WeaponModels</string><ProtectedString name="Source"><![CDATA[-- Procedural weapon models (shared: the server mounts them on characters, the lobby shows them on
+-- display pedestals). Each model has a PrimaryPart "Handle" with two Attachments for the hands -
+-- "Grip" (right hand, on the pistol grip) and "Support" (left hand, on the handguard) - and an
+-- Attachment "Muzzle" on the barrel.
 local Weapons = require(script.Parent.WeaponDefinitions)
 local Items = require(script.Parent.ItemDefinitions)
 
@@ -574,8 +593,9 @@ local function part(model: Model, name: string, size: Vector3, cf: CFrame, color
 	return p
 end
 
--- Builds the model at the origin, barrel pointing along -Z (Handle's LookVector).
-function Models.Build(id: string, rarity: string?): Model
+-- Builds the model at the origin, barrel pointing along -Z (Handle's LookVector). scale shrinks the
+-- whole model (display pieces use 1; guns in a character's hands use Config.Character.HeldWeaponScale).
+function Models.Build(id: string, rarity: string?, scale: number?): Model
 	local def = Weapons.Get(id)
 	local m = Instance.new("Model")
 	m.Name = "Weapon_" .. id
@@ -620,6 +640,29 @@ function Models.Build(id: string, rarity: string?): Model
 	muzzle.Name = "Muzzle"
 	muzzle.Parent = receiver
 	muzzle.WorldPosition = Vector3.new(0, 0.2, barrelZ - barrelLen / 2 - 0.1)
+	-- Hand points (Handle space; the Handle sits at (0, -0.1, 0.35) with no rotation). The support hand
+	-- holds the handguard about half way along the receiver, or cups the grip hand on a pistol.
+	local grip = Instance.new("Attachment")
+	grip.Name = "Grip"
+	grip.Position = Vector3.new(0, -0.35, 0)
+	grip.Parent = handle
+	local support = Instance.new("Attachment")
+	support.Name = "Support"
+	support.Position = if id == "pistol" then Vector3.new(-0.3, -0.42, -0.12) else Vector3.new(0, -0.15, -math.min(len * 0.55 - 0.25, 2.1))
+	support.Parent = handle
+	-- Scale before welding: moving a welded part would drag the whole assembly with it.
+	local k = scale or 1
+	if k ~= 1 then
+		for _, p in m:GetChildren() do
+			if p:IsA("BasePart") then
+				p.Size *= k
+				p.CFrame = p.CFrame.Rotation + p.CFrame.Position * k
+			end
+		end
+		for _, a in m:GetDescendants() do
+			if a:IsA("Attachment") then a.Position *= k end
+		end
+	end
 	-- Weld everything to the handle so the model moves as one assembly.
 	for _, p in m:GetChildren() do
 		if p:IsA("BasePart") and p ~= handle then
@@ -832,6 +875,7 @@ local function newBrain()
 		nextGrenadeAt = 0, nextEquipAt = 0, nextUseAt = 0,
 		lobbyGoal = nil, lobbyWaitUntil = 0, practiceAt = 0, practiceShots = 0,
 		avoidDir = nil, avoidUntil = 0,
+		nextRollAt = 0, aimingShown = false,
 	}
 end
 
@@ -932,14 +976,16 @@ function Bots.ForMatch(n: number): { any }
 end
 
 -- Keep (players + bots) at FillTo. Only lobby bots are removed; match bots finish their match.
-function Bots.Rebalance()
+-- realPlayers defaults to everyone online; MatchService passes the queued count at deployment so
+-- every match has exactly FillTo combatants.
+function Bots.Rebalance(realPlayers: number?)
 	if not B.Enabled then
 		for i = #bots, 1, -1 do
 			if not Roster.Get(bots[i]).inMatch then Bots.Remove(bots[i]) end
 		end
 		return
 	end
-	local want = math.max(0, B.FillTo - #Players:GetPlayers())
+	local want = math.max(0, B.FillTo - (realPlayers or #Players:GetPlayers()))
 	while #bots < want do
 		Bots.ToLobby(newBot())
 	end
@@ -1562,8 +1608,30 @@ local function step(dt: number)
 				local ok, err = pcall(fireStep, bot, root)
 				if not ok then warn("[ZG] bot " .. bot.Name .. " fire error: " .. tostring(err)) end
 			end
+			-- shoulder the gun while fighting (clients animate it from the character attribute)
+			local aiming = brain.wantFire or brain.task == "fight"
+			if aiming ~= brain.aimingShown then
+				brain.aimingShown = aiming
+				Combat.Aim(bot, aiming)
+			end
 		end
 	end
+end
+
+-- Air roll dodge under fire, like a player's Q / E: same impulse, energy cost and cooldown. Better
+-- bots roll more often.
+local function maybeRoll(bot)
+	local brain = bot.brain
+	local now = os.clock()
+	if brain.mode ~= "match" or now < brain.nextRollAt or brain.energy < MV.RollCost or rng:NextNumber() > 0.2 + 0.4 * bot.skill then return end
+	local root = rootOf(bot)
+	if not root then return end
+	local dir = if brain.strafe >= 0 then 1 else -1
+	if not Combat.Roll(bot, dir) then return end
+	brain.nextRollAt = now + MV.RollCooldown + rng:NextNumber(1.5, 3.5)
+	brain.energy -= MV.RollCost
+	brain.lastBoostUse = now
+	root.AssemblyLinearVelocity += root.CFrame.RightVector * dir * MV.RollImpulse
 end
 
 -- Server messages addressed to a bot (via Remotes.BotSink): react to damage and impulses.
@@ -1573,6 +1641,7 @@ local function onMessage(bot, remote: string, msg)
 	if msg.t == "damaged" then
 		brain.hurtAt = os.clock()
 		brain.threatPos = msg.from
+		if msg.cause == "weapon" then maybeRoll(bot) end
 	elseif msg.t == "impulse" then
 		local root = rootOf(bot)
 		if root then
@@ -1689,6 +1758,13 @@ function CharacterService.ApplySuit(player: Player, char: Model, suitId: string?
 		pl.Parent = light
 		attach(char, torso, "SuitPart", Vector3.new(0.25, 1.4, 0.1), CFrame.new(0.35, 0, -0.52), suit.trim, Enum.Material.SmoothPlastic)
 	end
+	-- Arms and legs are posed every frame by the CharacterAnimator; they must not shove the body
+	-- against walls while they swing (the root, torso and head keep their collisions).
+	for _, c in char:GetChildren() do
+		if c:IsA("BasePart") and (string.find(c.Name, "Arm") or string.find(c.Name, "Leg") or string.find(c.Name, "Hand") or string.find(c.Name, "Foot")) then
+			c.CanCollide = false
+		end
+	end
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	if hum then
 		hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.Viewer
@@ -1698,7 +1774,11 @@ function CharacterService.ApplySuit(player: Player, char: Model, suitId: string?
 	end
 end
 
--- Weapon visual welded in front of the chest (the character's body follows the aim direction).
+-- Held weapon. The gun is mounted on the HumanoidRootPart with a Motor6D ("WeaponMount") so that it
+-- always points where the body aims (the root follows the camera, or a bot's aim). C0 puts the
+-- weapon's Grip attachment at the shouldered-aim position; every client's CharacterAnimator moves
+-- the gun between ready and aim with the mount's Transform and puts the hands on Grip and Support
+-- with IK, so the server copy (used for bot muzzle positions) is the aim pose.
 function CharacterService.SetWeaponVisual(player: Player, weaponId: string?, rarity: string?)
 	local char = player.Character
 	if not char then return end
@@ -1706,19 +1786,21 @@ function CharacterService.SetWeaponVisual(player: Player, weaponId: string?, rar
 	if old then old:Destroy() end
 	local root = char:FindFirstChild("HumanoidRootPart") :: BasePart?
 	if not (weaponId and root) then return end
-	local m = WeaponModels.Build(weaponId, rarity)
+	local m = WeaponModels.Build(weaponId, rarity, Config.Character.HeldWeaponScale)
 	m.Name = "HeldWeapon"
 	m:SetAttribute("WeaponId", weaponId)
-	m:PivotTo(root.CFrame * CFrame.new(1.0, 0.5, -1.4))
+	local handle = m.PrimaryPart :: BasePart
+	local grip = handle:FindFirstChild("Grip") :: Attachment
+	local aim = Config.Character.AimGrip
+	m:PivotTo(root.CFrame * aim * grip.CFrame:Inverse())
 	m.Parent = char
-	weld(root, m.PrimaryPart :: BasePart)
-	-- Raise the right arm toward the weapon (R15 only; R6 keeps the default pose)
-	local upper = char:FindFirstChild("RightUpperArm")
-	local shoulder = upper and upper:FindFirstChild("RightShoulder") :: Motor6D?
-	if shoulder then
-		if shoulder:GetAttribute("BaseC0") == nil then shoulder:SetAttribute("BaseC0", shoulder.C0) end
-		shoulder.C0 = (shoulder:GetAttribute("BaseC0") :: CFrame) * CFrame.Angles(math.rad(80), 0, 0)
-	end
+	local mount = Instance.new("Motor6D")
+	mount.Name = "WeaponMount"
+	mount.Part0 = root
+	mount.Part1 = handle
+	mount.C0 = aim
+	mount.C1 = grip.CFrame
+	mount.Parent = handle
 end
 
 -- Loads a fresh character and places it at cf. Returns the character (or nil if superseded).
@@ -1741,6 +1823,7 @@ function CharacterService.Spawn(player: Player, cf: CFrame): Model?
 	if hum then
 		hum.MaxHealth = Config.Health.Max
 		hum.Health = Config.Health.Max
+		hum.BreakJointsOnDeath = false -- the body stays in one piece and tumbles (CharacterAnimator)
 	end
 	Security.Teleported(player)
 	char:PivotTo(cf)
@@ -1844,7 +1927,7 @@ Combat.OnTargetDamaged = nil :: ((BasePart, number, Player?) -> ())? -- set by H
 local function st(player: Player)
 	local s = state[player]
 	if not s then
-		s = { lastShot = 0, burstStart = 0, burstShots = 0, reloadUntil = 0, reloadSerial = 0, equipAt = 0, lastMelee = 0 }
+		s = { lastShot = 0, burstStart = 0, burstShots = 0, reloadUntil = 0, reloadSerial = 0, equipAt = 0, lastMelee = 0, lastRoll = -math.huge }
 		state[player] = s
 	end
 	return s
@@ -2057,7 +2140,7 @@ local function onFire(player: Player, req)
 	-- Tracers for everyone else (the shooter already drew its own locally)
 	for _, p in Players:GetPlayers() do
 		if p ~= player then
-			Remotes.FX:FireClient(p, { t = "tracer", from = origin, ends = ends, weapon = weapon.id, shooter = player })
+			Remotes.FX:FireClient(p, { t = "tracer", from = origin, ends = ends, weapon = weapon.id, shooter = char })
 		end
 	end
 	if weapon.mag ~= req.expectMag then
@@ -2154,11 +2237,34 @@ function Combat.ResetPlayer(player: Player)
 	state[player] = nil
 end
 
+-- Presentation state other clients animate from (CharacterAnimator): aiming down sights, and air
+-- rolls. Movement itself is the owner's physics; these only drive the poses everyone else sees.
+function Combat.Aim(c, aiming: boolean)
+	local char = c.Character
+	if char and char:GetAttribute("Aiming") ~= aiming then char:SetAttribute("Aiming", aiming) end
+end
+
+function Combat.Roll(c, dir: number): boolean
+	if dir ~= 1 and dir ~= -1 then return false end
+	local s = st(c)
+	local now = os.clock()
+	local char = c.Character
+	if not char or now - s.lastRoll < Config.Movement.RollCooldown * 0.8 then return false end
+	s.lastRoll = now
+	char:SetAttribute("RollDir", dir)
+	char:SetAttribute("RollAt", workspace:GetServerTimeNow())
+	return true
+end
+
 function Combat.Start()
 	Remotes.Combat.OnServerEvent:Connect(function(player, req)
 		if type(req) ~= "table" then return end
 		if req.action == "fire" then
 			onFire(player, req)
+		elseif req.action == "aim" then
+			if type(req.value) == "boolean" and Security.RateLimit(player, "aim", 8, 6) then Combat.Aim(player, req.value) end
+		elseif req.action == "roll" then
+			if Security.RateLimit(player, "roll", 2, 2) then Combat.Roll(player, req.dir) end
 		elseif not Security.RateLimit(player, "combat", 10, 6) then
 			return
 		elseif req.action == "reload" then
@@ -3806,9 +3912,9 @@ local function runMatch()
 		if i > M.MaxPlayers then break end
 		table.insert(participants, p)
 	end
-	-- top up with bots so every match is full
+	-- top up with bots so every match is full (exactly MaxPlayers combatants)
 	if Config.Bots.Enabled then
-		Bots.Rebalance()
+		Bots.Rebalance(#participants)
 		for _, b in Bots.ForMatch(M.MaxPlayers - #participants) do table.insert(participants, b) end
 	end
 	Loot.Seed()
@@ -3852,7 +3958,7 @@ local function runMatch()
 	participants = deployed
 	task.wait(1.5)
 	updateCounts()
-	SafeZone.Begin(finalPos)
+	SafeZone.Begin(finalPos, #participants > 1)
 	Remotes.FX:FireAllClients({ t = "notice", text = "DEPLOYED - " .. #participants .. " combatants. Last one in orbit wins.", color = Color3.fromRGB(110, 190, 255), sound = "start" })
 
 	-- ACTIVE / FINAL ---------------------------------------------------------------------------------
@@ -3863,7 +3969,10 @@ local function runMatch()
 	for _, p in participants do
 		if not Roster.IsBot(p) then humans += 1 end
 	end
-	local humansOut = false
+	-- Last one standing wins. If every real player is out, or the match runs long, the storm collapses
+	-- so the remaining fight is decided quickly; the hard cap is only a safety net.
+	local collapseHumansOut = Config.Bots.Enabled and Config.Bots.CollapseWhenHumansOut or 0
+	local hardCap = M.MaxMatchTime + M.SuddenDeathTime + 60
 	while true do
 		task.wait(0.5)
 		updateCounts()
@@ -3876,17 +3985,18 @@ local function runMatch()
 			setPhase("Final")
 			Remotes.FX:FireAllClients({ t = "notice", text = "FINAL COMBAT PHASE", color = Color3.fromRGB(255, 120, 60), sound = "alarm" })
 		end
-		-- Every real player is out: don't keep them waiting in the lobby while bots finish the match.
-		if Config.Bots.Enabled and Config.Bots.EndWhenHumansOut and humans > 0 and teams > 1 then
-			humansOut = true
+		if not SafeZone.IsCollapsing() and teams > 1 then
+			local humansAlive = 0
 			for _, p in aliveList do
-				if not Roster.IsBot(p) then
-					humansOut = false
-					break
-				end
+				if not Roster.IsBot(p) then humansAlive += 1 end
+			end
+			if humans > 0 and humansAlive == 0 and collapseHumansOut > 0 then
+				SafeZone.Collapse(collapseHumansOut, M.CollapseDps) -- don't keep the eliminated waiting on a bots-only fight
+			elseif os.clock() - matchStart > M.MaxMatchTime then
+				SafeZone.Collapse(M.SuddenDeathTime, M.CollapseDps)
 			end
 		end
-		if (solo and alive == 0) or (not solo and teams <= 1) or humansOut or os.clock() - matchStart > M.MaxMatchTime then
+		if (solo and alive == 0) or (not solo and teams <= 1) or os.clock() - matchStart > hardCap then
 			break
 		end
 	end
@@ -3907,16 +4017,13 @@ local function runMatch()
 	elseif #aliveNow == 1 then
 		winner = aliveNow[1]
 	elseif #aliveNow > 1 then
-		-- time limit: highest health wins; bots-only remainder (every real player out): most kills, then health
+		-- safety cap only (the collapse normally leaves one survivor): highest health wins
 		local best = -1
 		for _, p in aliveNow do
 			local hum = p.Character and p.Character:FindFirstChildOfClass("Humanoid")
-			local score = (hum and hum.Health or 0) + (if humansOut then Roster.Get(p).kills * 1000 else 0)
-			if score > best then best, winner = score, p end
+			local hp = hum and hum.Health or 0
+			if hp > best then best, winner = hp, p end
 		end
-	end
-	if humansOut then
-		Remotes.FX:FireAllClients({ t = "notice", text = "ALL PILOTS DOWN - MATCH OVER", color = Color3.fromRGB(255, 120, 60) })
 	end
 	setPhase("Ending", 4)
 	stateObj:SetAttribute("Winner", winner and winner.Name or "")
@@ -4538,6 +4645,7 @@ local SafeZone = {}
 local stateObj: Configuration
 local schedule = nil
 local serial = 0
+local collapsing = false
 
 local function now(): number
 	return workspace:GetServerTimeNow()
@@ -4547,12 +4655,14 @@ function SafeZone.IsLastStage(): boolean
 	return stateObj:GetAttribute("Stage") == #Config.Zone.Stages and stateObj:GetAttribute("Active") == true
 end
 
-function SafeZone.Begin(finalTarget: Vector3)
+-- spareLast: never let the storm eliminate the last combatant alive (multi-combatant matches).
+function SafeZone.Begin(finalTarget: Vector3, spareLast: boolean?)
 	serial += 1
 	local my = serial
 	local Z = Config.Zone
 	local start = now()
 	schedule = ZoneMath.BuildSchedule(Z.Stages, Vector3.zero, Z.StartRadius, finalTarget, start)
+	collapsing = false
 	stateObj:SetAttribute("Active", true)
 	stateObj:SetAttribute("StageCount", #Z.Stages)
 	local announced, warned = {}, {}
@@ -4568,7 +4678,7 @@ function SafeZone.Begin(finalTarget: Vector3)
 			stateObj:SetAttribute("Phase", phase)
 			stateObj:SetAttribute("NextTime", nextT == math.huge and 0 or nextT)
 			stateObj:SetAttribute("Dps", dps)
-			if st then
+			if st and not collapsing then
 				stateObj:SetAttribute("NextCenter", st.toC)
 				stateObj:SetAttribute("NextRadius", st.toR)
 				if not announced[stage] then
@@ -4581,12 +4691,21 @@ function SafeZone.Begin(finalTarget: Vector3)
 					Remotes.FX:FireAllClients({ t = "notice", text = "STORM CONTRACTING IN " .. Z.WarnBefore .. "s", color = Color3.fromRGB(255, 90, 200), sound = "alarm" })
 				end
 			end
-			for _, p in Roster.Active() do
+			-- Weakest first, and never the last one alive: when the storm eliminates several combatants on
+			-- the same tick, the healthiest survives and wins (last one standing, never "no survivors").
+			local active = Roster.Active()
+			local hp = {}
+			for _, p in active do
+				local hum = p.Character and p.Character:FindFirstChildOfClass("Humanoid")
+				hp[p] = hum and hum.Health or 0
+			end
+			table.sort(active, function(a, b) return hp[a] < hp[b] end)
+			for _, p in active do
 				local root = p.Character and p.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
 				if root then
 					local outside = ZoneMath.DistanceOutside(c, r, root.Position)
 					p:SetAttribute("InStorm", outside > 0)
-					if outside > 0 then
+					if outside > 0 and (not spareLast or #Roster.Alive() > 1) then
 						Combat.ApplyDamage(p, dps * DT, nil, "zone", c)
 					end
 				end
@@ -4596,8 +4715,28 @@ function SafeZone.Begin(finalTarget: Vector3)
 	end)
 end
 
+-- Sudden death: from wherever the storm is now, shrink it to nothing over `duration` seconds. Everyone
+-- ends up outside and the storm (which ignores shields) eliminates the weakest first, so the match is
+-- still won by the last combatant standing.
+function SafeZone.Collapse(duration: number, dps: number)
+	if not schedule or collapsing then return end
+	collapsing = true
+	local t = now()
+	local c = stateObj:GetAttribute("Center") or Vector3.zero
+	local r = stateObj:GetAttribute("Radius") or Config.Zone.StartRadius
+	schedule = { { index = #Config.Zone.Stages, announceAt = t, startShrink = t, endShrink = t + duration, fromC = c, fromR = r, toC = c, toR = 0, dps = dps } }
+	stateObj:SetAttribute("NextCenter", c)
+	stateObj:SetAttribute("NextRadius", 0)
+	Remotes.FX:FireAllClients({ t = "notice", text = "STORM COLLAPSE - LAST ONE STANDING WINS", color = Color3.fromRGB(255, 90, 200), sound = "alarm" })
+end
+
+function SafeZone.IsCollapsing(): boolean
+	return collapsing
+end
+
 function SafeZone.Stop()
 	serial += 1
+	collapsing = false
 	schedule = nil
 	stateObj:SetAttribute("Active", false)
 end
@@ -6594,7 +6733,7 @@ start("HazardService")
 start("BotService")
 start("MatchService")
 print("[ZG] server started")
-]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX57"><Properties><string name="Name">StarterPlayer</string><bool name="EnableMouseLockOption">false</bool></Properties><Item class="StarterPlayerScripts" referent="RBX54"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX43"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ZERO GRAVITY: LAST ORBIT - client bootstrap. Starts the controllers and routes server
+]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX59"><Properties><string name="Name">StarterPlayer</string><bool name="EnableMouseLockOption">false</bool><token name="GameSettingsAvatar">1</token></Properties><Item class="StarterPlayerScripts" referent="RBX55"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX43"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ZERO GRAVITY: LAST ORBIT - client bootstrap. Starts the controllers and routes server
 -- messages (FX / Match / Inventory remotes) into ClientState signals and effects.
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
@@ -6613,11 +6752,13 @@ local function start(name: string)
 	local ok, err = pcall(function() require(Controllers[name]).Start() end)
 	if not ok then warn("[ZG] " .. name .. " failed: " .. tostring(err)) end
 end
-for _, name in { "InputController", "CameraController", "MovementController", "EffectsController", "CombatController", "HUDController", "MenuController" } do
+for _, name in { "InputController", "CameraController", "MovementController", "EffectsController", "CharacterAnimator", "CombatController",
+	"HUDController", "MenuController" } do
 	start(name)
 end
 
 local Effects = require(Controllers.EffectsController)
+local Animator = require(Controllers.CharacterAnimator)
 local Movement = require(Controllers.MovementController)
 local HUD = require(Controllers.HUDController)
 local Items = require(Shared.ItemDefinitions)
@@ -6627,6 +6768,7 @@ Remotes.FX.OnClientEvent:Connect(function(msg)
 	local t = msg.t
 	if t == "tracer" then
 		Effects.Shot(msg.from, msg.ends, msg.weapon, false)
+		Animator.OnShot(msg.shooter)
 	elseif t == "hit" then
 		State.Hit:Fire(msg.amount, msg.kill)
 	elseif t == "damaged" then
@@ -6703,7 +6845,7 @@ game:GetService("RunService").Heartbeat:Connect(function()
 		Effects.TetherBeam(player, State.Tether and State.Tether.point or nil)
 	end
 end)
-]]></ProtectedString></Properties></Item><Item class="Folder" referent="RBX53"><Properties><string name="Name">Controllers</string></Properties><Item class="ModuleScript" referent="RBX44"><Properties><string name="Name">CameraController</string><ProtectedString name="Source"><![CDATA[-- Over-the-shoulder camera with a yaw/pitch model (pitch clamped short of vertical) so the view
+]]></ProtectedString></Properties></Item><Item class="Folder" referent="RBX54"><Properties><string name="Name">Controllers</string></Properties><Item class="ModuleScript" referent="RBX44"><Properties><string name="Name">CameraController</string><ProtectedString name="Source"><![CDATA[-- Over-the-shoulder camera with a yaw/pitch model (pitch clamped short of vertical) so the view
 -- can never flip or roll unpredictably. Collision-aware, aim zoom, recoil, and spectate mode.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -6802,7 +6944,339 @@ function CameraController.Start()
 end
 
 return CameraController
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX45"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- Client-side shared state and tiny signal helper, used by every controller.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX45"><Properties><string name="Name">CharacterAnimator</string><ProtectedString name="Source"><![CDATA[-- Procedural zero-gravity character animation, run on every client for every character it can see
+-- (players and bots). Roblox's default walk/jump/fall animations make no sense without gravity, so
+-- the default Animate script is replaced (StarterCharacterScripts/Animate) and each R15 joint is
+-- posed here from what every client already knows:
+--   * the body's velocity and orientation (replicated physics; the root follows its owner's aim)
+--   * the held weapon (HeldWeapon model, mounted on the root by CharacterService.SetWeaponVisual)
+--   * character attributes set by the server: Aiming, RollAt / RollDir (air rolls)
+--   * shots: tracer messages name the shooter's character (OnShot); the local player calls Fired()
+--
+-- Layers, written to Motor6D.Transform every PreSimulation (after Roblox's animation step, so these
+-- values are what renders):
+--   body  - bank into strafes, barrel rolls, idle sway and bob (Root joint; the gun moves with it)
+--   legs  - trail behind forward thrust, swing forward when reversing, tuck when descending, dangle
+--           when climbing, streamline while boosting, slow flutter while drifting
+--   torso - bladed shooting stance while armed (Waist), head turned back to look down the sights
+--   gun   - low ready, shouldered when aiming or firing, recoil kick per shot (WeaponMount)
+--   arms  - two-bone IK puts the right hand on the weapon's Grip and the left hand on its Support;
+--           unarmed arms float loosely
+--   death - limp spread-eagle tumble
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
+local Config = require(Shared.Config)
+local State = require(script.Parent.ClientState)
+
+local Anim = {}
+local player = Players.LocalPlayer
+local MV = Config.Movement
+local rigs: { [Model]: any } = {}
+local lastScan = -math.huge
+
+local BLADE = math.rad(35) -- armed stance: upper body turned so the left shoulder leads
+-- Low-ready gun pose relative to the shouldered (aim) grip: lower, a little back, barrel tipped down
+local READY = CFrame.new(-0.05, -0.38, 0.12) * CFrame.Angles(math.rad(-30), math.rad(8), 0)
+local SHOT_HOLD = 1.2 -- seconds a shot keeps the gun shouldered
+local POLE = { Right = Vector3.new(0.8, -1, 0.5), Left = Vector3.new(-0.7, -1, 0.1) } -- elbow hints (upper-torso space)
+local FAR, MID = 420, 160 -- studs from the camera: no updates beyond FAR, 30 Hz beyond MID
+local SIDES = { Right = 1, Left = -1 }
+local XAXIS = Vector3.xAxis
+
+local function lerp(a: number, b: number, t: number): number
+	return a + (b - a) * t
+end
+
+local function motor(char: Model, part: string, name: string): Motor6D?
+	local p = char:FindFirstChild(part)
+	local j = p and p:FindFirstChild(name)
+	return if j and j:IsA("Motor6D") then j else nil
+end
+
+-- Rotation taking local direction a onto ta, and the component of b perpendicular to a onto the
+-- component of tb perpendicular to ta.
+local function basis(a: Vector3, b: Vector3, ta: Vector3, tb: Vector3): CFrame
+	local u1, v1 = a.Unit, ta.Unit
+	local u2, v2 = b - u1 * b:Dot(u1), tb - v1 * tb:Dot(v1)
+	if u2.Magnitude < 1e-5 then u2 = u1:Cross(Vector3.zAxis) end
+	if v2.Magnitude < 1e-5 then v2 = v1:Cross(Vector3.zAxis) end
+	u2, v2 = u2.Unit, v2.Unit
+	return CFrame.fromMatrix(Vector3.zero, v1, v2, v1:Cross(v2)) * CFrame.fromMatrix(Vector3.zero, u1, u2, u1:Cross(u2)):Inverse()
+end
+
+local function newRig(char: Model)
+	local root = char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not (root and hum) then return nil end
+	local r = {
+		char = char, root = root, hum = hum,
+		rootJ = motor(char, "LowerTorso", "Root"), waist = motor(char, "UpperTorso", "Waist"), neck = motor(char, "Head", "Neck"),
+		legs = {}, arms = {},
+		phase = math.random() * 20, acc = 0,
+		s = { fwd = 0, side = 0, up = 0, boost = 0, aim = 0, armed = 0, dead = 0 },
+		kick = 0, lastShot = -math.huge, rollStart = -math.huge, rollDir = 1, localRollUntil = -math.huge,
+		rollAt = char:GetAttribute("RollAt"), diedAt = nil :: number?,
+	}
+	for side in SIDES do
+		r.legs[side] = {
+			hip = motor(char, side .. "UpperLeg", side .. "Hip"), knee = motor(char, side .. "LowerLeg", side .. "Knee"),
+			ankle = motor(char, side .. "Foot", side .. "Ankle"),
+		}
+		local hand = char:FindFirstChild(side .. "Hand") :: BasePart?
+		local grip = hand and hand:FindFirstChild(side .. "GripAttachment") :: Attachment?
+		r.arms[side] = {
+			shoulder = motor(char, side .. "UpperArm", side .. "Shoulder"), elbow = motor(char, side .. "LowerArm", side .. "Elbow"),
+			wrist = motor(char, side .. "Hand", side .. "Wrist"),
+			gripPos = if grip then grip.Position elseif hand then Vector3.new(0, -hand.Size.Y * 0.5, 0) else Vector3.zero,
+		}
+	end
+	r.r15 = r.rootJ ~= nil and r.waist ~= nil
+	return r
+end
+
+-- Two-bone IK: turns shoulder and elbow so the hand's grip point lands on target (upper-torso
+-- space), bending the elbow toward pole. The wrist stays straight.
+local function solveArm(arm, target: Vector3, pole: Vector3)
+	local sh, el, wr = arm.shoulder, arm.elbow, arm.wrist
+	if not (sh and el and wr) then return end
+	if not arm.eu then
+		arm.eu = el.C0.Position - sh.C1.Position -- shoulder pivot -> elbow pivot, upper-arm space
+		arm.el = (wr.C0 * wr.C1:Inverse() * arm.gripPos) - el.C1.Position -- elbow pivot -> grip point, lower-arm space
+	end
+	local eu, ev = arm.eu, arm.el
+	local L1, L2 = eu.Magnitude, ev.Magnitude
+	local S = sh.C0.Position
+	local d = target - S
+	local n = if d.Magnitude > 1e-4 then d.Unit else Vector3.new(0, 0, -1)
+	local D = math.clamp(d.Magnitude, math.abs(L1 - L2) + 1e-3, (L1 + L2) * 0.999)
+	local a = (L1 * L1 - L2 * L2 + D * D) / (2 * D)
+	local h = math.sqrt(math.max(0, L1 * L1 - a * a))
+	local m = pole - n * pole:Dot(n)
+	if m.Magnitude < 1e-4 then m = n:Cross(XAXIS) end
+	m = m.Unit
+	local E = S + n * a + m * h
+	local P = S + n * D
+	local up, low = (E - S).Unit, (P - E).Unit
+	local hinge = up:Cross(low)
+	if hinge.Magnitude < 1e-4 then hinge = n:Cross(m) end
+	local rArm = basis(eu, XAXIS, up, hinge)
+	local rLow = basis(ev, XAXIS, low, hinge)
+	sh.Transform = sh.C0.Rotation:Inverse() * rArm * sh.C1.Rotation
+	el.Transform = el.C0.Rotation:Inverse() * rArm:Inverse() * rLow * el.C1.Rotation
+	wr.Transform = CFrame.identity
+end
+
+local function floatArms(r, t: number, life: number)
+	local s = r.s
+	for side, sign in SIDES do
+		local a = r.arms[side]
+		if a.shoulder and a.elbow then
+			local bob = math.sin(t * 1.3 + (sign > 0 and 0 or 1.7)) * 0.12 * life
+			local flex = lerp(0.25 + bob - 0.7 * s.boost, 0.2, s.dead)
+			local out = sign * lerp(0.35 - 0.23 * s.boost, 1.1, s.dead)
+			local bend = lerp(0.55 + 0.12 * math.sin(t * 1.1 + sign) - 0.35 * s.boost, 0.35, s.dead)
+			a.shoulder.Transform = CFrame.fromEulerAnglesYXZ(flex, 0, out)
+			a.elbow.Transform = CFrame.Angles(math.max(bend, 0.05), 0, 0)
+			if a.wrist then a.wrist.Transform = CFrame.Angles(0.15, 0, 0) end
+		end
+	end
+end
+
+local function poseLegs(r, t: number, life: number, speed: number)
+	local s = r.s
+	local fwdOn, backOn = math.max(s.fwd, 0), math.max(-s.fwd, 0)
+	local upOn, downOn = math.max(s.up, 0), math.max(-s.up, 0)
+	for side, sign in SIDES do
+		local L = r.legs[side]
+		if L.hip and L.knee then
+			local flutter = math.sin(t * (1.5 + 2.5 * math.min(speed, 1)) + (sign > 0 and 0 or math.pi)) * (0.16 - 0.1 * s.boost) * life
+			local hip = 0.3 - 0.85 * fwdOn + 0.6 * backOn - 0.25 * upOn + 0.8 * downOn - 0.55 * s.boost + flutter
+			local knee = 0.5 - 0.3 * fwdOn + 0.45 * backOn - 0.3 * upOn + 0.9 * downOn - 0.35 * s.boost + flutter * 0.7
+			local spread = sign * 0.07 - 0.35 * math.clamp(s.side, -1, 1)
+			hip = lerp(math.clamp(hip, -1.1, 1.7), 0.45, s.dead)
+			knee = lerp(math.clamp(knee, 0.05, 2.0), 0.7, s.dead)
+			spread = lerp(spread, sign * 0.45, s.dead)
+			L.hip.Transform = CFrame.fromEulerAnglesYXZ(hip, 0, spread)
+			L.knee.Transform = CFrame.Angles(-knee, 0, 0) -- knees bend backward
+			if L.ankle then L.ankle.Transform = CFrame.Angles(-0.3 - 0.35 * s.boost - 0.2 * fwdOn, 0, 0) end -- toes pointed
+		end
+	end
+end
+
+local function update(r, dt: number, now: number)
+	local char, root, hum = r.char, r.root, r.hum
+	local s = r.s
+	local alive = hum.Health > 0
+	if alive then
+		r.diedAt = nil
+	elseif not r.diedAt then
+		r.diedAt = now
+	end
+	local vel = root.AssemblyLinearVelocity
+	local lv = root.CFrame:VectorToObjectSpace(vel) / MV.MaxSpeed
+	local f6 = 1 - math.exp(-dt * 6)
+	s.fwd += (math.clamp(-lv.Z, -1.5, 1.5) - s.fwd) * f6
+	s.side += (math.clamp(lv.X, -1.5, 1.5) - s.side) * f6
+	s.up += (math.clamp(lv.Y, -1.5, 1.5) - s.up) * f6
+	s.boost += ((if vel.Magnitude > MV.MaxSpeed * 1.08 then 1 else 0) - s.boost) * (1 - math.exp(-dt * 5))
+	s.dead += ((if alive then 0 else 1) - s.dead) * (1 - math.exp(-dt * 3))
+
+	-- weapon state
+	local held = char:FindFirstChild("HeldWeapon") :: Model?
+	local handle = held and held.PrimaryPart
+	local mount = handle and handle:FindFirstChild("WeaponMount") :: Motor6D?
+	local gripA = handle and handle:FindFirstChild("Grip") :: Attachment?
+	local supA = handle and handle:FindFirstChild("Support") :: Attachment?
+	local armed = alive and mount ~= nil and gripA ~= nil
+	s.armed += ((if armed then 1 else 0) - s.armed) * (1 - math.exp(-dt * 8))
+	local isLocal = char == player.Character
+	local aiming = armed and ((if isLocal then State.Aiming == true else char:GetAttribute("Aiming") == true) or now - r.lastShot < SHOT_HOLD)
+	s.aim += ((if aiming then 1 else 0) - s.aim) * (1 - math.exp(-dt * 12))
+	r.kick *= math.exp(-dt * 14)
+
+	-- air rolls announced by the server (the local player's own roll already started in Roll())
+	local rollAt = char:GetAttribute("RollAt")
+	if rollAt ~= r.rollAt then
+		r.rollAt = rollAt
+		if rollAt and now > r.localRollUntil then Anim.StartRoll(char, char:GetAttribute("RollDir") or 1) end
+	end
+
+	-- body: bank, roll, sway (rotation about the root's centre, applied to the torso and the gun)
+	local t = now + r.phase
+	local life = 1 - s.dead
+	local roll = 0
+	local rp = (now - r.rollStart) / MV.RollTime
+	if rp >= 0 and rp < 1 then roll = -r.rollDir * (rp * rp * (3 - 2 * rp)) * math.pi * 2 end
+	local bank = -0.45 * math.clamp(s.side, -1, 1)
+	local B = CFrame.new(0, 0.07 * math.sin(t * 1.3) * life, 0) * CFrame.Angles(0, 0, (roll + bank + 0.05 * math.sin(t * 0.9)) * life)
+	if r.diedAt then
+		local k = (now - r.diedAt) * s.dead
+		B *= CFrame.Angles(k * 0.5, k * 0.2, k * 0.3) -- slow tumble
+	end
+
+	local waistT = CFrame.fromEulerAnglesYXZ(-0.3 * s.boost * (1 - s.armed) + 0.25 * s.dead, -BLADE * s.armed, 0)
+	if r.r15 then
+		r.rootJ.Transform = r.rootJ.C0:Inverse() * B * r.rootJ.C0
+		r.waist.Transform = waistT
+		if r.neck then
+			r.neck.Transform = CFrame.fromEulerAnglesYXZ(-0.16 * s.aim + 0.04 * math.sin(t * 0.7) * life - 0.4 * s.dead, BLADE * s.armed,
+				-0.15 * s.aim)
+		end
+		poseLegs(r, t, life, vel.Magnitude / MV.MaxSpeed)
+	end
+
+	-- gun and hands
+	if armed and mount and gripA then
+		local aimCF = mount.C0
+		local kick = r.kick
+		local pose = (aimCF * READY):Lerp(aimCF, s.aim) * CFrame.new(0, 0.03 * kick, 0.22 * kick) * CFrame.Angles(0.15 * kick, 0, 0)
+		local final = B * pose
+		mount.Transform = aimCF:Inverse() * final
+		if r.r15 then
+			local handleCF = final * mount.C1:Inverse()
+			local UT = B * r.rootJ.C0 * r.rootJ.C1:Inverse() * r.waist.C0 * waistT * r.waist.C1:Inverse()
+			solveArm(r.arms.Right, UT:PointToObjectSpace(handleCF * gripA.Position), POLE.Right)
+			if supA then
+				solveArm(r.arms.Left, UT:PointToObjectSpace(handleCF * supA.Position), POLE.Left)
+			else
+				floatArms(r, t, life)
+			end
+		end
+	elseif r.r15 then
+		floatArms(r, t, life)
+	end
+end
+
+local function scan()
+	local seen = {}
+	local function add(char: Model?)
+		if not char then return end
+		seen[char] = true
+		local r = rigs[char]
+		if not r or (not r.r15 and char:FindFirstChild("LowerTorso")) then rigs[char] = newRig(char) end
+	end
+	for _, p in Players:GetPlayers() do add(p.Character) end
+	local bots = workspace:FindFirstChild("BotCharacters")
+	if bots then
+		for _, c in bots:GetChildren() do
+			if c:IsA("Model") then add(c) end
+		end
+	end
+	for char in rigs do
+		if not seen[char] then rigs[char] = nil end
+	end
+end
+
+local function step(dt: number, everyone: boolean?)
+	local now = os.clock()
+	if now - lastScan > 0.5 then
+		lastScan = now
+		scan()
+	end
+	local cam = workspace.CurrentCamera
+	local camPos = cam and cam.CFrame.Position or Vector3.zero
+	for char, r in rigs do
+		if r.root.Parent ~= char or (r.rootJ and r.rootJ.Parent == nil) then
+			rigs[char] = nil -- respawned or broken apart; picked up again by the next scan
+			continue
+		end
+		r.acc += dt
+		local dist = (r.root.Position - camPos).Magnitude
+		if everyone or (dist < FAR and (dist < MID or r.acc >= 1 / 30)) then
+			local ok, err = pcall(update, r, math.min(r.acc, 0.1), now)
+			r.acc = 0
+			if not ok and not r.warned then
+				r.warned = true
+				warn("[ZG] animator (" .. char.Name .. "): " .. tostring(err))
+			end
+		end
+	end
+end
+
+-- A character fired (tracer from the server, or the local player's own shot).
+function Anim.OnShot(char: Instance?)
+	local r = char and rigs[char :: Model]
+	if r then
+		r.kick = 1
+		r.lastShot = os.clock()
+	end
+end
+
+function Anim.Fired()
+	Anim.OnShot(player.Character)
+end
+
+function Anim.StartRoll(char: Instance?, dir: number)
+	local r = char and rigs[char :: Model]
+	if r then
+		r.rollStart = os.clock()
+		r.rollDir = if dir < 0 then -1 else 1
+	end
+end
+
+-- The local player's own roll: animate immediately and ignore the server's echo of it.
+function Anim.Roll(dir: number)
+	local char = player.Character
+	local r = char and rigs[char]
+	if r then
+		Anim.StartRoll(char, dir)
+		r.localRollUntil = os.clock() + MV.RollTime + 1
+	end
+end
+
+-- For tests and tools: refresh the rig list and advance every rig by dt, ignoring distance culling.
+function Anim.StepAll(dt: number)
+	lastScan = -math.huge
+	step(dt, true)
+end
+
+function Anim.Start()
+	RunService.PreSimulation:Connect(step)
+end
+
+return Anim
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX46"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- Client-side shared state and tiny signal helper, used by every controller.
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
 
@@ -6839,14 +7313,15 @@ State.Bindings = {
 	Inventory = Enum.KeyCode.Tab, Menu = Enum.KeyCode.M, Map = Enum.KeyCode.N,
 	Heal = Enum.KeyCode.Four, Shield = Enum.KeyCode.Five, Oxygen = Enum.KeyCode.Six,
 	Slot1 = Enum.KeyCode.One, Slot2 = Enum.KeyCode.Two, Slot3 = Enum.KeyCode.Three,
+	RollLeft = Enum.KeyCode.Q, RollRight = Enum.KeyCode.E,
 }
 State.BindingOrder = {
-	"Forward", "Back", "Left", "Right", "Up", "Down", "Boost", "Brake", "Reload", "Utility", "SwapUtility", "Melee",
+	"Forward", "Back", "Left", "Right", "Up", "Down", "Boost", "Brake", "RollLeft", "RollRight", "Reload", "Utility", "SwapUtility", "Melee",
 	"Heal", "Shield", "Oxygen", "Inventory", "Map", "Menu",
 }
 State.BindingLabels = {
 	Forward = "Thrust forward", Back = "Thrust back", Left = "Strafe left", Right = "Strafe right", Up = "Move up", Down = "Move down",
-	Boost = "Boost", Brake = "Stabilise / brake", Reload = "Reload", Utility = "Use utility", SwapUtility = "Switch utility",
+	Boost = "Boost", Brake = "Stabilise / brake", RollLeft = "Air roll left", RollRight = "Air roll right", Reload = "Reload", Utility = "Use utility", SwapUtility = "Switch utility",
 	Melee = "Melee", Heal = "Use medical", Shield = "Use shield cell", Oxygen = "Use O2 canister", Inventory = "Inventory",
 	Map = "Tactical map", Menu = "Menu",
 }
@@ -6887,7 +7362,7 @@ function State.IsModalOpen(name: string): boolean
 end
 
 return State
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX46"><Properties><string name="Name">CombatController</string><ProtectedString name="Source"><![CDATA[-- Client combat input and prediction. Sends aim rays to the server (which validates and decides
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX47"><Properties><string name="Name">CombatController</string><ProtectedString name="Source"><![CDATA[-- Client combat input and prediction. Sends aim rays to the server (which validates and decides
 -- hits); draws the local tracer/muzzle flash immediately so firing feels responsive.
 -- Also handles weapon switching, reload, melee, utilities and consumable hotkeys.
 local Players = game:GetService("Players")
@@ -6901,6 +7376,7 @@ local State = require(script.Parent.ClientState)
 local CameraController = require(script.Parent.CameraController)
 local Movement = require(script.Parent.MovementController)
 local Effects = require(script.Parent.EffectsController)
+local Animator = require(script.Parent.CharacterAnimator)
 
 local Combat = {}
 local player = Players.LocalPlayer
@@ -6979,6 +7455,7 @@ local function fireOnce()
 		table.insert(ends, hit and hit.Position or origin + d * def.maxRange)
 	end
 	Effects.Shot(origin, ends, w.id, true)
+	Animator.Fired()
 	CameraController.Kick(def.recoil * (State.Aiming and 0.6 or 1))
 	State.InventoryChanged:Fire(State.Inventory)
 	return true
@@ -7097,6 +7574,9 @@ function Combat.Start()
 				Remotes.Combat:FireServer({ action = "melee" })
 				Effects.Play("melee")
 			end
+		elseif k == B.RollLeft or k == B.RollRight then
+			local dir = if k == B.RollRight then 1 else -1
+			if canAct() and Movement.Roll(dir) then Animator.Roll(dir) end
 		elseif k == B.Slot1 then Combat.Equip(1)
 		elseif k == B.Slot2 then Combat.Equip(2)
 		elseif k == B.Slot3 then Combat.Equip(3)
@@ -7128,7 +7608,15 @@ function Combat.Start()
 			end
 		end
 	end)
+	-- Other players see us shoulder the gun: the server mirrors our aim state onto the character
+	-- (throttled; the latest state is always sent).
+	local sentAim, lastAimSend = false, 0
 	RunService.RenderStepped:Connect(function()
+		local aimingNow = State.Aiming == true
+		if aimingNow ~= sentAim and os.clock() - lastAimSend > 0.15 then
+			sentAim, lastAimSend = aimingNow, os.clock()
+			Remotes.Combat:FireServer({ action = "aim", value = aimingNow })
+		end
 		if triggerHeld then
 			local w = activeWeapon()
 			if w and Weapons.Get(w.id).mode == "auto" then tryFire() end
@@ -7148,7 +7636,7 @@ function Combat.Start()
 end
 
 return Combat
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX47"><Properties><string name="Name">EffectsController</string><ProtectedString name="Source"><![CDATA[-- Visual and audio presentation: tracers, muzzle flashes, impacts, explosions, tether beams,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX48"><Properties><string name="Name">EffectsController</string><ProtectedString name="Source"><![CDATA[-- Visual and audio presentation: tracers, muzzle flashes, impacts, explosions, tether beams,
 -- the radiation-storm sphere, the planet backdrop, flickering damaged lights, electrical crackle
 -- and suit audio. Purely cosmetic; never affects gameplay state.
 --
@@ -7562,7 +8050,7 @@ function Effects.Start()
 end
 
 return Effects
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX48"><Properties><string name="Name">HUDController</string><ProtectedString name="Source"><![CDATA[-- In-match HUD, inventory screen, results screen and spectating.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">HUDController</string><ProtectedString name="Source"><![CDATA[-- In-match HUD, inventory screen, results screen and spectating.
 --   Vitals (health, shield, oxygen, boost, tether, suit status) bottom-left
 --   Weapon, ammo, slots, utility bottom-right
 --   Phase / timer / survivors top-centre; kill feed top-right; tactical map top-left
@@ -8227,7 +8715,7 @@ function HUD.Start()
 end
 
 return HUD
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">InputController</string><ProtectedString name="Source"><![CDATA[-- Turns keyboard / gamepad state into abstract movement and look input, so the movement and camera
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX50"><Properties><string name="Name">InputController</string><ProtectedString name="Source"><![CDATA[-- Turns keyboard / gamepad state into abstract movement and look input, so the movement and camera
 -- code never reads devices directly (keeps mobile/controller support a matter of mapping here).
 local UserInputService = game:GetService("UserInputService")
 local State = require(script.Parent.ClientState)
@@ -8294,7 +8782,7 @@ function Input.Start()
 end
 
 return Input
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX50"><Properties><string name="Name">MenuController</string><ProtectedString name="Source"><![CDATA[-- Main menu (opens on join and with M): Deploy, Practice, Loadout, Locker, Settings, Statistics,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">MenuController</string><ProtectedString name="Source"><![CDATA[-- Main menu (opens on join and with M): Deploy, Practice, Loadout, Locker, Settings, Statistics,
 -- Tutorial, Credits. Every option shown is implemented. During a match only Resume, Settings and
 -- Tutorial are offered.
 --
@@ -8705,7 +9193,7 @@ function Menu.Start()
 end
 
 return Menu
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">MovementController</string><ProtectedString name="Source"><![CDATA[-- Six-degree-of-freedom zero-gravity movement for the local character.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX52"><Properties><string name="Name">MovementController</string><ProtectedString name="Source"><![CDATA[-- Six-degree-of-freedom zero-gravity movement for the local character.
 --
 -- Model: the Humanoid is held in the Physics state (no walking/falling logic), the body is turned
 -- toward the camera by an AlignOrientation, and translation is a momentum model integrated here:
@@ -8732,6 +9220,7 @@ local player = Players.LocalPlayer
 local M = Config.Movement
 local hum: Humanoid?, root: BasePart?, align: AlignOrientation?
 local lastBoostUse = 0
+local lastRoll = -math.huge
 local boosting = false
 local thruster: ParticleEmitter?
 
@@ -8817,6 +9306,20 @@ function Movement.ApplyImpulse(v: Vector3, set: boolean?)
 	end
 end
 
+-- Air roll: a barrel-roll dodge that throws the body sideways (camera-relative). Costs boost energy;
+-- the extra speed bleeds back to cruise like any other overspeed. Returns true if it happened.
+function Movement.Roll(dir: number): boolean
+	if not (root and hum and root.Parent) or hum.Health <= 0 or State.UIOpen then return false end
+	local now = os.clock()
+	if now - lastRoll < M.RollCooldown or (State.Boost or 0) < M.RollCost then return false end
+	lastRoll = now
+	State.Boost -= M.RollCost
+	lastBoostUse = now -- pauses regeneration like boosting does
+	root.AssemblyLinearVelocity += CameraController.Rotation().RightVector * dir * M.RollImpulse
+	Remotes.Combat:FireServer({ action = "roll", dir = dir })
+	return true
+end
+
 function Movement.ReleaseTether()
 	if State.Tether then
 		State.Tether = nil
@@ -8883,7 +9386,7 @@ function Movement.Start()
 end
 
 return Movement
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX52"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- UI construction kit: one "orbital HUD" look shared by every screen.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX53"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- UI construction kit: one "orbital HUD" look shared by every screen.
 --   * deep-space glass panels (navy with a soft vertical sheen) edged by a light-catching cyan stroke
 --   * HUD corner brackets on major panels
 --   * Michroma display type, Titillium body, Sarpanch for numbers and short readouts
@@ -9071,6 +9574,9 @@ function UIKit.formatTime(seconds: number): string
 end
 
 return UIKit
-]]></ProtectedString></Properties></Item></Item></Item><Item class="StarterCharacterScripts" referent="RBX56"><Properties><string name="Name">StarterCharacterScripts</string></Properties><Item class="Script" referent="RBX55"><Properties><string name="Name">Health</string><ProtectedString name="Source"><![CDATA[-- Intentionally empty: replaces Roblox's default "Health" regeneration script.
+]]></ProtectedString></Properties></Item></Item></Item><Item class="StarterCharacterScripts" referent="RBX58"><Properties><string name="Name">StarterCharacterScripts</string></Properties><Item class="LocalScript" referent="RBX56"><Properties><string name="Name">Animate</string><ProtectedString name="Source"><![CDATA[-- Intentionally empty: replaces Roblox's default "Animate" script. Walking, jumping and falling
+-- animations make no sense in zero gravity; every character (players and bots) is posed
+-- procedurally by Controllers/CharacterAnimator on each client instead.
+]]></ProtectedString></Properties></Item><Item class="Script" referent="RBX57"><Properties><string name="Name">Health</string><ProtectedString name="Source"><![CDATA[-- Intentionally empty: replaces Roblox's default "Health" regeneration script.
 -- Health regeneration rules (delay, rate, cap) live in CombatService.
 ]]></ProtectedString></Properties></Item></Item></Item></roblox>

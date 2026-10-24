@@ -13,6 +13,7 @@ local SafeZone = {}
 local stateObj: Configuration
 local schedule = nil
 local serial = 0
+local collapsing = false
 
 local function now(): number
 	return workspace:GetServerTimeNow()
@@ -22,12 +23,14 @@ function SafeZone.IsLastStage(): boolean
 	return stateObj:GetAttribute("Stage") == #Config.Zone.Stages and stateObj:GetAttribute("Active") == true
 end
 
-function SafeZone.Begin(finalTarget: Vector3)
+-- spareLast: never let the storm eliminate the last combatant alive (multi-combatant matches).
+function SafeZone.Begin(finalTarget: Vector3, spareLast: boolean?)
 	serial += 1
 	local my = serial
 	local Z = Config.Zone
 	local start = now()
 	schedule = ZoneMath.BuildSchedule(Z.Stages, Vector3.zero, Z.StartRadius, finalTarget, start)
+	collapsing = false
 	stateObj:SetAttribute("Active", true)
 	stateObj:SetAttribute("StageCount", #Z.Stages)
 	local announced, warned = {}, {}
@@ -43,7 +46,7 @@ function SafeZone.Begin(finalTarget: Vector3)
 			stateObj:SetAttribute("Phase", phase)
 			stateObj:SetAttribute("NextTime", nextT == math.huge and 0 or nextT)
 			stateObj:SetAttribute("Dps", dps)
-			if st then
+			if st and not collapsing then
 				stateObj:SetAttribute("NextCenter", st.toC)
 				stateObj:SetAttribute("NextRadius", st.toR)
 				if not announced[stage] then
@@ -56,12 +59,21 @@ function SafeZone.Begin(finalTarget: Vector3)
 					Remotes.FX:FireAllClients({ t = "notice", text = "STORM CONTRACTING IN " .. Z.WarnBefore .. "s", color = Color3.fromRGB(255, 90, 200), sound = "alarm" })
 				end
 			end
-			for _, p in Roster.Active() do
+			-- Weakest first, and never the last one alive: when the storm eliminates several combatants on
+			-- the same tick, the healthiest survives and wins (last one standing, never "no survivors").
+			local active = Roster.Active()
+			local hp = {}
+			for _, p in active do
+				local hum = p.Character and p.Character:FindFirstChildOfClass("Humanoid")
+				hp[p] = hum and hum.Health or 0
+			end
+			table.sort(active, function(a, b) return hp[a] < hp[b] end)
+			for _, p in active do
 				local root = p.Character and p.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
 				if root then
 					local outside = ZoneMath.DistanceOutside(c, r, root.Position)
 					p:SetAttribute("InStorm", outside > 0)
-					if outside > 0 then
+					if outside > 0 and (not spareLast or #Roster.Alive() > 1) then
 						Combat.ApplyDamage(p, dps * DT, nil, "zone", c)
 					end
 				end
@@ -71,8 +83,28 @@ function SafeZone.Begin(finalTarget: Vector3)
 	end)
 end
 
+-- Sudden death: from wherever the storm is now, shrink it to nothing over `duration` seconds. Everyone
+-- ends up outside and the storm (which ignores shields) eliminates the weakest first, so the match is
+-- still won by the last combatant standing.
+function SafeZone.Collapse(duration: number, dps: number)
+	if not schedule or collapsing then return end
+	collapsing = true
+	local t = now()
+	local c = stateObj:GetAttribute("Center") or Vector3.zero
+	local r = stateObj:GetAttribute("Radius") or Config.Zone.StartRadius
+	schedule = { { index = #Config.Zone.Stages, announceAt = t, startShrink = t, endShrink = t + duration, fromC = c, fromR = r, toC = c, toR = 0, dps = dps } }
+	stateObj:SetAttribute("NextCenter", c)
+	stateObj:SetAttribute("NextRadius", 0)
+	Remotes.FX:FireAllClients({ t = "notice", text = "STORM COLLAPSE - LAST ONE STANDING WINS", color = Color3.fromRGB(255, 90, 200), sound = "alarm" })
+end
+
+function SafeZone.IsCollapsing(): boolean
+	return collapsing
+end
+
 function SafeZone.Stop()
 	serial += 1
+	collapsing = false
 	schedule = nil
 	stateObj:SetAttribute("Active", false)
 end

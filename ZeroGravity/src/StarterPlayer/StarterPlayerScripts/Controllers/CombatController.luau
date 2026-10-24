@@ -12,6 +12,7 @@ local State = require(script.Parent.ClientState)
 local CameraController = require(script.Parent.CameraController)
 local Movement = require(script.Parent.MovementController)
 local Effects = require(script.Parent.EffectsController)
+local Animator = require(script.Parent.CharacterAnimator)
 
 local Combat = {}
 local player = Players.LocalPlayer
@@ -90,6 +91,7 @@ local function fireOnce()
 		table.insert(ends, hit and hit.Position or origin + d * def.maxRange)
 	end
 	Effects.Shot(origin, ends, w.id, true)
+	Animator.Fired()
 	CameraController.Kick(def.recoil * (State.Aiming and 0.6 or 1))
 	State.InventoryChanged:Fire(State.Inventory)
 	return true
@@ -208,6 +210,9 @@ function Combat.Start()
 				Remotes.Combat:FireServer({ action = "melee" })
 				Effects.Play("melee")
 			end
+		elseif k == B.RollLeft or k == B.RollRight then
+			local dir = if k == B.RollRight then 1 else -1
+			if canAct() and Movement.Roll(dir) then Animator.Roll(dir) end
 		elseif k == B.Slot1 then Combat.Equip(1)
 		elseif k == B.Slot2 then Combat.Equip(2)
 		elseif k == B.Slot3 then Combat.Equip(3)
@@ -239,7 +244,15 @@ function Combat.Start()
 			end
 		end
 	end)
+	-- Other players see us shoulder the gun: the server mirrors our aim state onto the character
+	-- (throttled; the latest state is always sent).
+	local sentAim, lastAimSend = false, 0
 	RunService.RenderStepped:Connect(function()
+		local aimingNow = State.Aiming == true
+		if aimingNow ~= sentAim and os.clock() - lastAimSend > 0.15 then
+			sentAim, lastAimSend = aimingNow, os.clock()
+			Remotes.Combat:FireServer({ action = "aim", value = aimingNow })
+		end
 		if triggerHeld then
 			local w = activeWeapon()
 			if w and Weapons.Get(w.id).mode == "auto" then tryFire() end

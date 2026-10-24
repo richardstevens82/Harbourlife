@@ -297,6 +297,13 @@
          ]
         },
         {
+         "name": "CharacterAnimator",
+         "className": "ModuleScript",
+         "filePaths": [
+          "src/StarterPlayer/StarterPlayerScripts/Controllers/CharacterAnimator.luau"
+         ]
+        },
+        {
          "name": "ClientState",
          "className": "ModuleScript",
          "filePaths": [
@@ -360,6 +367,13 @@
      "name": "StarterCharacterScripts",
      "className": "StarterCharacterScripts",
      "children": [
+      {
+       "name": "Animate",
+       "className": "LocalScript",
+       "filePaths": [
+        "src/StarterPlayer/StarterCharacterScripts/Animate.client.luau"
+       ]
+      },
       {
        "name": "Health",
        "className": "Script",

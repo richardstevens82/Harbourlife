@@ -1,5 +1,7 @@
--- Procedural weapon models (shared: the server welds them to characters, the lobby shows them on
--- display pedestals). Each model has a PrimaryPart "Handle" and an Attachment "Muzzle" on the barrel.
+-- Procedural weapon models (shared: the server mounts them on characters, the lobby shows them on
+-- display pedestals). Each model has a PrimaryPart "Handle" with two Attachments for the hands -
+-- "Grip" (right hand, on the pistol grip) and "Support" (left hand, on the handguard) - and an
+-- Attachment "Muzzle" on the barrel.
 local Weapons = require(script.Parent.WeaponDefinitions)
 local Items = require(script.Parent.ItemDefinitions)
 
@@ -23,8 +25,9 @@ local function part(model: Model, name: string, size: Vector3, cf: CFrame, color
 	return p
 end
 
--- Builds the model at the origin, barrel pointing along -Z (Handle's LookVector).
-function Models.Build(id: string, rarity: string?): Model
+-- Builds the model at the origin, barrel pointing along -Z (Handle's LookVector). scale shrinks the
+-- whole model (display pieces use 1; guns in a character's hands use Config.Character.HeldWeaponScale).
+function Models.Build(id: string, rarity: string?, scale: number?): Model
 	local def = Weapons.Get(id)
 	local m = Instance.new("Model")
 	m.Name = "Weapon_" .. id
@@ -69,6 +72,29 @@ function Models.Build(id: string, rarity: string?): Model
 	muzzle.Name = "Muzzle"
 	muzzle.Parent = receiver
 	muzzle.WorldPosition = Vector3.new(0, 0.2, barrelZ - barrelLen / 2 - 0.1)
+	-- Hand points (Handle space; the Handle sits at (0, -0.1, 0.35) with no rotation). The support hand
+	-- holds the handguard about half way along the receiver, or cups the grip hand on a pistol.
+	local grip = Instance.new("Attachment")
+	grip.Name = "Grip"
+	grip.Position = Vector3.new(0, -0.35, 0)
+	grip.Parent = handle
+	local support = Instance.new("Attachment")
+	support.Name = "Support"
+	support.Position = if id == "pistol" then Vector3.new(-0.3, -0.42, -0.12) else Vector3.new(0, -0.15, -math.min(len * 0.55 - 0.25, 2.1))
+	support.Parent = handle
+	-- Scale before welding: moving a welded part would drag the whole assembly with it.
+	local k = scale or 1
+	if k ~= 1 then
+		for _, p in m:GetChildren() do
+			if p:IsA("BasePart") then
+				p.Size *= k
+				p.CFrame = p.CFrame.Rotation + p.CFrame.Position * k
+			end
+		end
+		for _, a in m:GetDescendants() do
+			if a:IsA("Attachment") then a.Position *= k end
+		end
+	end
 	-- Weld everything to the handle so the model moves as one assembly.
 	for _, p in m:GetChildren() do
 		if p:IsA("BasePart") and p ~= handle then

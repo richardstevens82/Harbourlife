@@ -17,11 +17,13 @@ local function start(name: string)
 	local ok, err = pcall(function() require(Controllers[name]).Start() end)
 	if not ok then warn("[ZG] " .. name .. " failed: " .. tostring(err)) end
 end
-for _, name in { "InputController", "CameraController", "MovementController", "EffectsController", "CombatController", "HUDController", "MenuController" } do
+for _, name in { "InputController", "CameraController", "MovementController", "EffectsController", "CharacterAnimator", "CombatController",
+	"HUDController", "MenuController" } do
 	start(name)
 end
 
 local Effects = require(Controllers.EffectsController)
+local Animator = require(Controllers.CharacterAnimator)
 local Movement = require(Controllers.MovementController)
 local HUD = require(Controllers.HUDController)
 local Items = require(Shared.ItemDefinitions)
@@ -31,6 +33,7 @@ Remotes.FX.OnClientEvent:Connect(function(msg)
 	local t = msg.t
 	if t == "tracer" then
 		Effects.Shot(msg.from, msg.ends, msg.weapon, false)
+		Animator.OnShot(msg.shooter)
 	elseif t == "hit" then
 		State.Hit:Fire(msg.amount, msg.kill)
 	elseif t == "damaged" then

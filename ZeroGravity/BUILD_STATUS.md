@@ -80,6 +80,34 @@ camera-relative thrust on 6 axes, drift, a speed cap, boost energy, an exponenti
 stop, tether pull, and server impulses for knockback, shoves and the boundary. The camera is
 yaw/pitch with pitch clamped at ±85°, so the view can never flip or roll. The server checks speed
 from actual displacement, rolls back teleports, and enforces the arena boundary.
+**Air roll** (Q / E, rebindable): a barrel-roll dodge that throws you about 34 studs/s sideways. It
+costs 22 boost energy and has a 0.9 s cooldown. The extra speed bleeds back to cruise like any other
+overspeed.
+
+**Character animation** (`CharacterAnimator`, every client, players and bots alike). Roblox's
+walk/jump/fall animations are replaced by an empty `Animate` script, and every R15 joint is posed
+procedurally each frame (`Motor6D.Transform`, in PreSimulation):
+- **Flying:** the legs trail behind forward thrust, swing forward when reversing, tuck when
+  descending, dangle when climbing, and sweep back streamlined while boosting. They flutter slowly
+  when drifting.
+- **Banking and rolling:** the body banks into strafes, and air rolls spin it a full 360°.
+- **Weapons in the hands:** the gun is mounted on the HumanoidRootPart with a Motor6D, so it always
+  points where its owner aims. Two-bone arm IK puts the right hand on the weapon's `Grip` and the left
+  hand on its `Support` point in every pose.
+  - The upper body turns into a bladed shooting stance, with the head turned back to look down the
+    sights.
+  - The gun sits at low ready, shoulders when aiming or firing, and kicks back on every shot.
+  - Weapons are scaled to the body (`Config.Character.HeldWeaponScale`): a rifle is about 2.4 studs
+    long, about half the body height.
+- **Eliminated bodies** go limp and tumble. Characters stay in one piece (`BreakJointsOnDeath` off).
+- **Replication:** other clients learn your aim from the `Aiming` character attribute, your rolls
+  from `RollAt`/`RollDir`, and your shots from the tracer message, which names the shooter's
+  character. Bots set the same attributes, shoulder their guns in fights, and air-roll to dodge when
+  hit (skilled bots more often).
+- **Cost and limits:** characters beyond 420 studs aren't updated, and beyond 160 studs they update at
+  30 Hz. Arms and legs don't collide, so swinging limbs can't push the body.
+- The place forces R15 avatars (`StarterPlayer.GameSettingsAvatar`).
+- `docs/animation/pose_sheet.png` is rendered from the real code by `tools/render_poses.py`.
 
 **Bots** (`BotService`, `NavGraph`, `Config.Bots`). Every match and the lobby are kept at 20
 combatants: with one player online there are 19 bots, and each player who joins replaces a bot from
@@ -97,6 +125,14 @@ ammo, spread, aim cone, pickup range, cooldowns and airlocks. They move with the
 - `Config.Bots.ShowTag` controls the "[BOT]" name tag.
 
 **Match.** Waiting → Countdown → Preparing → Deploying → Active → Final → Ending → Results → Waiting.
+- **Countdown:** every round is a 30-second lobby countdown, then **20 combatants** deploy. Queued
+  real players come first and bots fill the remaining seats. If nobody is queued, it's 20 bots.
+- **Last one standing wins.** When every real player is out, the storm collapses to nothing over
+  25 s (`Config.Bots.CollapseWhenHumansOut`), so the bots-only remainder is decided quickly. The same
+  sudden-death collapse runs if a match reaches its 15-minute limit.
+- The storm hurts the weakest first and never eliminates the last combatant alive, so a match always
+  ends with exactly one survivor.
+
 Configurable min/max players. Deploy points are chosen spaced and validated as clear. Players get 4 s
 of deploy protection. Eliminated players drop a suit locker and spectate (Q/E). Disconnects count as
 eliminations. There's a time limit. Rewards are awarded and results shown, then the next round starts
@@ -152,7 +188,7 @@ in Studio, with a warning shown. Cosmetics only: no paid items and no random rew
 
 ## Tests performed
 
-**Automated: `python3 tests/run.py` → 51 passed, 0 failed** (about 3 minutes, most of it the simulated bot match).
+**Automated: `python3 tests/run.py` → 59 passed, 0 failed** (about 3 minutes, most of it the simulated bot match).
 Every run checks member access against Roblox's real API tables, so an invalid property name or a
 write to a read-only property fails the test that reaches it.
 - *Pure logic:* the CFrame mock; all 8 weapons complete; damage falloff is monotonic; time-to-kill is
@@ -177,6 +213,20 @@ write to a read-only property fails the test that reaches it.
   credited, the kill feed fires, a death locker spawns, the winner is declared, and results and XP
   are saved. The match returns to the lobby, a second match starts automatically, and a mid-match
   disconnect ends it cleanly. No server thread errors occur.
+- *Character animation* (the mock now builds full R15 rigs with Motor6D joints, and a joint solver
+  places every part from C0 · Transform · C1⁻¹):
+  - Guns are mounted at the aim grip and scaled to the body. The server copy points along the aim.
+  - Both hands sit within 0.05 / 0.12 studs of the Grip / Support points while idle, aiming, firing,
+    flying forward, reversing, climbing, descending, strafing, boosting and mid-roll. The last run
+    measured 0.000 for both.
+  - The aimed barrel is within 3° of the view direction. Ready tips it 20–40° down. A shot kicks it
+    back.
+  - Poses respond to motion: legs trail forward flight and tuck when descending, the body banks into
+    strafes, and boosting streamlines the legs.
+  - Q/E rolls throw the pilot sideways, cost boost, respect the cooldown and replicate. The body turns
+    upside down mid-roll and settles upright afterwards.
+  - Aim, shots and rolls reach other clients, and bots are animated the same way.
+  - Dead bodies tumble with limbs spread, and no transform is ever non-finite.
 - *Client:* the real MovementController is driven frame by frame. Thrust caps at cruise speed, drift
   persists, X stops fully, all six directions are camera-relative, diagonal thrust isn't faster,
   boost is capped and runs out of energy then bleeds back to cruise, the tether pulls and releases,
@@ -192,8 +242,10 @@ write to a read-only property fails the test that reaches it.
     time between looting, fighting, refilling oxygen and outrunning the storm.
   - Bots never trip the anti-cheat or the fire validation.
   - Afterwards the bots return to the lobby, and a joining player replaces a bot.
-  - In the next match, once every real player is eliminated, the match ends within seconds, a
-    winner is declared, results reach the player and the next countdown starts.
+  - In the next match (20 combatants), once the real players are eliminated the storm collapses and
+    the match ends with exactly one combatant alive, who is declared the winner.
+  - With nobody queued, the 30-second countdown still runs and 20 bots deploy. The match ends when
+    one is left.
   - The headless physics moves bodies by their velocity but doesn't collide them, so this proves the
     decisions and validation, not wall-hugging.
 - *Bot tuning found by these tests:*
@@ -214,10 +266,9 @@ the `LoadCharacter` fallback.
   and re-tests shots that miss every current body against the target where the shooter saw it. A
   test checks that a shot at the seen position hits, a shot older than the cap misses, and walls
   still block.
-- *After dying you waited in the lobby while 19 bots finished the match*, which can take up to
-  15 minutes. The match now ends as soon as every real player is out (`Config.Bots.EndWhenHumansOut`),
-  the bot with the most kills is declared the winner, and the next countdown starts about
-  20 seconds later.
+- *After dying you waited in the lobby while 19 bots finished the match*, which could take up to
+  15 minutes. Once every real player is out, the storm now collapses (see **Match**), so the last bot
+  standing wins within about 30 seconds and the next countdown follows.
 - *The big menu button read "LEAVE QUEUE" for queued players*, so pressing it took you out of
   matches. Pressing "PRACTICE RANGE" did the same. **DEPLOY** is now always the big button and always
   means "put me in the next match". Leaving the queue is a separate, smaller button. The lobby HUD
@@ -252,8 +303,15 @@ the `LoadCharacter` fallback.
 - **Lag compensation is tuned by estimate.** Shots that miss a target's current body are re-tested
   against where the shooter saw it: ping plus an assumed 0.12 s of Roblox interpolation, ±0.1 s,
   capped at 0.5 s. If hits still feel off in a real server, tune `Config.LagCompensation`.
-- **Weapon pose is approximate.** The gun is welded in front of the chest and the R15 right arm is
-  raised. There are no custom animations, and R6 rigs keep the default arm pose.
+- **Animation is procedural and unverified in Studio.** It has been checked numerically and in
+  rendered pose sheets on a blocky R15 rig with approximate joint offsets. Real avatars, especially
+  Rthro proportions, may need tuning:
+  - `Config.Character.AimGrip` sets where the gun sits.
+  - `READY`, `BLADE` and the `POLE` elbow hints are at the top of `CharacterAnimator`.
+  - If an avatar's arms are too short to reach the support point, the left hand stops just short of it.
+- **No animation assets.** Poses are code-driven, so there are no keyframed flourishes such as
+  reload or weapon-switch animations.
+- **Air roll has no gamepad binding yet.**
 - **Placeholder audio.** It uses Roblox built-in client sounds such as `paintball.wav` and
   `electronicpingshort.wav`. There's no breathing loop, only low-O2 beeps. Swap in licensed assets
   in `EffectsController.SOUNDS`.

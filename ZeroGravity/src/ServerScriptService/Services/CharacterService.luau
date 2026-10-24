@@ -70,6 +70,13 @@ function CharacterService.ApplySuit(player: Player, char: Model, suitId: string?
 		pl.Parent = light
 		attach(char, torso, "SuitPart", Vector3.new(0.25, 1.4, 0.1), CFrame.new(0.35, 0, -0.52), suit.trim, Enum.Material.SmoothPlastic)
 	end
+	-- Arms and legs are posed every frame by the CharacterAnimator; they must not shove the body
+	-- against walls while they swing (the root, torso and head keep their collisions).
+	for _, c in char:GetChildren() do
+		if c:IsA("BasePart") and (string.find(c.Name, "Arm") or string.find(c.Name, "Leg") or string.find(c.Name, "Hand") or string.find(c.Name, "Foot")) then
+			c.CanCollide = false
+		end
+	end
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	if hum then
 		hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.Viewer
@@ -79,7 +86,11 @@ function CharacterService.ApplySuit(player: Player, char: Model, suitId: string?
 	end
 end
 
--- Weapon visual welded in front of the chest (the character's body follows the aim direction).
+-- Held weapon. The gun is mounted on the HumanoidRootPart with a Motor6D ("WeaponMount") so that it
+-- always points where the body aims (the root follows the camera, or a bot's aim). C0 puts the
+-- weapon's Grip attachment at the shouldered-aim position; every client's CharacterAnimator moves
+-- the gun between ready and aim with the mount's Transform and puts the hands on Grip and Support
+-- with IK, so the server copy (used for bot muzzle positions) is the aim pose.
 function CharacterService.SetWeaponVisual(player: Player, weaponId: string?, rarity: string?)
 	local char = player.Character
 	if not char then return end
@@ -87,19 +98,21 @@ function CharacterService.SetWeaponVisual(player: Player, weaponId: string?, rar
 	if old then old:Destroy() end
 	local root = char:FindFirstChild("HumanoidRootPart") :: BasePart?
 	if not (weaponId and root) then return end
-	local m = WeaponModels.Build(weaponId, rarity)
+	local m = WeaponModels.Build(weaponId, rarity, Config.Character.HeldWeaponScale)
 	m.Name = "HeldWeapon"
 	m:SetAttribute("WeaponId", weaponId)
-	m:PivotTo(root.CFrame * CFrame.new(1.0, 0.5, -1.4))
+	local handle = m.PrimaryPart :: BasePart
+	local grip = handle:FindFirstChild("Grip") :: Attachment
+	local aim = Config.Character.AimGrip
+	m:PivotTo(root.CFrame * aim * grip.CFrame:Inverse())
 	m.Parent = char
-	weld(root, m.PrimaryPart :: BasePart)
-	-- Raise the right arm toward the weapon (R15 only; R6 keeps the default pose)
-	local upper = char:FindFirstChild("RightUpperArm")
-	local shoulder = upper and upper:FindFirstChild("RightShoulder") :: Motor6D?
-	if shoulder then
-		if shoulder:GetAttribute("BaseC0") == nil then shoulder:SetAttribute("BaseC0", shoulder.C0) end
-		shoulder.C0 = (shoulder:GetAttribute("BaseC0") :: CFrame) * CFrame.Angles(math.rad(80), 0, 0)
-	end
+	local mount = Instance.new("Motor6D")
+	mount.Name = "WeaponMount"
+	mount.Part0 = root
+	mount.Part1 = handle
+	mount.C0 = aim
+	mount.C1 = grip.CFrame
+	mount.Parent = handle
 end
 
 -- Loads a fresh character and places it at cf. Returns the character (or nil if superseded).
@@ -122,6 +135,7 @@ function CharacterService.Spawn(player: Player, cf: CFrame): Model?
 	if hum then
 		hum.MaxHealth = Config.Health.Max
 		hum.Health = Config.Health.Max
+		hum.BreakJointsOnDeath = false -- the body stays in one piece and tumbles (CharacterAnimator)
 	end
 	Security.Teleported(player)
 	char:PivotTo(cf)

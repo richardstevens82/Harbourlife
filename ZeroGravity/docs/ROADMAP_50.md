@@ -3,12 +3,12 @@
 Ordered roughly by impact within each group. ★ = recommended first.
 
 ## Movement and feel
-1. ★ **Real animations.** Floating idle, thrust and boost poses, and weapon hold, aim and reload animations for R15. Characters currently hold a static pose.
+1. ★ **Real animations.** *Mostly done:* `CharacterAnimator` now poses floating idle, thrust, boost, banking, air rolls, weapon hold, aim, recoil and death procedurally, with both hands placed on the gun by IK. Still to add: reload, weapon-switch and melee motions.
 2. ★ **Magnetic boots.** Lock onto hull surfaces for steady aim, silent hull-walking ambushes and a clear grounded/floating contrast.
 3. **Grab and push off.** Grab handrails and ledges, then kick off them for quick, silent changes of direction without spending boost.
 4. **Ramming melee.** Melee and body-checks deal damage scaled by impact speed, so momentum becomes a weapon.
 5. **Thruster signature.** Boosting briefly shows you on enemy radar: a clear trade-off between speed and stealth.
-6. **Optional roll control (Q/E)** for advanced pilots, with an auto-level assist that keeps beginners comfortable.
+6. **Optional roll control** for advanced pilots, with an auto-level assist that keeps beginners comfortable. (Q/E is now the barrel-roll dodge; free roll would need another binding.)
 7. **Camera polish.** FOV kick and speed lines on boost, impact shake, and a subtle visor overlay with condensation when oxygen is low.
 
 ## Combat

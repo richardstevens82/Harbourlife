@@ -14,7 +14,7 @@
     },
     "StarterPlayer": {
       "$className": "StarterPlayer",
-      "$properties": { "EnableMouseLockOption": false },
+      "$properties": { "EnableMouseLockOption": false, "GameSettingsAvatar": "R15" },
       "StarterPlayerScripts": { "$className": "StarterPlayerScripts", "$path": "src/StarterPlayer/StarterPlayerScripts" },
       "StarterCharacterScripts": { "$className": "StarterCharacterScripts", "$path": "src/StarterPlayer/StarterCharacterScripts" }
     },

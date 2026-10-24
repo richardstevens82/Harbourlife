@@ -20,7 +20,7 @@ Combat.OnTargetDamaged = nil :: ((BasePart, number, Player?) -> ())? -- set by H
 local function st(player: Player)
 	local s = state[player]
 	if not s then
-		s = { lastShot = 0, burstStart = 0, burstShots = 0, reloadUntil = 0, reloadSerial = 0, equipAt = 0, lastMelee = 0 }
+		s = { lastShot = 0, burstStart = 0, burstShots = 0, reloadUntil = 0, reloadSerial = 0, equipAt = 0, lastMelee = 0, lastRoll = -math.huge }
 		state[player] = s
 	end
 	return s
@@ -233,7 +233,7 @@ local function onFire(player: Player, req)
 	-- Tracers for everyone else (the shooter already drew its own locally)
 	for _, p in Players:GetPlayers() do
 		if p ~= player then
-			Remotes.FX:FireClient(p, { t = "tracer", from = origin, ends = ends, weapon = weapon.id, shooter = player })
+			Remotes.FX:FireClient(p, { t = "tracer", from = origin, ends = ends, weapon = weapon.id, shooter = char })
 		end
 	end
 	if weapon.mag ~= req.expectMag then
@@ -330,11 +330,34 @@ function Combat.ResetPlayer(player: Player)
 	state[player] = nil
 end
 
+-- Presentation state other clients animate from (CharacterAnimator): aiming down sights, and air
+-- rolls. Movement itself is the owner's physics; these only drive the poses everyone else sees.
+function Combat.Aim(c, aiming: boolean)
+	local char = c.Character
+	if char and char:GetAttribute("Aiming") ~= aiming then char:SetAttribute("Aiming", aiming) end
+end
+
+function Combat.Roll(c, dir: number): boolean
+	if dir ~= 1 and dir ~= -1 then return false end
+	local s = st(c)
+	local now = os.clock()
+	local char = c.Character
+	if not char or now - s.lastRoll < Config.Movement.RollCooldown * 0.8 then return false end
+	s.lastRoll = now
+	char:SetAttribute("RollDir", dir)
+	char:SetAttribute("RollAt", workspace:GetServerTimeNow())
+	return true
+end
+
 function Combat.Start()
 	Remotes.Combat.OnServerEvent:Connect(function(player, req)
 		if type(req) ~= "table" then return end
 		if req.action == "fire" then
 			onFire(player, req)
+		elseif req.action == "aim" then
+			if type(req.value) == "boolean" and Security.RateLimit(player, "aim", 8, 6) then Combat.Aim(player, req.value) end
+		elseif req.action == "roll" then
+			if Security.RateLimit(player, "roll", 2, 2) then Combat.Roll(player, req.dir) end
 		elseif not Security.RateLimit(player, "combat", 10, 6) then
 			return
 		elseif req.action == "reload" then

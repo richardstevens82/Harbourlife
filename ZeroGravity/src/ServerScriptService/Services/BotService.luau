@@ -90,6 +90,7 @@ local function newBrain()
 		nextGrenadeAt = 0, nextEquipAt = 0, nextUseAt = 0,
 		lobbyGoal = nil, lobbyWaitUntil = 0, practiceAt = 0, practiceShots = 0,
 		avoidDir = nil, avoidUntil = 0,
+		nextRollAt = 0, aimingShown = false,
 	}
 end
 
@@ -190,14 +191,16 @@ function Bots.ForMatch(n: number): { any }
 end
 
 -- Keep (players + bots) at FillTo. Only lobby bots are removed; match bots finish their match.
-function Bots.Rebalance()
+-- realPlayers defaults to everyone online; MatchService passes the queued count at deployment so
+-- every match has exactly FillTo combatants.
+function Bots.Rebalance(realPlayers: number?)
 	if not B.Enabled then
 		for i = #bots, 1, -1 do
 			if not Roster.Get(bots[i]).inMatch then Bots.Remove(bots[i]) end
 		end
 		return
 	end
-	local want = math.max(0, B.FillTo - #Players:GetPlayers())
+	local want = math.max(0, B.FillTo - (realPlayers or #Players:GetPlayers()))
 	while #bots < want do
 		Bots.ToLobby(newBot())
 	end
@@ -820,8 +823,30 @@ local function step(dt: number)
 				local ok, err = pcall(fireStep, bot, root)
 				if not ok then warn("[ZG] bot " .. bot.Name .. " fire error: " .. tostring(err)) end
 			end
+			-- shoulder the gun while fighting (clients animate it from the character attribute)
+			local aiming = brain.wantFire or brain.task == "fight"
+			if aiming ~= brain.aimingShown then
+				brain.aimingShown = aiming
+				Combat.Aim(bot, aiming)
+			end
 		end
 	end
+end
+
+-- Air roll dodge under fire, like a player's Q / E: same impulse, energy cost and cooldown. Better
+-- bots roll more often.
+local function maybeRoll(bot)
+	local brain = bot.brain
+	local now = os.clock()
+	if brain.mode ~= "match" or now < brain.nextRollAt or brain.energy < MV.RollCost or rng:NextNumber() > 0.2 + 0.4 * bot.skill then return end
+	local root = rootOf(bot)
+	if not root then return end
+	local dir = if brain.strafe >= 0 then 1 else -1
+	if not Combat.Roll(bot, dir) then return end
+	brain.nextRollAt = now + MV.RollCooldown + rng:NextNumber(1.5, 3.5)
+	brain.energy -= MV.RollCost
+	brain.lastBoostUse = now
+	root.AssemblyLinearVelocity += root.CFrame.RightVector * dir * MV.RollImpulse
 end
 
 -- Server messages addressed to a bot (via Remotes.BotSink): react to damage and impulses.
@@ -831,6 +856,7 @@ local function onMessage(bot, remote: string, msg)
 	if msg.t == "damaged" then
 		brain.hurtAt = os.clock()
 		brain.threatPos = msg.from
+		if msg.cause == "weapon" then maybeRoll(bot) end
 	elseif msg.t == "impulse" then
 		local root = rootOf(bot)
 		if root then

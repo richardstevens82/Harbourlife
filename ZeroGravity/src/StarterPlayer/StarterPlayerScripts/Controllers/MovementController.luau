@@ -25,6 +25,7 @@ local player = Players.LocalPlayer
 local M = Config.Movement
 local hum: Humanoid?, root: BasePart?, align: AlignOrientation?
 local lastBoostUse = 0
+local lastRoll = -math.huge
 local boosting = false
 local thruster: ParticleEmitter?
 
@@ -108,6 +109,20 @@ function Movement.ApplyImpulse(v: Vector3, set: boolean?)
 	else
 		root.AssemblyLinearVelocity += v
 	end
+end
+
+-- Air roll: a barrel-roll dodge that throws the body sideways (camera-relative). Costs boost energy;
+-- the extra speed bleeds back to cruise like any other overspeed. Returns true if it happened.
+function Movement.Roll(dir: number): boolean
+	if not (root and hum and root.Parent) or hum.Health <= 0 or State.UIOpen then return false end
+	local now = os.clock()
+	if now - lastRoll < M.RollCooldown or (State.Boost or 0) < M.RollCost then return false end
+	lastRoll = now
+	State.Boost -= M.RollCost
+	lastBoostUse = now -- pauses regeneration like boosting does
+	root.AssemblyLinearVelocity += CameraController.Rotation().RightVector * dir * M.RollImpulse
+	Remotes.Combat:FireServer({ action = "roll", dir = dir })
+	return true
 end
 
 function Movement.ReleaseTether()

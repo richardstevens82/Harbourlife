@@ -9,12 +9,14 @@ Config.Match = {
 	MinPlayers = 2, -- real players needed when bots are disabled
 	MaxPlayers = 20,
 	StudioMinPlayers = 1, -- solo testing in Studio: a match with one player ends when the zone wins
-	LobbyCountdown = 20,
+	LobbyCountdown = 30, -- every round: 30 s in the lobby, then 20 combatants deploy (real players first, bots fill the rest)
 	PrepareTime = 3,
 	DeployProtection = 4, -- seconds of invulnerability after deployment
 	FinalPhaseAtPlayers = 3, -- "final combat phase" begins at this many survivors (or final zone stage)
 	ResultsTime = 12,
-	MaxMatchTime = 15 * 60,
+	MaxMatchTime = 15 * 60, -- then the storm collapses (sudden death) until one combatant is left
+	SuddenDeathTime = 30, -- seconds for the sudden-death collapse
+	CollapseDps = 30, -- storm damage per second during a collapse
 	DeploySpacing = 160, -- minimum distance between two deployment points used in one match
 	TeamSize = 1, -- solo; squads would raise this (MatchService groups players by team id)
 }
@@ -24,7 +26,7 @@ Config.Match = {
 Config.Bots = {
 	Enabled = true,
 	FillTo = 20,
-	MinRealPlayers = 1, -- with bots on, one queued player is enough to start a full match
+	MinRealPlayers = 0, -- with bots on a match always starts after the countdown (bots-only if nobody is queued)
 	SkillMin = 0.72, -- 0..1; shapes reaction time, aim error/settling, headshots, strafing
 	SkillMax = 0.93,
 	ShowTag = true, -- "[BOT]" after bot name tags (set false to hide)
@@ -32,7 +34,9 @@ Config.Bots = {
 	SightRange = 450,
 	HuntRange = 1100, -- bots track enemies this far away when nothing else needs doing
 	LobbyPractice = true, -- bots shoot the lobby range drones between matches
-	EndWhenHumansOut = true, -- once every real player is eliminated, end the match (no waiting on a bots-only fight)
+	-- Once every real player is eliminated the storm collapses over this many seconds, so the bots-only
+	-- remainder is decided quickly - still last one standing. 0 = let the match play out normally.
+	CollapseWhenHumansOut = 25,
 }
 
 -- Arena geometry (studs). Arena is centred on the origin.
@@ -56,6 +60,11 @@ Config.Movement = {
 	Drag = 0.08, -- tiny passive decay so a drifting player eventually settles; momentum still dominates
 	StopThreshold = 0.6,
 	TurnResponsiveness = 35,
+	-- Air roll (Q / E): a barrel-roll dodge that throws you sideways
+	RollImpulse = 34, -- studs/s added sideways (bleeds back to cruise like any overspeed)
+	RollCost = 22, -- boost energy
+	RollCooldown = 0.9,
+	RollTime = 0.5, -- length of the barrel-roll animation
 	-- Server sanity limits (with allowance for tether pulls and network jitter)
 	ServerSpeedTolerance = 1.35,
 	ServerCheckInterval = 0.5,
@@ -128,6 +137,14 @@ Config.Melee = {
 	Range = 8,
 	Damage = 35,
 	Cooldown = 0.8,
+}
+
+-- Character presentation: weapon size in the hands and where the gun sits when shouldered.
+Config.Character = {
+	HeldWeaponScale = 0.45, -- weapon models are built at display size; this scales them to the body
+	-- Grip (right hand) position relative to the HumanoidRootPart while aiming; the barrel points along
+	-- the root's look direction, which follows the camera. The animator lowers it to "ready" otherwise.
+	AimGrip = CFrame.new(0.4, 0.55, -0.9),
 }
 
 -- Lag compensation: a player aims at where their screen shows a target, which is where the server

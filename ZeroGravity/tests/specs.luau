@@ -827,6 +827,7 @@ cam._props.ViewportSize = Vector2.new(1280, 720) -- read-only in Roblox; set raw
 local RS2 = Mock.services.RunService
 local function frames(n)
 	for _ = 1, n do
+		RS2.PreSimulation:Fire(1 / 60)
 		RS2.RenderStepped:Fire(1 / 60)
 		for _, fn in Mock.renderSteps or {} do fn(1 / 60) end
 		Mock.advance(1 / 60)
@@ -908,6 +909,223 @@ test("HUD keeps running through lobby, match, spectate and results states", func
 	check(#Mock.errors == 0, "errors:\n          %s", table.concat(Mock.errors, "\n          "))
 end)
 
+------------------------------------------------------------------------------------ character animation
+print("\n== Character animation (CharacterAnimator posing a full R15 rig) ==")
+local Animator = client("CharacterAnimator")
+local CharacterService = svc("CharacterService")
+local function deg(a, b) return math.deg(math.acos(math.clamp(a.Unit:Dot(b.Unit), -1, 1))) end
+local function animate(char, seconds, setup)
+	for _ = 1, math.max(1, math.floor(seconds * 60 + 0.5)) do
+		if setup then setup() end
+		Animator.StepAll(1 / 60)
+		Mock.advance(1 / 60)
+	end
+	Mock.solveJoints(char)
+end
+-- distance from each hand's grip point to the weapon's Grip / Support attachment
+local function handGaps(char)
+	local handle = char:FindFirstChild("HeldWeapon").PrimaryPart
+	local function world(part, att) return part._props.CFrame * part:FindFirstChild(att)._props.Position end
+	return (world(char.RightHand, "RightGripAttachment") - world(handle, "Grip")).Magnitude,
+		(world(char.LeftHand, "LeftGripAttachment") - world(handle, "Support")).Magnitude
+end
+local function transformsFinite(char)
+	for _, d in char:GetDescendants() do
+		if d.ClassName == "Motor6D" and d._props.Transform then
+			local p = d._props.Transform.p
+			for _, v in { p.X, p.Y, p.Z, table.unpack(d._props.Transform.m) } do
+				if v ~= v or math.abs(v) > 1e6 then return false, d.Name end
+			end
+		end
+	end
+	return true
+end
+local function inRoot(char, partName) -- a part's position in root space
+	return char.HumanoidRootPart._props.CFrame:PointToObjectSpace(char:FindFirstChild(partName)._props.CFrame.p)
+end
+local pilot = localPlayer.Character
+local proot2 = pilot:FindFirstChild("HumanoidRootPart")
+local function setVel(v) proot2._props.AssemblyLinearVelocity = proot2._props.CFrame:VectorToWorldSpace(v) end
+
+test("held weapons sit in the hands: mounted on the root at the aim grip, scaled to the body", function()
+	CharacterService.SetWeaponVisual(localPlayer, "assault", "rare")
+	local held = pilot:FindFirstChild("HeldWeapon")
+	check(held ~= nil, "no HeldWeapon")
+	local handle = held.PrimaryPart
+	local mount = handle:FindFirstChild("WeaponMount")
+	check(mount and mount.Part0 == proot2 and mount.Part1 == handle, "gun is not mounted on the HumanoidRootPart")
+	check((mount.C0.p - Config.Character.AimGrip.p).Magnitude < 1e-6, "mount is not at the aim grip")
+	check(handle:FindFirstChild("Grip") and handle:FindFirstChild("Support") and held:FindFirstChild("Muzzle", true), "missing hand or muzzle points")
+	local zmin, zmax = math.huge, -math.huge
+	for _, p in held:GetChildren() do
+		if p:IsA("BasePart") then
+			local z = handle._props.CFrame:PointToObjectSpace(p._props.CFrame.p).Z
+			local h = math.max(p._props.Size.X, p._props.Size.Y, p._props.Size.Z) / 2
+			zmin, zmax = math.min(zmin, z - h), math.max(zmax, z + h)
+		end
+	end
+	check(zmax - zmin > 1.6 and zmax - zmin < 3.6, "rifle is %.1f studs long (body is ~5)", zmax - zmin)
+	Mock.solveJoints(pilot)
+	check(deg(handle._props.CFrame.LookVector, proot2._props.CFrame.LookVector) < 1, "server copy of the gun does not point along the aim")
+	local muzzle = held:FindFirstChild("Muzzle", true)
+	check((muzzle.WorldPosition - proot2._props.CFrame.p).Magnitude < 4, "muzzle is far from the body")
+end)
+
+test("both hands stay on the gun: idle, aiming, firing, flying, strafing, boosting and rolling", function()
+	Mock.errors = {}
+	local worst = { 0, 0 }
+	for _, case in {
+		{ "idle", V3.zero },
+		{ "aiming", V3.zero, function() CState.Aiming = true end },
+		{ "firing", V3.zero, function() CState.Aiming = false; Animator.Fired() end, 0.05 },
+		{ "flying forward", V3.new(0, 0, -40) },
+		{ "reversing", V3.new(0, 0, 35) },
+		{ "climbing", V3.new(0, 38, 0) },
+		{ "descending", V3.new(0, -38, 0) },
+		{ "strafing right", V3.new(40, 0, 0) },
+		{ "boosting", V3.new(0, 0, -80) },
+		{ "barrel roll (mid)", V3.new(30, 0, 0), function() Animator.Roll(1) end, M.RollTime * 0.45 },
+	} do
+		local name, v, before, dur = case[1], case[2], case[3], case[4]
+		setVel(v)
+		if before then before() end
+		animate(pilot, dur or 0.7, function() setVel(v) end)
+		local okT, bad = transformsFinite(pilot)
+		check(okT, "%s: joint %s has a non-finite transform", name, tostring(bad))
+		local r, l = handGaps(pilot)
+		worst[1], worst[2] = math.max(worst[1], r), math.max(worst[2], l)
+		check(r < 0.05, "%s: right hand is %.2f studs off the grip", name, r)
+		check(l < 0.12, "%s: left hand is %.2f studs off the support", name, l)
+	end
+	print(string.format("        worst hand gaps: right %.3f, left %.3f studs", worst[1], worst[2]))
+	check(#Mock.errors == 0, "errors: %s", table.concat(Mock.errors, "; "))
+	setVel(V3.zero)
+end)
+
+test("aiming shoulders the gun along the camera; ready holds it low; shots kick it back", function()
+	local handle = pilot:FindFirstChild("HeldWeapon").PrimaryPart
+	CState.Aiming = true
+	animate(pilot, 0.6)
+	local aimAngle = deg(handle._props.CFrame.LookVector, proot2._props.CFrame.LookVector)
+	local aimPos = proot2._props.CFrame:PointToObjectSpace(handle._props.CFrame.p)
+	check(aimAngle < 3, "aimed barrel is %.1f deg off the view direction", aimAngle)
+	Animator.Fired()
+	animate(pilot, 1 / 60)
+	local kicked = proot2._props.CFrame:PointToObjectSpace(handle._props.CFrame.p)
+	check(kicked.Z > aimPos.Z + 0.08, "no recoil kick (%.2f)", kicked.Z - aimPos.Z)
+	CState.Aiming = false
+	animate(pilot, 1.6) -- past the post-shot hold
+	local look = proot2._props.CFrame:VectorToObjectSpace(handle._props.CFrame.LookVector)
+	local readyAngle = deg(look, V3.new(0, 0, -1))
+	check(readyAngle > 18 and readyAngle < 45 and look.Y < 0, "ready pose should tip the barrel down 20-40 deg (got %.1f)", readyAngle)
+end)
+
+test("flying poses: legs trail forward thrust, tuck when descending, body banks into strafes", function()
+	local function settle(v)
+		setVel(v)
+		animate(pilot, 1.2, function() setVel(v) end)
+	end
+	settle(V3.zero)
+	local idleFoot = (inRoot(pilot, "RightFoot") + inRoot(pilot, "LeftFoot")) / 2
+	settle(V3.new(0, 0, -40))
+	local fwdFoot = (inRoot(pilot, "RightFoot") + inRoot(pilot, "LeftFoot")) / 2
+	check(fwdFoot.Z > idleFoot.Z + 0.6, "legs do not trail behind forward flight (dz %.2f)", fwdFoot.Z - idleFoot.Z)
+	settle(V3.new(0, -38, 0))
+	local downFoot = (inRoot(pilot, "RightFoot") + inRoot(pilot, "LeftFoot")) / 2
+	check(downFoot.Y > idleFoot.Y + 0.4, "legs do not tuck when descending (dy %.2f)", downFoot.Y - idleFoot.Y)
+	settle(V3.new(40, 0, 0))
+	local up = proot2._props.CFrame:VectorToObjectSpace(pilot.UpperTorso._props.CFrame.UpVector)
+	check(up.X > 0.25, "body does not bank into a right strafe (up.x %.2f)", up.X)
+	settle(V3.new(0, 0, -80))
+	local boostFoot = (inRoot(pilot, "RightFoot") + inRoot(pilot, "LeftFoot")) / 2
+	check(boostFoot.Z > fwdFoot.Z - 0.05, "legs not streamlined while boosting")
+	settle(V3.zero)
+end)
+
+test("air roll: Q/E throws the pilot sideways, costs boost, replicates, and the body spins a full turn", function()
+	CState.UIOpen = false
+	CState.Boost = Config.Movement.BoostMax
+	Mock.advance(Config.Movement.RollCooldown + 0.1)
+	setVel(V3.zero)
+	Mock.sent = {}
+	check(Movement.Roll(1), "roll refused")
+	local lv = proot2._props.CFrame:VectorToObjectSpace(proot2._props.AssemblyLinearVelocity)
+	check(math.abs(lv.X - M.RollImpulse) < 0.5, "roll impulse %.1f, expected %d sideways", lv.X, M.RollImpulse)
+	check(near(CState.Boost, Config.Movement.BoostMax - M.RollCost, 1e-6), "roll did not cost boost energy")
+	check(not Movement.Roll(1), "roll ignored its cooldown")
+	local sentRoll = false
+	for _, m in Mock.sent do
+		if m.remote == "Combat" and m.msg.action == "roll" then sentRoll = true end
+	end
+	check(sentRoll, "roll not sent to the server")
+	Remotes.Combat.OnServerEvent:Fire(localPlayer, { action = "roll", dir = 1 })
+	check(pilot:GetAttribute("RollDir") == 1 and pilot:GetAttribute("RollAt") ~= nil, "server did not publish the roll")
+	-- the body turns through a full circle, then settles upright
+	setVel(V3.zero)
+	Animator.Roll(1)
+	local minUp = 1
+	for _ = 1, math.floor(M.RollTime * 60) do
+		animate(pilot, 1 / 60, function() setVel(V3.zero) end)
+		local up = proot2._props.CFrame:VectorToObjectSpace(pilot.UpperTorso._props.CFrame.UpVector)
+		minUp = math.min(minUp, up.Y)
+	end
+	check(minUp < -0.8, "body never turned upside down during the roll (min up.y %.2f)", minUp)
+	animate(pilot, 0.5, function() setVel(V3.zero) end)
+	local up = proot2._props.CFrame:VectorToObjectSpace(pilot.UpperTorso._props.CFrame.UpVector)
+	check(up.Y > 0.95, "body did not settle after the roll (up.y %.2f)", up.Y)
+end)
+
+test("other clients see aiming, shots and rolls; bots are animated the same way", function()
+	Mock.errors = {}
+	-- aim state goes to the server and onto the character
+	CState.Aiming = true
+	frames(2)
+	local sentAim = false
+	for _, m in Mock.sent do
+		if m.remote == "Combat" and m.msg.action == "aim" and m.msg.value == true then sentAim = true end
+	end
+	check(sentAim, "aim state not sent")
+	Remotes.Combat.OnServerEvent:Fire(localPlayer, { action = "aim", value = true })
+	check(pilot:GetAttribute("Aiming") == true, "server did not mirror the aim state")
+	CState.Aiming = false
+	-- a bot body with a gun, animated from attributes and tracer messages
+	local rig = Mock.buildRig("TestBot", CF.new(40, 500, 0))
+	rig.Parent = Mock.workspace:FindFirstChild("BotCharacters")
+	CharacterService.SetWeaponVisual({ Character = rig }, "shotgun", "common")
+	rig:SetAttribute("Aiming", true)
+	animate(rig, 0.5)
+	local r, l = handGaps(rig)
+	check(r < 0.05 and l < 0.12, "bot hands off the gun (%.2f / %.2f)", r, l)
+	local handle = rig:FindFirstChild("HeldWeapon").PrimaryPart
+	local before = rig.HumanoidRootPart._props.CFrame:PointToObjectSpace(handle._props.CFrame.p)
+	Remotes.FX.OnClientEvent:Fire({ t = "tracer", from = before, ends = { before + V3.new(0, 0, -50) }, weapon = "shotgun", shooter = rig })
+	animate(rig, 1 / 60)
+	local after = rig.HumanoidRootPart._props.CFrame:PointToObjectSpace(handle._props.CFrame.p)
+	check(after.Z > before.Z + 0.08, "tracer did not kick the bot's gun")
+	rig:SetAttribute("RollDir", -1)
+	rig:SetAttribute("RollAt", Mock.clock())
+	animate(rig, M.RollTime * 0.5)
+	local up = rig.HumanoidRootPart._props.CFrame:VectorToObjectSpace(rig.UpperTorso._props.CFrame.UpVector)
+	check(up.Y < 0, "bot roll from attributes not animated (up.y %.2f)", up.Y)
+	rig:Destroy()
+	check(#Mock.errors == 0, "errors: %s", table.concat(Mock.errors, "; "))
+end)
+
+test("eliminated bodies go limp and tumble", function()
+	local h = pilot:FindFirstChildOfClass("Humanoid")
+	CharacterService.SetWeaponVisual(localPlayer, nil)
+	local up0 = proot2._props.CFrame:VectorToObjectSpace(pilot.UpperTorso._props.CFrame.UpVector)
+	h._props.Health = 0
+	animate(pilot, 2)
+	local okT, bad = transformsFinite(pilot)
+	check(okT, "non-finite transform on %s", tostring(bad))
+	local up1 = proot2._props.CFrame:VectorToObjectSpace(pilot.UpperTorso._props.CFrame.UpVector)
+	check(deg(up0, up1) > 20, "dead body did not tumble (%.1f deg)", deg(up0, up1))
+	local arm = inRoot(pilot, "RightHand")
+	check(arm.X > 1.5, "arms not spread when limp (hand x %.2f)", arm.X)
+	h._props.Health = 100
+end)
+
 -------------------------------------------------------------------------------------------------- bots
 print("\n== Bots (19 bots + 1 player, full simulated match) ==")
 local Bots = svc("BotService")
@@ -972,7 +1190,7 @@ for _, st in Config.Zone.Stages do
 	st.shrink *= 0.35
 end
 test("a full 20-combatant match plays out to a winner", function()
-	Config.Bots.EndWhenHumansOut = false -- keep the bots fighting after Alice (who never moves) is eliminated
+	Config.Bots.CollapseWhenHumansOut = 0 -- keep the bots fighting normally after Alice (who never moves) is eliminated
 	Mock.sent = {}
 	local rays0, clock0 = Mock.stats.rays, os.clock()
 	check(advanceUntil(function() return matchState:GetAttribute("Phase") == "Active" end, 60), "match never started (%s)",
@@ -1044,11 +1262,12 @@ test("after the match bots return to the lobby and a new round begins", function
 	check(#Bots.All() == 18 or (r and r.inMatch), "bot count after join: %d", #Bots.All())
 end)
 
-test("once every real player is eliminated the match ends (no waiting on a bots-only fight)", function()
-	Config.Bots.EndWhenHumansOut = true
+test("last one standing: once the real players are out the storm collapses until one bot is left", function()
+	Config.Bots.CollapseWhenHumansOut = 25
 	Mock.sent = {}
 	check(advanceUntil(function() return matchState:GetAttribute("Phase") == "Active" end, 90), "next match never started (%s)",
 		tostring(matchState:GetAttribute("Phase")))
+	check(matchState:GetAttribute("Participants") == 20, "participants %s (want 20)", tostring(matchState:GetAttribute("Participants")))
 	Mock.advance(Config.Match.DeployProtection + 0.5)
 	local humans = {}
 	for _, p in { alice, carol } do
@@ -1057,15 +1276,45 @@ test("once every real player is eliminated the match ends (no waiting on a bots-
 	check(#humans >= 1, "no real player deployed")
 	check(matchState:GetAttribute("AliveCount") >= #humans + 5, "too few bots alive to prove anything (%d)", matchState:GetAttribute("AliveCount"))
 	for _, p in humans do hum(p).Health = 0 end
+	local zs = RS:FindFirstChild("ZoneState")
+	check(advanceUntil(function() return zs:GetAttribute("NextRadius") == 0 end, 3), "storm did not collapse after the last real player died")
+	local lastAlive
 	check(advanceUntil(function()
 		local ph = matchState:GetAttribute("Phase")
+		if ph == "Active" or ph == "Final" then lastAlive = Roster.Alive() end
 		return ph == "Ending" or ph == "Results"
-	end, 5), "match kept running after the last real player was eliminated (%s)", tostring(matchState:GetAttribute("Phase")))
-	local w = matchState:GetAttribute("Winner")
-	check(w ~= nil and w ~= "", "no winner declared")
+	end, Config.Bots.CollapseWhenHumansOut + 25), "collapse did not finish the match (%s)", tostring(matchState:GetAttribute("Phase")))
+	local alive = Roster.Alive()
+	check(#alive == 1, "%d combatants alive at the end (last one standing wants 1)", #alive)
+	check(matchState:GetAttribute("Winner") == alive[1].Name, "winner %s is not the last one standing (%s)",
+		tostring(matchState:GetAttribute("Winner")), alive[1].Name)
+	print(string.format("        winner %s; %d were alive just before the end", alive[1].Name, lastAlive and #lastAlive or -1))
 	check(advanceUntil(function() return #sentTo(alice, "Match", "results") > 0 end, 10), "no results sent to the eliminated player")
-	check(advanceUntil(function() return matchState:GetAttribute("Phase") == "Countdown" end, Config.Match.ResultsTime + 10),
-		"the next countdown did not start")
+end)
+
+test("a match starts after the 30 s countdown with 20 combatants even when nobody is queued", function()
+	for _, p in { alice, carol } do
+		if p and Roster.Get(p) then Roster.Get(p).queued = false end
+	end
+	check(advanceUntil(function() return matchState:GetAttribute("Phase") == "Countdown" end, Config.Match.ResultsTime + 15),
+		"no countdown (%s)", tostring(matchState:GetAttribute("Phase")))
+	local left = matchState:GetAttribute("PhaseEndsAt") - Mock.clock()
+	check(math.abs(left - 30) < 1.5, "countdown is %.1f s (want 30)", left)
+	check(advanceUntil(function() return matchState:GetAttribute("Phase") == "Active" end, 40), "match did not start (%s)",
+		tostring(matchState:GetAttribute("Phase")))
+	check(matchState:GetAttribute("Participants") == 20, "participants %s (want 20 bots)", tostring(matchState:GetAttribute("Participants")))
+	local active = Roster.Active()
+	for _, c in active do
+		check(Roster.IsBot(c), "%s deployed although not queued", c.Name)
+	end
+	-- finish it quickly: everyone but one bot is eliminated
+	Mock.advance(Config.Match.DeployProtection + 0.5)
+	for i, c in Roster.Active() do
+		if i > 1 then c.Character:FindFirstChildOfClass("Humanoid").Health = 0 end
+	end
+	check(advanceUntil(function() return matchState:GetAttribute("Phase") == "Ending" or matchState:GetAttribute("Phase") == "Results" end, 5),
+		"bots-only match did not end with one survivor")
+	check(#Roster.Alive() == 1 and matchState:GetAttribute("Winner") == Roster.Alive()[1].Name, "winner is not the last bot standing")
 end)
 
 print(string.format("\n%d passed, %d failed", passed, failed))

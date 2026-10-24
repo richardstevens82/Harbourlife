@@ -35,14 +35,15 @@ State.Bindings = {
 	Inventory = Enum.KeyCode.Tab, Menu = Enum.KeyCode.M, Map = Enum.KeyCode.N,
 	Heal = Enum.KeyCode.Four, Shield = Enum.KeyCode.Five, Oxygen = Enum.KeyCode.Six,
 	Slot1 = Enum.KeyCode.One, Slot2 = Enum.KeyCode.Two, Slot3 = Enum.KeyCode.Three,
+	RollLeft = Enum.KeyCode.Q, RollRight = Enum.KeyCode.E,
 }
 State.BindingOrder = {
-	"Forward", "Back", "Left", "Right", "Up", "Down", "Boost", "Brake", "Reload", "Utility", "SwapUtility", "Melee",
+	"Forward", "Back", "Left", "Right", "Up", "Down", "Boost", "Brake", "RollLeft", "RollRight", "Reload", "Utility", "SwapUtility", "Melee",
 	"Heal", "Shield", "Oxygen", "Inventory", "Map", "Menu",
 }
 State.BindingLabels = {
 	Forward = "Thrust forward", Back = "Thrust back", Left = "Strafe left", Right = "Strafe right", Up = "Move up", Down = "Move down",
-	Boost = "Boost", Brake = "Stabilise / brake", Reload = "Reload", Utility = "Use utility", SwapUtility = "Switch utility",
+	Boost = "Boost", Brake = "Stabilise / brake", RollLeft = "Air roll left", RollRight = "Air roll right", Reload = "Reload", Utility = "Use utility", SwapUtility = "Switch utility",
 	Melee = "Melee", Heal = "Use medical", Shield = "Use shield cell", Oxygen = "Use O2 canister", Inventory = "Inventory",
 	Map = "Tactical map", Menu = "Menu",
 }

@@ -1,0 +1,3 @@
+-- Intentionally empty: replaces Roblox's default "Animate" script. Walking, jumping and falling
+-- animations make no sense in zero gravity; every character (players and bots) is posed
+-- procedurally by Controllers/CharacterAnimator on each client instead.

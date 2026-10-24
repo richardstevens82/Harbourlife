@@ -93,7 +93,50 @@ function CFmethods.PointToObjectSpace(a, v) return mulMV(transpose(a.m), v - a.p
 function CFmethods.PointToWorldSpace(a, v) return a.p + mulMV(a.m, v) end
 function CFmethods.VectorToWorldSpace(a, v) return mulMV(a.m, v) end
 function CFmethods.VectorToObjectSpace(a, v) return mulMV(transpose(a.m), v) end
-function CFmethods.Lerp(a, b, t) return cf(a.p:Lerp(b.p, t), t < 0.5 and a.m or b.m) end
+-- rotation matrix <-> quaternion, for a real slerp like Roblox's CFrame:Lerp
+local function toQuat(m)
+	local tr = m[1] + m[5] + m[9]
+	local w, x, y, z
+	if tr > 0 then
+		local s = math.sqrt(tr + 1) * 2
+		w, x, y, z = 0.25 * s, (m[8] - m[6]) / s, (m[3] - m[7]) / s, (m[4] - m[2]) / s
+	elseif m[1] > m[5] and m[1] > m[9] then
+		local s = math.sqrt(1 + m[1] - m[5] - m[9]) * 2
+		w, x, y, z = (m[8] - m[6]) / s, 0.25 * s, (m[2] + m[4]) / s, (m[3] + m[7]) / s
+	elseif m[5] > m[9] then
+		local s = math.sqrt(1 + m[5] - m[1] - m[9]) * 2
+		w, x, y, z = (m[3] - m[7]) / s, (m[2] + m[4]) / s, 0.25 * s, (m[6] + m[8]) / s
+	else
+		local s = math.sqrt(1 + m[9] - m[1] - m[5]) * 2
+		w, x, y, z = (m[4] - m[2]) / s, (m[3] + m[7]) / s, (m[6] + m[8]) / s, 0.25 * s
+	end
+	return w, x, y, z
+end
+local function fromQuat(w, x, y, z)
+	local n = math.sqrt(w * w + x * x + y * y + z * z)
+	w, x, y, z = w / n, x / n, y / n, z / n
+	return {
+		1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w),
+		2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w),
+		2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y),
+	}
+end
+function CFmethods.Lerp(a, b, t)
+	local aw, ax, ay, az = toQuat(a.m)
+	local bw, bx, by, bz = toQuat(b.m)
+	local d = aw * bw + ax * bx + ay * by + az * bz
+	if d < 0 then
+		bw, bx, by, bz, d = -bw, -bx, -by, -bz, -d
+	end
+	local k0, k1
+	if d > 0.9995 then
+		k0, k1 = 1 - t, t
+	else
+		local th = math.acos(d)
+		k0, k1 = math.sin((1 - t) * th) / math.sin(th), math.sin(t * th) / math.sin(th)
+	end
+	return cf(a.p:Lerp(b.p, t), fromQuat(aw * k0 + bw * k1, ax * k0 + bx * k1, ay * k0 + by * k1, az * k0 + bz * k1))
+end
 function CFmethods.GetComponents(a)
 	local m = a.m
 	return a.p.X, a.p.Y, a.p.Z, m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9]
@@ -113,6 +156,8 @@ function CF.new(a, b, c, ...)
 end
 function CF.Angles(x, y, z) return cf(v3(0, 0, 0), mulMM(mulMM(rx(x), ry(y)), rz(z))) end
 CF.fromEulerAnglesXYZ = CF.Angles
+function CF.fromEulerAnglesYXZ(x, y, z) return cf(v3(0, 0, 0), mulMM(mulMM(ry(y), rx(x)), rz(z))) end
+CF.fromOrientation = CF.fromEulerAnglesYXZ
 function CF.fromMatrix(pos, vx, vy, vz)
 	vz = vz or vx:Cross(vy)
 	return cf(pos, { vx.X, vy.X, vz.X, vx.Y, vy.Y, vz.Y, vx.Z, vy.Z, vz.Z })
@@ -421,6 +466,7 @@ INSTANCEmt.__index = function(self, k)
 		if par and par._props.CFrame and par.ClassName ~= "Terrain" then return par._props.CFrame * props.Position end
 		return props.Position
 	end
+	if k == "CFrame" and props.ClassName == "Attachment" then return CF.new(props.Position) end -- mock attachments are never rotated
 	local v = props[k]
 	if v ~= nil then return v end
 	if EVENTS[k] then
@@ -515,6 +561,9 @@ INSTANCEmt.__newindex = function(self, k, v)
 		return
 	end
 	props[k] = v
+	if (k == "Part0" or k == "Part1") and props.ClassName == "WeldConstraint" and props.Part0 and props.Part1 then
+		props._offset = props.Part0._props.CFrame:Inverse() * props.Part1._props.CFrame
+	end
 end
 INSTANCEmt.__tostring = function(self) return self._props.Name end
 
@@ -803,9 +852,20 @@ function methods.Raycast(_self, origin, dir, params)
 	Mock.stats.rays += 1
 	local filter = params and params.FilterDescendantsInstances or {}
 	local bestT, bestPart = math.huge, nil
+	local ox, oy, oz, dx, dy, dz = origin.X, origin.Y, origin.Z, dir.X, dir.Y, dir.Z
+	local dd = dx * dx + dy * dy + dz * dz
 	for _, part in candidates(origin, dir) do
 		local pr = part._props
-		if pr.Parent and not pr.Destroyed and pr.CanQuery ~= false and pr.ClassName ~= "Terrain" then
+		local near = true
+		if pr.Size and pr.CFrame and dd > 0 then
+			-- bounding-sphere reject (cheap) before the filter walk and the exact box test
+			local c, sz = pr.CFrame.p, pr.Size
+			local cx, cy, cz = c.X - ox, c.Y - oy, c.Z - oz
+			local tt = math.clamp((cx * dx + cy * dy + cz * dz) / dd, 0, 1)
+			local ex, ey, ez = cx - dx * tt, cy - dy * tt, cz - dz * tt
+			near = ex * ex + ey * ey + ez * ez <= (sz.X * sz.X + sz.Y * sz.Y + sz.Z * sz.Z) * 0.25 + 1e-6
+		end
+		if near and pr.Parent and not pr.Destroyed and pr.CanQuery ~= false and pr.ClassName ~= "Terrain" then
 			local skip = false
 			for _, f in filter do
 				if part == f or part:IsDescendantOf(f) then skip = true break end
@@ -938,53 +998,97 @@ function Mock.removePlayer(p)
 	p.Parent = nil
 end
 -- R15-ish rig: HumanoidRootPart, Head, UpperTorso, Humanoid (not parented)
+-- R15 rig (blocky body proportions): parts, Motor6D joints named as in Roblox (parented to Part1, C0
+-- in Part0 space, C1 in Part1 space) and the hands' grip attachments. Parts are placed at the rest pose.
+local R15 = {
+	{ "LowerTorso", v3(2, 0.4, 1), "HumanoidRootPart", "Root", v3(0, -1, 0), v3(0, -0.2, 0) },
+	{ "UpperTorso", v3(2, 1.6, 1), "LowerTorso", "Waist", v3(0, 0.2, 0), v3(0, -0.8, 0) },
+	{ "Head", v3(1.2, 1.2, 1.2), "UpperTorso", "Neck", v3(0, 0.8, 0), v3(0, -0.6, 0) },
+	{ "RightUpperArm", v3(1, 1.2, 1), "UpperTorso", "RightShoulder", v3(1, 0.563, 0), v3(-0.5, 0.42, 0) },
+	{ "RightLowerArm", v3(1, 1.05, 1), "RightUpperArm", "RightElbow", v3(0, -0.334, 0), v3(0, 0.26, 0) },
+	{ "RightHand", v3(1, 0.3, 1), "RightLowerArm", "RightWrist", v3(0, -0.5, 0), v3(0, 0.125, 0) },
+	{ "LeftUpperArm", v3(1, 1.2, 1), "UpperTorso", "LeftShoulder", v3(-1, 0.563, 0), v3(0.5, 0.42, 0) },
+	{ "LeftLowerArm", v3(1, 1.05, 1), "LeftUpperArm", "LeftElbow", v3(0, -0.334, 0), v3(0, 0.26, 0) },
+	{ "LeftHand", v3(1, 0.3, 1), "LeftLowerArm", "LeftWrist", v3(0, -0.5, 0), v3(0, 0.125, 0) },
+	{ "RightUpperLeg", v3(1, 1.2, 1), "LowerTorso", "RightHip", v3(0.5, -0.2, 0), v3(0, 0.42, 0) },
+	{ "RightLowerLeg", v3(1, 1.2, 1), "RightUpperLeg", "RightKnee", v3(0, -0.41, 0), v3(0, 0.2, 0) },
+	{ "RightFoot", v3(1, 0.3, 1), "RightLowerLeg", "RightAnkle", v3(0, -0.55, 0), v3(0, 0.1, 0) },
+	{ "LeftUpperLeg", v3(1, 1.2, 1), "LowerTorso", "LeftHip", v3(-0.5, -0.2, 0), v3(0, 0.42, 0) },
+	{ "LeftLowerLeg", v3(1, 1.2, 1), "LeftUpperLeg", "LeftKnee", v3(0, -0.41, 0), v3(0, 0.2, 0) },
+	{ "LeftFoot", v3(1, 0.3, 1), "LeftLowerLeg", "LeftAnkle", v3(0, -0.55, 0), v3(0, 0.1, 0) },
+}
 function Mock.buildRig(name, at)
+	at = at or CF.identity
 	local char = Inst.new("Model")
 	char._props.Name = name
 	local root = Inst.new("Part")
 	root._props.Name = "HumanoidRootPart"
 	root._props.Size = v3(2, 2, 1)
 	root._props.CFrame = at
+	root._props.Transparency = 1
 	root.Parent = char
 	char._props.PrimaryPart = root
-	local head = Inst.new("Part")
-	head._props.Name = "Head"
-	head._props.Size = v3(1.2, 1.2, 1.2)
-	head._props.CFrame = at * CF.new(0, 2, 0)
-	head.Parent = char
-	local torso = Inst.new("Part")
-	torso._props.Name = "UpperTorso"
-	torso._props.Size = v3(2, 1.6, 1)
-	torso._props.CFrame = at * CF.new(0, 0.6, 0)
-	torso.Parent = char
+	local parts = { HumanoidRootPart = root }
+	for _, j in R15 do
+		local p = Inst.new(j[1] == "Head" and "Part" or "MeshPart")
+		p._props.Name = j[1]
+		p._props.Size = j[2]
+		p._props.CanCollide = false
+		p.Parent = char
+		parts[j[1]] = p
+		local m = Inst.new("Motor6D")
+		m._props.Name = j[4]
+		m._props.Part0, m._props.Part1 = parts[j[3]], p
+		m._props.C0, m._props.C1, m._props.Transform = CF.new(j[5]), CF.new(j[6]), CF.identity
+		m.Parent = p
+		p._props.CFrame = parts[j[3]]._props.CFrame * m._props.C0 * m._props.C1:Inverse()
+	end
+	for _, side in { "Right", "Left" } do
+		local a = Inst.new("Attachment")
+		a._props.Name = side .. "GripAttachment"
+		a._props.Position = v3(0, -0.15, 0)
+		a.Parent = parts[side .. "Hand"]
+	end
 	local hum = Inst.new("Humanoid")
 	hum.Parent = char
 	return char
 end
 
+-- Pose a model the way Roblox's joint solver would: from the HumanoidRootPart outward, each Motor6D
+-- places Part1 at Part0 * C0 * Transform * C1:Inverse(), and each WeldConstraint keeps the offset
+-- it had when it was created. (The mock never does this on its own; tests and tools call it.)
+function Mock.solveJoints(model)
+	local root = model:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+	local joints = {}
+	for _, d in model:GetDescendants() do
+		local c = d._props.ClassName
+		if c == "Motor6D" or c == "Weld" or (c == "WeldConstraint" and d._props._offset) then table.insert(joints, d) end
+	end
+	local solved = { [root] = true }
+	local progress = true
+	while progress do
+		progress = false
+		for _, j in joints do
+			local pr = j._props
+			local p0, p1 = pr.Part0, pr.Part1
+			if p0 and p1 and solved[p0] and not solved[p1] then
+				if pr.ClassName == "WeldConstraint" then
+					p1._props.CFrame = p0._props.CFrame * pr._offset
+				else
+					p1._props.CFrame = p0._props.CFrame * (pr.C0 or CF.identity) * (pr.Transform or CF.identity) * (pr.C1 or CF.identity):Inverse()
+				end
+				solved[p1] = true
+				progress = true
+			end
+		end
+	end
+end
+
 function Mock.makeCharacter(player, at)
 	local old = player._props.Character
 	if old then old:Destroy() end
-	local char = Inst.new("Model")
-	char._props.Name = player._props.Name
-	local root = Inst.new("Part")
-	root._props.Name = "HumanoidRootPart"
-	root._props.Size = v3(2, 2, 1)
-	root._props.CFrame = at or CF.identity
-	root.Parent = char
-	char._props.PrimaryPart = root
-	local head = Inst.new("Part")
-	head._props.Name = "Head"
-	head._props.Size = v3(1.2, 1.2, 1.2)
-	head._props.CFrame = (at or CF.identity) * CF.new(0, 2, 0)
-	head.Parent = char
-	local torso = Inst.new("Part")
-	torso._props.Name = "UpperTorso"
-	torso._props.Size = v3(2, 1.6, 1)
-	torso._props.CFrame = (at or CF.identity) * CF.new(0, 0.6, 0)
-	torso.Parent = char
-	local hum = Inst.new("Humanoid")
-	hum.Parent = char
+	local char = Mock.buildRig(player._props.Name, at or CF.identity)
 	char.Parent = workspace
 	player._props.Character = char
 	player.CharacterAdded:Fire(char)

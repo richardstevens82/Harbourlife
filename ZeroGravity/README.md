@@ -15,14 +15,15 @@ the repository.
 2. Open `build/ZeroGravity.rbxlx` in Roblox Studio.
 3. Press **Play**. When the server starts, it generates the whole environment (station, ship,
    asteroids, wrecks and lobby) from code. That takes about a second. In the menu, press **DEPLOY**.
-4. Matches are 20 combatants. Bots fill every empty slot, so with just you online there are 19 bots.
-   One queued player is enough to start. To test with real players too, use **Test → Clients and
-   Servers**; each real player replaces a bot from the next match. Bot settings (count, skill,
-   `[BOT]` name tag) are in `Config.Bots`.
-5. You're queued as soon as you join. The countdown at the top of the screen runs for 20 seconds,
+4. Every match has 20 combatants, and the last one standing wins. Queued players deploy first and
+   bots fill every empty seat, so with just you online there are 19 bots, and with nobody queued
+   it's 20 bots. To test with real players too, use **Test → Clients and Servers**. Each real player
+   replaces a bot from the next match. Bot settings (count, skill, `[BOT]` name tag) are in
+   `Config.Bots`.
+5. You're queued as soon as you join. The countdown at the top of the screen runs for 30 seconds,
    then everyone deploys. Lobby practice can't hurt other pilots or bots; damage only counts in a
-   match. If you're eliminated, the match ends once no real player is left, and the next one starts
-   about 20 seconds later.
+   match. If every real player is eliminated, the storm collapses so the bots finish within about
+   half a minute, and the next countdown starts.
 
 **Option B: Rojo.** `default.project.json` maps the same layout. Run `rojo serve` and connect from
 Studio.
@@ -39,6 +40,7 @@ progress isn't saving.
 | Move up / down | Space / Left Ctrl | A / B |
 | Boost (uses energy) | Left Shift | L3 |
 | Stabilise / brake to a stop | X | X |
+| Air roll left / right (dodge, uses energy) | Q / E | |
 | Look | Mouse | Right stick |
 | Fire / aim | Left / right mouse | R2 / L2 |
 | Reload, melee | R, V | Y, R3 |
@@ -70,8 +72,13 @@ src/
                                   MatchService
   StarterPlayer/StarterPlayerScripts/
     ClientMain.client.luau        bootstrap + server-message routing
-    Controllers/                  Input, Camera, Movement (zero-g), Combat, Effects (VFX/audio,
-                                  storm sphere, planet), HUD, Menu, UIKit, ClientState
+    Controllers/                  Input, Camera, Movement (zero-g), Combat, CharacterAnimator
+                                  (procedural flying/aiming/rolling poses, hand IK on the gun),
+                                  Effects (VFX/audio, storm sphere, planet), HUD, Menu, UIKit,
+                                  ClientState
+  StarterPlayer/StarterCharacterScripts/
+    Animate.client.luau           empty: replaces Roblox's walk/fall animations
+    Health.server.luau            empty: replaces Roblox's health regeneration
 tests/                            headless Roblox mock + specs (run with tools below)
 tools/                            build_place.py (rbxlx + sourcemap), render_blockout.py
 docs/blockout/                    rendered plan/elevation views of the generated map
@@ -90,6 +97,7 @@ python3 tools/build_place.py        # build/ZeroGravity.rbxlx + sourcemap.json
 python3 tests/run.py                # headless tests incl. a full simulated 20-combatant bot match (needs `luau`)
 python3 tools/gen_roblox_api.py     # refresh tests/api/roblox_api.luau from Roblox's API dump
 python3 tools/render_blockout.py    # docs/blockout/*.png (needs matplotlib)
+python3 tools/render_poses.py       # docs/animation/pose_sheet.png: the real animator on an R15 rig
 luau-lsp analyze --platform roblox --sourcemap sourcemap.json \
   --definitions=@roblox=globalTypes.d.luau --no-strict-dm-types src   # type check
 ```

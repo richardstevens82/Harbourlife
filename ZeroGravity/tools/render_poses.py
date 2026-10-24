@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+"""Pose sheet for the zero-g character animation, without Roblox Studio.
+
+Runs the real CharacterAnimator and CharacterService (weapon mounting) on the mock R15 rig from
+tests/mock.luau, solves the joints, and draws every body and weapon part as shaded boxes from a
+three-quarter view into docs/animation/pose_sheet.png.
+
+Usage:  python3 tools/render_poses.py [path-to-luau]
+Requires matplotlib.
+"""
+import math
+import os
+import shutil
+import subprocess
+import sys
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.patches import Polygon  # noqa: E402
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT = os.path.join(ROOT, "docs", "animation")
+
+POSES = r'''
+local CF, V3 = Mock.CFrame, Mock.Vector3
+local Players = Mock.services.Players
+local plr = Mock.addPlayer("Pilot", 99)
+Players._props.LocalPlayer = plr
+local cam = Mock.Instance.new("Camera")
+cam.CFrame = CF.identity
+Mock.workspace._props.CurrentCamera = cam
+local CS = Mock.module("ServerScriptService", "Services", "CharacterService")
+local State = Mock.module("StarterPlayer", "StarterPlayerScripts", "Controllers", "ClientState")
+local Anim = Mock.module("StarterPlayer", "StarterPlayerScripts", "Controllers", "CharacterAnimator")
+local Config = Mock.module("ReplicatedStorage", "Shared", "Config")
+local M = Config.Movement
+
+local function f(n) return string.format("%.3f", n) end
+local function pose(label, opts)
+	local char = Mock.buildRig("Pilot", CF.identity)
+	char.Parent = Mock.workspace
+	plr._props.Character = char
+	CS.ApplySuit(plr, char, "navy")
+	if opts.weapon then CS.SetWeaponVisual(plr, opts.weapon, "epic") end
+	local root = char.HumanoidRootPart
+	State.Aiming = opts.aim == true
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if opts.dead then hum._props.Health = 0 end
+	local function frame()
+		root._props.CFrame = CF.identity
+		root._props.AssemblyLinearVelocity = opts.vel or V3.zero
+		Anim.StepAll(1 / 60)
+		Mock.advance(1 / 60)
+	end
+	for _ = 1, math.floor((opts.settle or 1.5) * 60) do frame() end
+	if opts.roll then
+		Anim.Roll(1)
+		for _ = 1, math.floor(M.RollTime * opts.roll * 60) do frame() end
+	end
+	if opts.fire then
+		Anim.Fired()
+		frame()
+	end
+	root._props.CFrame = CF.identity
+	Mock.solveJoints(char)
+	print("POSE|" .. label)
+	for _, p in char:GetDescendants() do
+		local pr = p._props
+		if p:IsA("BasePart") and pr.Transparency < 1 and pr.Name ~= "HumanoidRootPart" then
+			local c, m = pr.CFrame, pr.CFrame.m
+			local col = pr.Color or (pr.Name == "Head" and { R = 0.9, G = 0.78, B = 0.68 } or { R = 0.28, G = 0.36, B = 0.56 })
+			local shape = pr.Shape and pr.Shape.Name or "Block"
+			print(table.concat({ "P", pr.Name, shape, f(c.p.X), f(c.p.Y), f(c.p.Z), f(pr.Size.X), f(pr.Size.Y), f(pr.Size.Z),
+				f(m[1]), f(m[2]), f(m[3]), f(m[4]), f(m[5]), f(m[6]), f(m[7]), f(m[8]), f(m[9]), f(col.R), f(col.G), f(col.B),
+				f(pr.Transparency or 0) }, "|"))
+		end
+	end
+	char:Destroy()
+end
+
+pose("Drifting (low ready)", { weapon = "assault" })
+pose("Aiming", { weapon = "assault", aim = true })
+pose("Firing (recoil)", { weapon = "assault", aim = true, fire = true })
+pose("Flying forward", { weapon = "assault", vel = V3.new(0, 0, -40) })
+pose("Boosting", { weapon = "assault", vel = V3.new(0, 0, -82) })
+pose("Strafing right (bank)", { weapon = "assault", vel = V3.new(40, 0, 0) })
+pose("Descending (tuck)", { weapon = "assault", vel = V3.new(0, -38, 0) })
+pose("Reversing", { weapon = "assault", vel = V3.new(0, 0, 35) })
+pose("Air roll 1/3", { weapon = "assault", roll = 0.33 })
+pose("Air roll 2/3", { weapon = "assault", roll = 0.62 })
+pose("Pistol, aiming", { weapon = "pistol", aim = true })
+pose("Sniper, aiming", { weapon = "precision", aim = true })
+pose("Unarmed drift", {})
+pose("Unarmed boost", { vel = V3.new(0, 0, -82) })
+pose("Eliminated (tumbling)", { dead = true, settle = 2.5 })
+'''
+
+
+def long_string(s):
+    level = 1
+    while ("]" + "=" * level + "]") in s:
+        level += 1
+    eq = "=" * level
+    return f"[{eq}[\n{s}]{eq}]"
+
+
+def export(luau):
+    sources = {}
+    for base, _, files in os.walk(os.path.join(ROOT, "src")):
+        for fn in files:
+            if fn.endswith(".luau"):
+                p = os.path.join(base, fn)
+                sources[os.path.relpath(p, ROOT).replace(os.sep, "/")] = open(p, encoding="utf-8").read()
+    parts = ["SOURCES = {"] + [f'["{k}"] = {long_string(v)},' for k, v in sorted(sources.items())] + ["}"]
+    api = os.path.join(ROOT, "tests", "api", "roblox_api.luau")
+    if os.path.exists(api):
+        parts.append("ROBLOX_API = (function()\n" + open(api, encoding="utf-8").read() + "\nend)()")
+    parts.append("local Mock = (function()\n" + open(os.path.join(ROOT, "tests", "mock.luau"), encoding="utf-8").read() + "\nend)()")
+    parts.append(POSES)
+    bundle = os.path.join(ROOT, "tests", ".bundle.luau")
+    open(bundle, "w", encoding="utf-8").write("\n".join(parts))
+    r = subprocess.run([luau, bundle], capture_output=True, text=True)
+    os.remove(bundle)
+    if r.returncode != 0:
+        print(r.stdout[-3000:], r.stderr[-3000:])
+        sys.exit(1)
+    return r.stdout.splitlines()
+
+
+def parse(lines):
+    poses = []
+    for ln in lines:
+        f = ln.split("|")
+        if f[0] == "POSE":
+            poses.append((f[1], []))
+        elif f[0] == "P" and poses:
+            v = list(map(float, f[3:22]))
+            poses[-1][1].append({"name": f[1], "shape": f[2], "pos": v[0:3], "size": v[3:6], "m": v[6:15], "col": v[15:18], "alpha": 1 - v[18]})
+    return poses
+
+
+# three-quarter view from the front-right (the gun side), slightly above; the character looks along -Z
+YAW, PITCH = math.radians(40), math.radians(-12)
+
+
+def view(p):
+    x, y, z = p
+    # rotate about Y (yaw), then about X (pitch); camera looks along -Z of the result
+    cx, sx = math.cos(YAW), math.sin(YAW)
+    x, z = x * cx + z * sx, -x * sx + z * cx
+    cp, sp = math.cos(PITCH), math.sin(PITCH)
+    y, z = y * cp - z * sp, y * sp + z * cp
+    return -x, y, z  # camera in front looking along +Z: the character's right side is on the viewer's left
+
+
+FACES = [((0, 1, 3, 2), (-1, 0, 0)), ((4, 5, 7, 6), (1, 0, 0)), ((0, 1, 5, 4), (0, -1, 0)), ((2, 3, 7, 6), (0, 1, 0)),
+         ((0, 2, 6, 4), (0, 0, -1)), ((1, 3, 7, 5), (0, 0, 1))]
+LIGHT = (0.4, 0.8, 0.45)
+
+
+def sphere(part):
+    c = view(part["pos"])
+    r = part["size"][0] / 2
+    pts = [(c[0] + r * math.cos(a / 16 * math.pi), c[1] + r * math.sin(a / 16 * math.pi)) for a in range(32)]
+    return [(c[2], pts, 0.9)]
+
+
+def boxes(part):
+    if part["shape"] == "Ball":
+        return sphere(part)
+    (x, y, z), (sx, sy, sz), m = part["pos"], part["size"], part["m"]
+    corners = []
+    for dx in (-0.5, 0.5):
+        for dy in (-0.5, 0.5):
+            for dz in (-0.5, 0.5):
+                lx, ly, lz = dx * sx, dy * sy, dz * sz
+                corners.append((x + m[0] * lx + m[1] * ly + m[2] * lz, y + m[3] * lx + m[4] * ly + m[5] * lz, z + m[6] * lx + m[7] * ly + m[8] * lz))
+    out = []
+    for idx, n in FACES:
+        wn = (m[0] * n[0] + m[1] * n[1] + m[2] * n[2], m[3] * n[0] + m[4] * n[1] + m[5] * n[2], m[6] * n[0] + m[7] * n[1] + m[8] * n[2])
+        vn = view(wn)
+        if vn[2] > 0:  # facing away from the viewer
+            continue
+        shade = 0.45 + 0.55 * max(0.0, wn[0] * LIGHT[0] + wn[1] * LIGHT[1] + wn[2] * LIGHT[2])
+        pts = [view(corners[i]) for i in idx]
+        depth = sum(p[2] for p in pts) / 4
+        out.append((depth, [(p[0], p[1]) for p in pts], shade))
+    return out
+
+
+def main():
+    luau = sys.argv[1] if len(sys.argv) > 1 else (shutil.which("luau") or "/tmp/luau/luau")
+    poses = parse(export(luau))
+    os.makedirs(OUT, exist_ok=True)
+    cols = 5
+    rows = math.ceil(len(poses) / cols)
+    fig, axes = plt.subplots(rows, cols, figsize=(cols * 3.6, rows * 4.0))
+    fig.patch.set_facecolor("#05070c")
+    for ax in axes.flat:
+        ax.set_facecolor("#0a0f1a")
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for s in ax.spines.values():
+            s.set_color("#223344")
+    for ax, (label, parts) in zip(axes.flat, poses):
+        faces = []
+        for p in parts:
+            for depth, pts, shade in boxes(p):
+                faces.append((depth, pts, tuple(min(1, c * shade) for c in p["col"]), p["alpha"]))
+        faces.sort(key=lambda f: -f[0])  # far to near
+        for _, pts, col, alpha in faces:
+            ax.add_patch(Polygon(pts, closed=True, facecolor=col, edgecolor=(0, 0, 0, 0.5), lw=0.4, alpha=max(alpha, 0.35)))
+        ax.set_xlim(-4.2, 4.2)
+        ax.set_ylim(-4.6, 3.8)
+        ax.set_aspect("equal")
+        ax.set_title(label, color="white", fontsize=11)
+    for ax in list(axes.flat)[len(poses):]:
+        ax.set_visible(False)
+    fig.suptitle("Zero-g character animation (CharacterAnimator on an R15 rig) - three-quarter view from the front right", color="white", fontsize=13)
+    fig.tight_layout()
+    path = os.path.join(OUT, "pose_sheet.png")
+    fig.savefig(path, dpi=100)
+    print("wrote", os.path.relpath(path, ROOT))
+
+
+if __name__ == "__main__":
+    main()
