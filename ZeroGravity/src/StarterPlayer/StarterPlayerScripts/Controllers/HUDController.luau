@@ -592,7 +592,7 @@ local function update()
 		local q, minP = matchState:GetAttribute("Queued") or 0, matchState:GetAttribute("MinPlayers") or 2
 		local bots = matchState:GetAttribute("Bots") or 0
 		refs.sub.Text = string.format("%d / %d ready%s   |   %s", q, minP, bots > 0 and string.format(" + %d bots", bots) or "",
-			player:GetAttribute("Queued") and "You are queued" or "Not queued - open menu (M) and press PLAY")
+			player:GetAttribute("Queued") and "You are queued" or "<font color=\"#FFB060\">NOT QUEUED - press M, then DEPLOY</font>")
 	elseif endsAt > 0 then
 		refs.sub.Text = string.format("%s   |   %d ready", UI.formatTime(endsAt - serverNow()), (matchState:GetAttribute("Queued") :: number?) or 0)
 	else

@@ -33,6 +33,9 @@ parts = ["SOURCES = {"]
 for k in sorted(sources):
     parts.append(f'["{k}"] = {long_string(sources[k])},')
 parts.append("}")
+api = os.path.join(HERE, "api", "roblox_api.luau")
+if os.path.exists(api):  # real Roblox member tables: the mock rejects members Roblox would reject
+    parts.append("ROBLOX_API = (function()\n" + open(api, encoding="utf-8").read() + "\nend)()")
 parts.append("local Mock = (function()\n" + open(os.path.join(HERE, "mock.luau"), encoding="utf-8").read() + "\nend)()")
 parts.append(open(os.path.join(HERE, "specs.luau"), encoding="utf-8").read())
 bundle = os.path.join(HERE, ".bundle.luau")

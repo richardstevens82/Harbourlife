@@ -142,6 +142,13 @@
        ]
       },
       {
+       "name": "LagCompensation",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Services/LagCompensation.luau"
+       ]
+      },
+      {
        "name": "LootService",
        "className": "ModuleScript",
        "filePaths": [

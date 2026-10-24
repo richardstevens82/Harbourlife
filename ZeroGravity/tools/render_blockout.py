@@ -67,6 +67,9 @@ def export(luau):
                 p = os.path.join(base, fn)
                 sources[os.path.relpath(p, ROOT).replace(os.sep, "/")] = open(p, encoding="utf-8").read()
     parts = ["SOURCES = {"] + [f'["{k}"] = {long_string(v)},' for k, v in sorted(sources.items())] + ["}"]
+    api = os.path.join(ROOT, "tests", "api", "roblox_api.luau")
+    if os.path.exists(api):
+        parts.append("ROBLOX_API = (function()\n" + open(api, encoding="utf-8").read() + "\nend)()")
     parts.append("local Mock = (function()\n" + open(os.path.join(ROOT, "tests", "mock.luau"), encoding="utf-8").read() + "\nend)()")
     parts.append(EXPORT)
     bundle = os.path.join(ROOT, "tests", ".bundle.luau")

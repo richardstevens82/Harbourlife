@@ -11,6 +11,7 @@ local Remotes = require(Shared.Remotes)
 local Roster = require(script.Parent.Roster)
 local Security = require(script.Parent.SecurityService)
 local Inventory = require(script.Parent.InventoryService)
+local LagComp = require(script.Parent.LagCompensation)
 
 local Combat = {}
 local state: { [Player]: any } = {} -- per-player fire/reload timing
@@ -189,33 +190,41 @@ local function onFire(player: Player, req)
 	local hitAny, killAny, total = false, false, 0
 	local victimsHit: { [Player]: boolean } = {}
 	for _, d in dirs do
-		local result = workspace:Raycast(origin, d.Unit * def.maxRange, params)
-		local endPos = result and result.Position or origin + d.Unit * def.maxRange
-		table.insert(ends, endPos)
-		if result then
-			local dist = (result.Position - origin).Magnitude
-			local dmg = Weapons.DamageAt(weapon.id, weapon.rarity, dist)
-			local model, hum = charOf(result.Instance)
-			local victim = Roster.FromCharacter(model) -- player or bot
-			if victim and hum and dmg > 0 then
-				if result.Instance.Name == "Head" then dmg *= 1.5 end
-				if not practice then
-					local dealt = Combat.ApplyDamage(victim, dmg, player, "weapon", origin)
-					if dealt > 0 then
-						hitAny, total = true, total + dealt
-						victimsHit[victim] = true
-						if not Roster.IsActive(victim) then killAny = true end
-					end
+		local dir = d.Unit
+		local result = workspace:Raycast(origin, dir * def.maxRange, params)
+		local dist = result and (result.Position - origin).Magnitude or def.maxRange
+		local hitPart: BasePart? = result and result.Instance :: BasePart
+		local victim, head = nil, false
+		if hitPart then
+			local model, hum = charOf(hitPart)
+			victim = hum and Roster.FromCharacter(model) -- player or bot
+			head = hitPart.Name == "Head"
+		end
+		if not victim and not practice then
+			-- missed every body where the server has it now: test where the shooter saw them
+			local lagVictim, lagDist, lagHead = LagComp.Trace(player, origin, dir, dist)
+			if lagVictim then victim, dist, head, hitPart = lagVictim, lagDist, lagHead, nil end
+		end
+		table.insert(ends, origin + dir * dist)
+		local dmg = Weapons.DamageAt(weapon.id, weapon.rarity, dist)
+		if victim and dmg > 0 then
+			if head then dmg *= 1.5 end
+			if not practice then
+				local dealt = Combat.ApplyDamage(victim, dmg, player, "weapon", origin)
+				if dealt > 0 then
+					hitAny, total = true, total + dealt
+					victimsHit[victim] = true
+					if not Roster.IsActive(victim) then killAny = true end
 				end
-			elseif CollectionService:HasTag(result.Instance, "PracticeTarget") and dmg > 0 then
-				practiceHit(result.Instance :: BasePart, dmg)
-				hitAny, total = true, total + dmg
-			elseif Combat.OnTargetDamaged and dmg > 0 then
-				Combat.OnTargetDamaged(result.Instance :: BasePart, dmg, player)
 			end
-			if def.splash and not practice then
-				Combat.Explode(result.Position, def.splash, def.splashDamage, player, nil)
-			end
+		elseif hitPart and CollectionService:HasTag(hitPart, "PracticeTarget") and dmg > 0 then
+			practiceHit(hitPart, dmg)
+			hitAny, total = true, total + dmg
+		elseif hitPart and Combat.OnTargetDamaged and dmg > 0 then
+			Combat.OnTargetDamaged(hitPart, dmg, player)
+		end
+		if def.splash and not practice and (result or victim) then
+			Combat.Explode(origin + dir * dist, def.splash, def.splashDamage, player, nil)
 		end
 	end
 	if hitAny then

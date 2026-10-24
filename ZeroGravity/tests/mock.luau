@@ -137,6 +137,27 @@ local Color3 = {
 }
 local function plain(name) return { new = function(...) return { _type = name, ... } end } end
 
+local UDmt, UD2mt = {}, {}
+local function udim(s, o) return setmetatable({ Scale = s or 0, Offset = o or 0, _type = "UDim" }, UDmt) end
+UDmt.__add = function(a, b) return udim(a.Scale + b.Scale, a.Offset + b.Offset) end
+UDmt.__sub = function(a, b) return udim(a.Scale - b.Scale, a.Offset - b.Offset) end
+local function udim2(xs, xo, ys, yo)
+	local x, y = udim(xs, xo), udim(ys, yo)
+	return setmetatable({ X = x, Y = y, Width = x, Height = y, _type = "UDim2" }, UD2mt)
+end
+UD2mt.__add = function(a, b) return udim2(a.X.Scale + b.X.Scale, a.X.Offset + b.X.Offset, a.Y.Scale + b.Y.Scale, a.Y.Offset + b.Y.Offset) end
+UD2mt.__sub = function(a, b) return udim2(a.X.Scale - b.X.Scale, a.X.Offset - b.X.Offset, a.Y.Scale - b.Y.Scale, a.Y.Offset - b.Y.Offset) end
+UD2mt.__index = { Lerp = function(a, b, t)
+	return udim2(a.X.Scale + (b.X.Scale - a.X.Scale) * t, a.X.Offset + (b.X.Offset - a.X.Offset) * t,
+		a.Y.Scale + (b.Y.Scale - a.Y.Scale) * t, a.Y.Offset + (b.Y.Offset - a.Y.Offset) * t)
+end }
+local UDim = { new = udim }
+local UDim2 = {
+	new = udim2,
+	fromOffset = function(x, y) return udim2(0, x, 0, y) end,
+	fromScale = function(x, y) return udim2(x, 0, y, 0) end,
+}
+
 local V2mt = {}
 local function v2(x, y) return setmetatable({ X = x or 0, Y = y or 0 }, V2mt) end
 V2mt.__index = function(t, k)
@@ -311,13 +332,59 @@ local EVENTS = {
 	InputBegan = true, InputEnded = true, InputChanged = true, MouseEnter = true, MouseLeave = true,
 }
 
+-- Real member tables from Roblox's API dump (tests/api/roblox_api.luau, injected by tests/run.py).
+-- With them the mock behaves like Roblox: reading or writing a member that doesn't exist on the class
+-- throws "X is not a valid member of Y", read-only properties can't be assigned, and property values
+-- are type-checked. Classes missing from the dump (or a run without it) fall back to the loose mock.
+local API = ROBLOX_API
+local memberCache = {}
+local function apiMember(className, k)
+	local root = API and API[className]
+	if not root then return nil, false end
+	local key = className .. "." .. k
+	local c = memberCache[key]
+	if c == nil then
+		c = false
+		local cls = className
+		while cls ~= "" do
+			local e = API[cls]
+			if not e then break end
+			local v = e.m[k]
+			if v then
+				c = v
+				break
+			end
+			cls = e.s
+		end
+		memberCache[key] = c
+	end
+	return c, true
+end
+local function fullName(self)
+	local names, n = {}, self
+	while n and n._props.ClassName ~= "DataModel" do
+		table.insert(names, 1, n._props.Name)
+		n = n._props.Parent
+	end
+	return table.concat(names, ".")
+end
+
 local function isA(self, cls)
 	if self.ClassName == cls or cls == "Instance" then return true end
+	if API and API[self.ClassName] then
+		local c = API[self.ClassName].s
+		while c ~= "" and API[c] do
+			if c == cls then return true end
+			c = API[c].s
+		end
+		return false
+	end
 	local h = HIER[self.ClassName]
 	return h ~= nil and table.find(h, cls) ~= nil
 end
 
 function Inst.new(className, parent)
+	if API and not API[className] then error("Unable to create an Instance of type \"" .. tostring(className) .. "\"", 2) end
 	local self = setmetatable({ _props = { Name = className, ClassName = className }, _children = {}, _attrs = {}, _signals = {} }, INSTANCEmt)
 	if isA(self, "BasePart") then
 		local p = self._props
@@ -336,9 +403,18 @@ end
 
 local methods = {}
 INSTANCEmt.__index = function(self, k)
-	local m = methods[k]
-	if m then return m end
 	local props = rawget(self, "_props")
+	local spec, known = nil, false
+	if type(k) == "string" and string.sub(k, 1, 1) ~= "_" then spec, known = apiMember(props.ClassName, k) end
+	if known and not spec then
+		for _, c in rawget(self, "_children") do
+			if c._props.Name == k then return c end
+		end
+		error(tostring(k) .. " is not a valid member of " .. props.ClassName .. " \"" .. fullName(self) .. "\"", 2)
+	end
+	local m = methods[k]
+	if m and (not known or spec == "F") then return m end
+	if spec == "E" and props[k] == nil then props[k] = Signal() end
 	if k == "Position" and props.CFrame then return props.CFrame.p end
 	if k == "WorldPosition" and props.ClassName == "Attachment" then
 		local par = props.Parent
@@ -358,8 +434,52 @@ INSTANCEmt.__index = function(self, k)
 	end
 	return nil
 end
+local function describe(v)
+	if type(v) ~= "table" then return type(v) end
+	local mt = getmetatable(v)
+	if mt == INSTANCEmt then return "Instance " .. v._props.ClassName end
+	if mt == V3mt then return "Vector3" elseif mt == CFmt then return "CFrame" elseif mt == C3mt then return "Color3" elseif mt == V2mt then return "Vector2" end
+	if rawget(v, "EnumType") then return "Enum." .. v.EnumType end
+	return rawget(v, "_type") or "table"
+end
+local NUMERIC = { float = true, double = true, int = true, int64 = true }
+local function valueOk(spec, v)
+	local cat, name = string.match(spec, "^%a:(%a):(.+)$")
+	if v == nil then return cat == "C" end
+	if cat == "P" then
+		if name == "bool" then return type(v) == "boolean" end
+		if NUMERIC[name] then return type(v) == "number" end
+		if name == "string" then return type(v) == "string" or type(v) == "number" end
+	elseif cat == "E" then
+		if type(v) == "table" then return v.EnumType == name end
+		return type(v) == "number" or type(v) == "string"
+	elseif cat == "C" then
+		return getmetatable(v) == INSTANCEmt and isA(v, name)
+	elseif cat == "D" then
+		local mt = getmetatable(v)
+		if name == "Vector3" then return mt == V3mt end
+		if name == "CFrame" then return mt == CFmt end
+		if name == "Color3" then return mt == C3mt end
+		if name == "Vector2" then return mt == V2mt end
+		if type(v) == "table" and rawget(v, "_type") then return v._type == name end
+	end
+	return true
+end
 INSTANCEmt.__newindex = function(self, k, v)
 	local props = rawget(self, "_props")
+	if type(k) == "string" and string.sub(k, 1, 1) ~= "_" then
+		local spec, known = apiMember(props.ClassName, k)
+		if known then
+			local where = props.ClassName .. " \"" .. fullName(self) .. "\""
+			if not spec or string.sub(spec, 1, 1) ~= "P" and string.sub(spec, 1, 1) ~= "R" then
+				error(k .. " is not a valid member of " .. where, 2)
+			elseif string.sub(spec, 1, 1) == "R" then
+				error("Unable to assign property " .. k .. ". Property is read only", 2)
+			elseif not valueOk(spec, v) then
+				error(string.format("invalid value for %s.%s (%s expected, got %s)", where, k, string.match(spec, "[^:]+$"), describe(v)), 2)
+			end
+		end
+	end
 	if STATIC_KEYS[k] and props.CFrame and props.Size and (props.Anchored or k == "Anchored" or k == "Parent") and not loose[self] then
 		loose[self] = true
 		looseCount += 1
@@ -531,6 +651,7 @@ function methods.Emit() end
 -- Player
 function methods.Kick(self, reason) self._props.Kicked = reason end
 function methods.LoadCharacter(self) Mock.makeCharacter(self) end
+function methods.GetNetworkPing(_self) return Mock.ping or 0 end
 function methods.LoadCharacterAsync(self) Mock.makeCharacter(self) end
 
 -- Terrain
@@ -930,8 +1051,7 @@ local sss = services.ServerScriptService
 
 GLOBAL = setmetatable({
 	game = game, workspace = workspace, Instance = Inst, Vector3 = V3, CFrame = CF, Color3 = Color3, Enum = Enum, Random = Random,
-	Vector2 = Vector2, UDim2 = { new = plain("UDim2").new, fromOffset = plain("UDim2").new, fromScale = plain("UDim2").new },
-	UDim = plain("UDim"), TweenInfo = plain("TweenInfo"), NumberSequence = plain("NumberSequence"), ColorSequence = plain("ColorSequence"),
+	Vector2 = Vector2, UDim2 = UDim2, UDim = UDim, TweenInfo = plain("TweenInfo"), NumberSequence = plain("NumberSequence"), ColorSequence = plain("ColorSequence"),
 	NumberRange = plain("NumberRange"), NumberSequenceKeypoint = plain("NumberSequenceKeypoint"),
 	Region3 = { new = function(a, b) return { ExpandToGrid = function(self) return self end, a = a, b = b } end },
 	RaycastParams = { new = function() return { FilterDescendantsInstances = {} } end },
@@ -939,6 +1059,11 @@ GLOBAL = setmetatable({
 	task = task, require = requireModule, warn = function(...) print("[warn]", ...) end,
 	os = setmetatable({ clock = function() return now end, time = function() return now end }, { __index = os }),
 	tick = function() return now end,
+	type = function(v) -- Roblox instances and datatypes are userdata, not tables
+		local mt = getmetatable(v)
+		if mt == INSTANCEmt or mt == V3mt or mt == CFmt or mt == C3mt or mt == V2mt then return "userdata" end
+		return type(v)
+	end,
 	typeof = function(v)
 		local mt = getmetatable(v)
 		if mt == V3mt then return "Vector3" elseif mt == CFmt then return "CFrame" elseif mt == C3mt then return "Color3"

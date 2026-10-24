@@ -19,6 +19,10 @@ the repository.
    One queued player is enough to start. To test with real players too, use **Test → Clients and
    Servers**; each real player replaces a bot from the next match. Bot settings (count, skill,
    `[BOT]` name tag) are in `Config.Bots`.
+5. You're queued as soon as you join. The countdown at the top of the screen runs for 20 seconds,
+   then everyone deploys. Lobby practice can't hurt other pilots or bots; damage only counts in a
+   match. If you're eliminated, the match ends once no real player is left, and the next one starts
+   about 20 seconds later.
 
 **Option B: Rojo.** `default.project.json` maps the same layout. Run `rojo serve` and connect from
 Studio.
@@ -62,7 +66,8 @@ src/
     Services/                     WorldBuilder, Roster, SecurityService, CharacterService,
                                   DataService, InventoryService, CombatService, LootService,
                                   OxygenService, SafeZoneService, EquipmentService,
-                                  HazardService, NavGraph, BotService, MatchService
+                                  HazardService, LagCompensation, NavGraph, BotService,
+                                  MatchService
   StarterPlayer/StarterPlayerScripts/
     ClientMain.client.luau        bootstrap + server-message routing
     Controllers/                  Input, Camera, Movement (zero-g), Combat, Effects (VFX/audio,
@@ -83,12 +88,14 @@ content, call the Kit functions and drop markers.
 ```
 python3 tools/build_place.py        # build/ZeroGravity.rbxlx + sourcemap.json
 python3 tests/run.py                # headless tests incl. a full simulated 20-combatant bot match (needs `luau`)
+python3 tools/gen_roblox_api.py     # refresh tests/api/roblox_api.luau from Roblox's API dump
 python3 tools/render_blockout.py    # docs/blockout/*.png (needs matplotlib)
 luau-lsp analyze --platform roblox --sourcemap sourcemap.json \
   --definitions=@roblox=globalTypes.d.luau --no-strict-dm-types src   # type check
 ```
 
 `tests/mock.luau` is a small Roblox API mock: real CFrame maths, instances, tags, a scheduler with a
-simulated clock, raycasts and terrain. It's enough to run the real builders, the server services and
+simulated clock, raycasts and terrain. It checks every property and member access against Roblox's
+real API tables (`tests/api/roblox_api.luau`), so a name Roblox would reject fails the tests. It's enough to run the real builders, the server services and
 the client movement and UI code without Studio. See `BUILD_STATUS.md` for what that does and doesn't
 prove.

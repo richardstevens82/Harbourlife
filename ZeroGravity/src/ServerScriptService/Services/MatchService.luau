@@ -332,10 +332,16 @@ local function runMatch()
 	setPhase("Active")
 	local finalAnnounced = false
 	local solo = #participants == 1
+	local humans = 0
+	for _, p in participants do
+		if not Roster.IsBot(p) then humans += 1 end
+	end
+	local humansOut = false
 	while true do
 		task.wait(0.5)
 		updateCounts()
-		local alive = #Roster.Alive()
+		local aliveList = Roster.Alive()
+		local alive = #aliveList
 		local teams = aliveTeams()
 		local fewLeft = alive <= M.FinalPhaseAtPlayers and #participants > M.FinalPhaseAtPlayers
 		if not finalAnnounced and (fewLeft or SafeZone.IsLastStage()) then
@@ -343,7 +349,17 @@ local function runMatch()
 			setPhase("Final")
 			Remotes.FX:FireAllClients({ t = "notice", text = "FINAL COMBAT PHASE", color = Color3.fromRGB(255, 120, 60), sound = "alarm" })
 		end
-		if (solo and alive == 0) or (not solo and teams <= 1) or os.clock() - matchStart > M.MaxMatchTime then
+		-- Every real player is out: don't keep them waiting in the lobby while bots finish the match.
+		if Config.Bots.Enabled and Config.Bots.EndWhenHumansOut and humans > 0 and teams > 1 then
+			humansOut = true
+			for _, p in aliveList do
+				if not Roster.IsBot(p) then
+					humansOut = false
+					break
+				end
+			end
+		end
+		if (solo and alive == 0) or (not solo and teams <= 1) or humansOut or os.clock() - matchStart > M.MaxMatchTime then
 			break
 		end
 	end
@@ -364,13 +380,16 @@ local function runMatch()
 	elseif #aliveNow == 1 then
 		winner = aliveNow[1]
 	elseif #aliveNow > 1 then
-		-- time limit: highest health wins
+		-- time limit: highest health wins; bots-only remainder (every real player out): most kills, then health
 		local best = -1
 		for _, p in aliveNow do
 			local hum = p.Character and p.Character:FindFirstChildOfClass("Humanoid")
-			local hp = hum and hum.Health or 0
-			if hp > best then best, winner = hp, p end
+			local score = (hum and hum.Health or 0) + (if humansOut then Roster.Get(p).kills * 1000 else 0)
+			if score > best then best, winner = score, p end
 		end
+	end
+	if humansOut then
+		Remotes.FX:FireAllClients({ t = "notice", text = "ALL PILOTS DOWN - MATCH OVER", color = Color3.fromRGB(255, 120, 60) })
 	end
 	setPhase("Ending", 4)
 	stateObj:SetAttribute("Winner", winner and winner.Name or "")

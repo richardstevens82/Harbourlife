@@ -32,6 +32,7 @@ Config.Bots = {
 	SightRange = 450,
 	HuntRange = 1100, -- bots track enemies this far away when nothing else needs doing
 	LobbyPractice = true, -- bots shoot the lobby range drones between matches
+	EndWhenHumansOut = true, -- once every real player is eliminated, end the match (no waiting on a bots-only fight)
 }
 
 -- Arena geometry (studs). Arena is centred on the origin.
@@ -127,6 +128,17 @@ Config.Melee = {
 	Range = 8,
 	Damage = 35,
 	Cooldown = 0.8,
+}
+
+-- Lag compensation: a player aims at where their screen shows a target, which is where the server
+-- had it about one round trip plus Roblox's interpolation delay ago. Shots that miss a target's
+-- current body are re-tested against its recent past positions (see LagCompensation).
+Config.LagCompensation = {
+	Enabled = true,
+	InterpDelay = 0.12, -- seconds the client renders other characters behind the server (added to ping)
+	MaxRewind = 0.5, -- never rewind further than this, however high the ping
+	Window = 0.1, -- also test this far either side of the estimate (ping jitter)
+	HitRadius = 1.3, -- body capsule radius in studs (a little wider than the 2-stud torso)
 }
 
 Config.Inventory = {
@@ -728,7 +740,7 @@ function Zone.Evaluate(schedule, now: number, startCenter: Vector3, startRadius:
 end
 
 return Zone
-]]></ProtectedString></Properties></Item></Item></Item><Item class="ServerScriptService" referent="RBX41"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Folder" referent="RBX31"><Properties><string name="Name">Services</string></Properties><Item class="ModuleScript" referent="RBX16"><Properties><string name="Name">BotService</string><ProtectedString name="Source"><![CDATA[-- Bots: server-simulated combatants that keep every lobby and match at Config.Bots.FillTo (20).
+]]></ProtectedString></Properties></Item></Item></Item><Item class="ServerScriptService" referent="RBX42"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Folder" referent="RBX32"><Properties><string name="Name">Services</string></Properties><Item class="ModuleScript" referent="RBX16"><Properties><string name="Name">BotService</string><ProtectedString name="Source"><![CDATA[-- Bots: server-simulated combatants that keep every lobby and match at Config.Bots.FillTo (20).
 --
 -- Fair by construction: bots act ONLY through the same server entry points players use
 -- (Combat.Fire / Reload / Equip / Melee, Loot.Search / Take, Inventory.Use, Equipment.ThrowGrenade,
@@ -1823,6 +1835,7 @@ local Remotes = require(Shared.Remotes)
 local Roster = require(script.Parent.Roster)
 local Security = require(script.Parent.SecurityService)
 local Inventory = require(script.Parent.InventoryService)
+local LagComp = require(script.Parent.LagCompensation)
 
 local Combat = {}
 local state: { [Player]: any } = {} -- per-player fire/reload timing
@@ -2001,33 +2014,41 @@ local function onFire(player: Player, req)
 	local hitAny, killAny, total = false, false, 0
 	local victimsHit: { [Player]: boolean } = {}
 	for _, d in dirs do
-		local result = workspace:Raycast(origin, d.Unit * def.maxRange, params)
-		local endPos = result and result.Position or origin + d.Unit * def.maxRange
-		table.insert(ends, endPos)
-		if result then
-			local dist = (result.Position - origin).Magnitude
-			local dmg = Weapons.DamageAt(weapon.id, weapon.rarity, dist)
-			local model, hum = charOf(result.Instance)
-			local victim = Roster.FromCharacter(model) -- player or bot
-			if victim and hum and dmg > 0 then
-				if result.Instance.Name == "Head" then dmg *= 1.5 end
-				if not practice then
-					local dealt = Combat.ApplyDamage(victim, dmg, player, "weapon", origin)
-					if dealt > 0 then
-						hitAny, total = true, total + dealt
-						victimsHit[victim] = true
-						if not Roster.IsActive(victim) then killAny = true end
-					end
+		local dir = d.Unit
+		local result = workspace:Raycast(origin, dir * def.maxRange, params)
+		local dist = result and (result.Position - origin).Magnitude or def.maxRange
+		local hitPart: BasePart? = result and result.Instance :: BasePart
+		local victim, head = nil, false
+		if hitPart then
+			local model, hum = charOf(hitPart)
+			victim = hum and Roster.FromCharacter(model) -- player or bot
+			head = hitPart.Name == "Head"
+		end
+		if not victim and not practice then
+			-- missed every body where the server has it now: test where the shooter saw them
+			local lagVictim, lagDist, lagHead = LagComp.Trace(player, origin, dir, dist)
+			if lagVictim then victim, dist, head, hitPart = lagVictim, lagDist, lagHead, nil end
+		end
+		table.insert(ends, origin + dir * dist)
+		local dmg = Weapons.DamageAt(weapon.id, weapon.rarity, dist)
+		if victim and dmg > 0 then
+			if head then dmg *= 1.5 end
+			if not practice then
+				local dealt = Combat.ApplyDamage(victim, dmg, player, "weapon", origin)
+				if dealt > 0 then
+					hitAny, total = true, total + dealt
+					victimsHit[victim] = true
+					if not Roster.IsActive(victim) then killAny = true end
 				end
-			elseif CollectionService:HasTag(result.Instance, "PracticeTarget") and dmg > 0 then
-				practiceHit(result.Instance :: BasePart, dmg)
-				hitAny, total = true, total + dmg
-			elseif Combat.OnTargetDamaged and dmg > 0 then
-				Combat.OnTargetDamaged(result.Instance :: BasePart, dmg, player)
 			end
-			if def.splash and not practice then
-				Combat.Explode(result.Position, def.splash, def.splashDamage, player, nil)
-			end
+		elseif hitPart and CollectionService:HasTag(hitPart, "PracticeTarget") and dmg > 0 then
+			practiceHit(hitPart, dmg)
+			hitAny, total = true, total + dmg
+		elseif hitPart and Combat.OnTargetDamaged and dmg > 0 then
+			Combat.OnTargetDamaged(hitPart, dmg, player)
+		end
+		if def.splash and not practice and (result or victim) then
+			Combat.Explode(origin + dir * dist, def.splash, def.splashDamage, player, nil)
 		end
 	end
 	if hitAny then
@@ -3074,7 +3095,147 @@ function Inventory.Start()
 end
 
 return Inventory
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX23"><Properties><string name="Name">LootService</string><ProtectedString name="Source"><![CDATA[-- Loot containers and world pickups. Every match re-seeds containers on LootSpot markers
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX23"><Properties><string name="Name">LagCompensation</string><ProtectedString name="Source"><![CDATA[-- Lag compensation for hitscan weapons ("favour the shooter", bounded).
+-- A client aims at where its screen shows a target. For a server-simulated bot (or another player
+-- relayed through the server) that is where the server had the target about one round trip plus
+-- Roblox's interpolation delay ago, so against a strafing target a perfectly aimed shot misses the
+-- target's *current* body by several studs. The server keeps a short history of every active
+-- combatant's root CFrame; CombatService asks Trace() about shots that missed every current body,
+-- and Trace() tests the ray against each body (a capsule) where the shooter saw it. Rewind is capped
+-- (Config.LagCompensation.MaxRewind), and walls are still respected because the caller only passes the
+-- distance to the first solid hit.
+local RunService = game:GetService("RunService")
+local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
+local Config = require(Shared.Config)
+local Roster = require(script.Parent.Roster)
+
+local LagComp = {}
+local C = Config.LagCompensation
+local KEEP = 1.0 -- seconds of history per combatant
+local BODY_LOW, BODY_HIGH = Vector3.new(0, -2.2, 0), Vector3.new(0, 1.6, 0) -- capsule axis in root space (R15: feet .. head)
+local HEAD_T = 0.84 -- fraction along the axis above which a hit counts as the head
+local MAX_TRAVEL = Config.Movement.BoostMaxSpeed * 1.5 + 10 -- studs/s; anything faster is a teleport
+
+type Snapshot = { t: number, cf: CFrame }
+local history: { [any]: { Snapshot } } = {}
+
+local function record()
+	local now = os.clock()
+	local live = {}
+	for _, c in Roster.Active() do
+		local root = c.Character and c.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if root then
+			live[c] = true
+			local h = history[c]
+			if not h then
+				h = {}
+				history[c] = h
+			end
+			local last = h[#h]
+			if last and (root.Position - last.cf.Position).Magnitude > MAX_TRAVEL * (now - last.t) + 5 then
+				table.clear(h) -- teleported (deployment, respawn): the old positions are not where anyone saw it
+			end
+			table.insert(h, { t = now, cf = root.CFrame })
+			while h[1] and now - h[1].t > KEEP do table.remove(h, 1) end
+		end
+	end
+	for c in history do
+		if not live[c] then history[c] = nil end
+	end
+end
+
+-- Root CFrame of combatant c at time t (interpolated between snapshots), or nil if t is outside the
+-- recorded history.
+function LagComp.At(c, t: number): CFrame?
+	local h = history[c]
+	if not h or #h == 0 or t < h[1].t then return nil end
+	if t >= h[#h].t then return h[#h].cf end
+	for i = #h - 1, 1, -1 do
+		local a = h[i]
+		if a.t <= t then
+			local b = h[i + 1]
+			return a.cf:Lerp(b.cf, (t - a.t) / math.max(b.t - a.t, 1e-6))
+		end
+	end
+	return nil
+end
+
+-- How far behind the server's present the shooter's view of other combatants is, in seconds.
+function LagComp.ViewDelay(shooter): number
+	if not C.Enabled or Roster.IsBot(shooter) then return 0 end -- bots aim at the server's present
+	local ok, ping = pcall(function() return shooter:GetNetworkPing() end)
+	local rtt = if ok and type(ping) == "number" then ping else 0.1
+	return math.clamp(rtt + C.InterpDelay, 0, C.MaxRewind)
+end
+
+-- Closest points between segments p1-q1 and p2-q2 (Ericson, Real-Time Collision Detection 5.1.9).
+-- Returns the parameters s (on the first) and t (on the second), both in [0, 1].
+local function closestParams(p1: Vector3, q1: Vector3, p2: Vector3, q2: Vector3): (number, number)
+	local d1, d2, r = q1 - p1, q2 - p2, p1 - p2
+	local a, e, f = d1:Dot(d1), d2:Dot(d2), d2:Dot(r)
+	if a <= 1e-9 and e <= 1e-9 then return 0, 0 end
+	if a <= 1e-9 then return 0, math.clamp(f / e, 0, 1) end
+	local c = d1:Dot(r)
+	if e <= 1e-9 then return math.clamp(-c / a, 0, 1), 0 end
+	local b = d1:Dot(d2)
+	local denom = a * e - b * b
+	local s = if denom > 1e-9 then math.clamp((b * f - c * e) / denom, 0, 1) else 0
+	local t = (b * s + f) / e
+	if t < 0 then
+		return math.clamp(-c / a, 0, 1), 0
+	elseif t > 1 then
+		return math.clamp((b - c) / a, 0, 1), 1
+	end
+	return s, t
+end
+
+-- Distance along the ray (origin, unit dir, length len) at which it enters the body capsule of a
+-- character whose root is at cf, plus whether the hit is on the head. nil if it misses.
+local function rayBody(origin: Vector3, dir: Vector3, len: number, cf: CFrame): (number?, boolean)
+	local a, b = cf * BODY_LOW, cf * BODY_HIGH
+	local stop = origin + dir * len
+	local s, t = closestParams(origin, stop, a, b)
+	local onRay = origin + dir * (len * s)
+	local gap = (onRay - (a + (b - a) * t)).Magnitude
+	local r = C.HitRadius
+	if gap > r then return nil, false end
+	return math.max(0, len * s - math.sqrt(r * r - gap * gap)), t >= HEAD_T
+end
+
+-- Tests a shot that missed every current body against where the shooter saw each other combatant.
+-- maxDist is the distance to the first solid hit (or the weapon's range). Returns the nearest
+-- (victim, distance, headshot) or nil.
+function LagComp.Trace(shooter, origin: Vector3, dir: Vector3, maxDist: number): (any, number, boolean)
+	local delay = LagComp.ViewDelay(shooter)
+	if delay <= 0 then return nil, 0, false end
+	local now = os.clock()
+	local best, bestDist, bestHead = nil, math.huge, false
+	for c in history do
+		if c ~= shooter and Roster.IsActive(c) then
+			local root = c.Character and c.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+			-- cheap reject: too far from the ray to be hit at any rewind
+			local rel = root and root.Position - origin
+			local along = rel and rel:Dot(dir) or -1
+			if rel and along > -10 and along < maxDist + 10 and (rel - dir * along).Magnitude < MAX_TRAVEL * (delay + C.Window) + 6 then
+				for k = -1, 1, 0.5 do
+					local cf = LagComp.At(c, now - math.clamp(delay + k * C.Window, 0, C.MaxRewind + C.Window))
+					if cf then
+						local d, head = rayBody(origin, dir, maxDist, cf)
+						if d and d < bestDist then best, bestDist, bestHead = c, d, head end
+					end
+				end
+			end
+		end
+	end
+	return best, bestDist, bestHead
+end
+
+function LagComp.Start()
+	RunService.Heartbeat:Connect(record)
+end
+
+return LagComp
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">LootService</string><ProtectedString name="Source"><![CDATA[-- Loot containers and world pickups. Every match re-seeds containers on LootSpot markers
 -- (not every spot is filled, so routes vary). Searching and picking up use ProximityPrompts that
 -- the server validates (active combatant, distance, container state, inventory capacity).
 local CollectionService = game:GetService("CollectionService")
@@ -3364,7 +3525,7 @@ function Loot.Start()
 end
 
 return Loot
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">MatchService</string><ProtectedString name="Source"><![CDATA[-- Match lifecycle:
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX25"><Properties><string name="Name">MatchService</string><ProtectedString name="Source"><![CDATA[-- Match lifecycle:
 --   Waiting -> Countdown -> Preparing -> Deploying -> Active -> Final -> Ending -> Results -> Waiting
 -- Solo battle royale today; players carry a team id so duos/squads only need team assignment and
 -- the "teams alive" check below to change.
@@ -3698,10 +3859,16 @@ local function runMatch()
 	setPhase("Active")
 	local finalAnnounced = false
 	local solo = #participants == 1
+	local humans = 0
+	for _, p in participants do
+		if not Roster.IsBot(p) then humans += 1 end
+	end
+	local humansOut = false
 	while true do
 		task.wait(0.5)
 		updateCounts()
-		local alive = #Roster.Alive()
+		local aliveList = Roster.Alive()
+		local alive = #aliveList
 		local teams = aliveTeams()
 		local fewLeft = alive <= M.FinalPhaseAtPlayers and #participants > M.FinalPhaseAtPlayers
 		if not finalAnnounced and (fewLeft or SafeZone.IsLastStage()) then
@@ -3709,7 +3876,17 @@ local function runMatch()
 			setPhase("Final")
 			Remotes.FX:FireAllClients({ t = "notice", text = "FINAL COMBAT PHASE", color = Color3.fromRGB(255, 120, 60), sound = "alarm" })
 		end
-		if (solo and alive == 0) or (not solo and teams <= 1) or os.clock() - matchStart > M.MaxMatchTime then
+		-- Every real player is out: don't keep them waiting in the lobby while bots finish the match.
+		if Config.Bots.Enabled and Config.Bots.EndWhenHumansOut and humans > 0 and teams > 1 then
+			humansOut = true
+			for _, p in aliveList do
+				if not Roster.IsBot(p) then
+					humansOut = false
+					break
+				end
+			end
+		end
+		if (solo and alive == 0) or (not solo and teams <= 1) or humansOut or os.clock() - matchStart > M.MaxMatchTime then
 			break
 		end
 	end
@@ -3730,13 +3907,16 @@ local function runMatch()
 	elseif #aliveNow == 1 then
 		winner = aliveNow[1]
 	elseif #aliveNow > 1 then
-		-- time limit: highest health wins
+		-- time limit: highest health wins; bots-only remainder (every real player out): most kills, then health
 		local best = -1
 		for _, p in aliveNow do
 			local hum = p.Character and p.Character:FindFirstChildOfClass("Humanoid")
-			local hp = hum and hum.Health or 0
-			if hp > best then best, winner = hp, p end
+			local score = (hum and hum.Health or 0) + (if humansOut then Roster.Get(p).kills * 1000 else 0)
+			if score > best then best, winner = score, p end
 		end
+	end
+	if humansOut then
+		Remotes.FX:FireAllClients({ t = "notice", text = "ALL PILOTS DOWN - MATCH OVER", color = Color3.fromRGB(255, 120, 60) })
 	end
 	setPhase("Ending", 4)
 	stateObj:SetAttribute("Winner", winner and winner.Name or "")
@@ -3852,7 +4032,7 @@ function Match.Start()
 end
 
 return Match
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX25"><Properties><string name="Name">NavGraph</string><ProtectedString name="Source"><![CDATA[-- Bot navigation graph, generated from the construction kit's registry of hollow spaces
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX26"><Properties><string name="Name">NavGraph</string><ProtectedString name="Source"><![CDATA[-- Bot navigation graph, generated from the construction kit's registry of hollow spaces
 -- (Kit.NavSpaces: rooms, corridors, tubes, airlock chambers).
 --   * every passable opening becomes a door node (doors of adjoining spaces merge)
 --   * each space links its centre and doors; airlock chambers mark their edges with the door
@@ -4078,7 +4258,7 @@ end
 Nav.Exits = function() return exits end
 Nav.Nodes = function() return nodes end
 return Nav
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX26"><Properties><string name="Name">OxygenService</string><ProtectedString name="Source"><![CDATA[-- Suit oxygen. Drains outside pressurised volumes, refills inside them, refill stations top up
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX27"><Properties><string name="Name">OxygenService</string><ProtectedString name="Source"><![CDATA[-- Suit oxygen. Drains outside pressurised volumes, refills inside them, refill stations top up
 -- instantly (with per-player cooldown). At zero the suit warns for GraceSeconds before hypoxia
 -- damage begins, so oxygen is a pressure to act, not a random death.
 local CollectionService = game:GetService("CollectionService")
@@ -4228,7 +4408,7 @@ function Oxygen.Start()
 end
 
 return Oxygen
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX27"><Properties><string name="Name">Roster</string><ProtectedString name="Source"><![CDATA[-- Per-combatant match state (never persisted). The single source of truth for "is this combatant
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX28"><Properties><string name="Name">Roster</string><ProtectedString name="Source"><![CDATA[-- Per-combatant match state (never persisted). The single source of truth for "is this combatant
 -- active right now". A combatant is a Player or a bot (BotService): bots are tables that expose the
 -- same surface the services use (Name, UserId, Parent, Character, GetAttribute, SetAttribute).
 -- Mirrors the fields clients need onto attributes.
@@ -4343,7 +4523,7 @@ function Roster.Start()
 end
 
 return Roster
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX28"><Properties><string name="Name">SafeZoneService</string><ProtectedString name="Source"><![CDATA[-- The orbital radiation storm: a shrinking SPHERE of safe space. Its schedule is computed once
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX29"><Properties><string name="Name">SafeZoneService</string><ProtectedString name="Source"><![CDATA[-- The orbital radiation storm: a shrinking SPHERE of safe space. Its schedule is computed once
 -- per match (ZoneMath), state is published as attributes on ReplicatedStorage.ZoneState for the
 -- client visual, countdown and tactical map. Damage outside escalates each stage.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -4432,7 +4612,7 @@ function SafeZone.Start()
 end
 
 return SafeZone
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX29"><Properties><string name="Name">SecurityService</string><ProtectedString name="Source"><![CDATA[-- Request validation helpers and the server's movement sanity checks.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX30"><Properties><string name="Name">SecurityService</string><ProtectedString name="Source"><![CDATA[-- Request validation helpers and the server's movement sanity checks.
 --   * RateLimit: token buckets per player per channel (drops floods of remote requests)
 --   * Arg checks for remote payloads
 --   * Movement: speed ceiling and arena hard boundary. Characters are client-owned physics (needed
@@ -4533,7 +4713,7 @@ function Security.Teleported(player: Player)
 end
 
 return Security
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX30"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- Builds the whole battlefield once at server start: lighting, lobby, station, exploration ship,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX31"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- Builds the whole battlefield once at server start: lighting, lobby, station, exploration ship,
 -- asteroid field, derelicts and debris. Gameplay systems discover what they need through
 -- CollectionService tags on markers (LootSpot, DeployPoint, FinalZone, OxygenStation,
 -- Pressurized, Airlock, ElectricHazard, ReactorHazard, ExplosiveBarrel, Breachable, ...).
@@ -4595,7 +4775,7 @@ function WorldBuilder.Start()
 end
 
 return WorldBuilder
-]]></ProtectedString></Properties></Item></Item><Item class="Folder" referent="RBX39"><Properties><string name="Name">Builders</string></Properties><Item class="ModuleScript" referent="RBX32"><Properties><string name="Name">AsteroidField</string><ProtectedString name="Source"><![CDATA[-- Asteroid mining & salvage field plus scattered asteroids across the arena.
+]]></ProtectedString></Properties></Item></Item><Item class="Folder" referent="RBX40"><Properties><string name="Name">Builders</string></Properties><Item class="ModuleScript" referent="RBX33"><Properties><string name="Name">AsteroidField</string><ProtectedString name="Source"><![CDATA[-- Asteroid mining & salvage field plus scattered asteroids across the arena.
 -- Asteroids are Terrain (lumpy multi-ball rock with craters and mineral veins) so they cost no parts
 -- and collide cheaply. "The Anvil", the largest rock, has a mining tunnel bored through it.
 local Kit = require(script.Parent.Kit)
@@ -4801,7 +4981,7 @@ function Field.Build(arena: Instance, markers: Instance, terrain: Terrain, exclu
 end
 
 return Field
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX33"><Properties><string name="Name">Backdrop</string><ProtectedString name="Source"><![CDATA[-- Server-side lighting and sky. The planet itself is rendered client-side (BackdropController)
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX34"><Properties><string name="Name">Backdrop</string><ProtectedString name="Source"><![CDATA[-- Server-side lighting and sky. The planet itself is rendered client-side (BackdropController)
 -- relative to the camera, so it always reads as an enormous, distant body that players can
 -- never fly into, regardless of render distance.
 local Lighting = game:GetService("Lighting")
@@ -4846,7 +5026,7 @@ function Backdrop.Apply()
 end
 
 return Backdrop
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX34"><Properties><string name="Name">Debris</string><ProtectedString name="Source"><![CDATA[-- Derelict spacecraft and orbital debris: two explorable wrecks, satellites, damaged cargo
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX35"><Properties><string name="Name">Debris</string><ProtectedString name="Source"><![CDATA[-- Derelict spacecraft and orbital debris: two explorable wrecks, satellites, damaged cargo
 -- modules, broken solar panels, escape pods, industrial equipment, cargo platforms and a
 -- communications array. Each small location carries loot so space between landmarks is never dead.
 local Kit = require(script.Parent.Kit)
@@ -5110,7 +5290,7 @@ function Debris.Build(arena: Instance, markers: Instance, exclusion)
 end
 
 return Debris
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX35"><Properties><string name="Name">Kit</string><ProtectedString name="Source"><![CDATA[-- Procedural construction kit: reusable functions for rooms, corridors, octagonal habitat tubes,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX36"><Properties><string name="Name">Kit</string><ProtectedString name="Source"><![CDATA[-- Procedural construction kit: reusable functions for rooms, corridors, octagonal habitat tubes,
 -- airlocks, solar arrays, crates, lights, signs and gameplay markers. All builders use this so the
 -- station, ship and wrecks share one consistent visual language and one scale.
 --
@@ -5604,7 +5784,7 @@ function Kit.brokenLight(parent: Instance, cf: CFrame)
 end
 
 return Kit
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX36"><Properties><string name="Name">Lobby</string><ProtectedString name="Source"><![CDATA[-- Staging lobby: a sealed observation hall outside the arena, with a panoramic window toward the
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX37"><Properties><string name="Name">Lobby</string><ProtectedString name="Source"><![CDATA[-- Staging lobby: a sealed observation hall outside the arena, with a panoramic window toward the
 -- station, weapon display pedestals (equipment previews), a practice range with moving drone
 -- targets, a match status board and a controls board. Players float here between matches.
 local CollectionService = game:GetService("CollectionService")
@@ -5694,7 +5874,7 @@ function Lobby.SetStatus(text: string)
 end
 
 return Lobby
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX37"><Properties><string name="Name">Ship</string><ProtectedString name="Source"><![CDATA[-- Exploration vessel "ESV Long Horizon": a 550-stud ship parked near the station.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX38"><Properties><string name="Name">Ship</string><ProtectedString name="Source"><![CDATA[-- Exploration vessel "ESV Long Horizon": a 550-stud ship parked near the station.
 -- Interior chain along the ship's local X axis (bow at -X):
 --   Bridge -> Crew Quarters -> Medical/Research -> Cargo Hold -> Engineering -> Engine Room
 -- All linked by pressurised corridors. Exterior: dorsal spine (creates a covered hull-traversal
@@ -5941,7 +6121,7 @@ function Ship.Build(arena: Instance, markers: Instance, shipCf: CFrame)
 end
 
 return Ship
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX38"><Properties><string name="Name">Station</string><ProtectedString name="Source"><![CDATA[-- Orbital station "Meridian". Layout (station centred on the origin):
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX39"><Properties><string name="Name">Station</string><ProtectedString name="Source"><![CDATA[-- Orbital station "Meridian". Layout (station centred on the origin):
 --   Hub (central command & docking junction) with six branches:
 --     +Y Command Module (observation windows, top airlock)
 --     -Y Docking Bay (open hangar to space, reached through an airlock)
@@ -6383,7 +6563,7 @@ function Station.Build(arena: Instance, markers: Instance)
 end
 
 return Station
-]]></ProtectedString></Properties></Item></Item><Item class="Script" referent="RBX40"><Properties><string name="Name">Main</string><ProtectedString name="Source"><![CDATA[-- ZERO GRAVITY: LAST ORBIT - server bootstrap.
+]]></ProtectedString></Properties></Item></Item><Item class="Script" referent="RBX41"><Properties><string name="Name">Main</string><ProtectedString name="Source"><![CDATA[-- ZERO GRAVITY: LAST ORBIT - server bootstrap.
 -- Builds the world, then starts each service on its own so one failure is reported in Output
 -- without stopping the rest.
 local Services = script.Parent:WaitForChild("Services")
@@ -6405,6 +6585,7 @@ start("CharacterService")
 start("DataService")
 start("InventoryService")
 start("CombatService")
+start("LagCompensation")
 start("LootService")
 start("OxygenService")
 start("SafeZoneService")
@@ -6413,7 +6594,7 @@ start("HazardService")
 start("BotService")
 start("MatchService")
 print("[ZG] server started")
-]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX56"><Properties><string name="Name">StarterPlayer</string><bool name="EnableMouseLockOption">false</bool></Properties><Item class="StarterPlayerScripts" referent="RBX53"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX42"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ZERO GRAVITY: LAST ORBIT - client bootstrap. Starts the controllers and routes server
+]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX57"><Properties><string name="Name">StarterPlayer</string><bool name="EnableMouseLockOption">false</bool></Properties><Item class="StarterPlayerScripts" referent="RBX54"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX43"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ZERO GRAVITY: LAST ORBIT - client bootstrap. Starts the controllers and routes server
 -- messages (FX / Match / Inventory remotes) into ClientState signals and effects.
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
@@ -6522,7 +6703,7 @@ game:GetService("RunService").Heartbeat:Connect(function()
 		Effects.TetherBeam(player, State.Tether and State.Tether.point or nil)
 	end
 end)
-]]></ProtectedString></Properties></Item><Item class="Folder" referent="RBX52"><Properties><string name="Name">Controllers</string></Properties><Item class="ModuleScript" referent="RBX43"><Properties><string name="Name">CameraController</string><ProtectedString name="Source"><![CDATA[-- Over-the-shoulder camera with a yaw/pitch model (pitch clamped short of vertical) so the view
+]]></ProtectedString></Properties></Item><Item class="Folder" referent="RBX53"><Properties><string name="Name">Controllers</string></Properties><Item class="ModuleScript" referent="RBX44"><Properties><string name="Name">CameraController</string><ProtectedString name="Source"><![CDATA[-- Over-the-shoulder camera with a yaw/pitch model (pitch clamped short of vertical) so the view
 -- can never flip or roll unpredictably. Collision-aware, aim zoom, recoil, and spectate mode.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -6621,7 +6802,7 @@ function CameraController.Start()
 end
 
 return CameraController
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX44"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- Client-side shared state and tiny signal helper, used by every controller.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX45"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- Client-side shared state and tiny signal helper, used by every controller.
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
 
@@ -6706,7 +6887,7 @@ function State.IsModalOpen(name: string): boolean
 end
 
 return State
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX45"><Properties><string name="Name">CombatController</string><ProtectedString name="Source"><![CDATA[-- Client combat input and prediction. Sends aim rays to the server (which validates and decides
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX46"><Properties><string name="Name">CombatController</string><ProtectedString name="Source"><![CDATA[-- Client combat input and prediction. Sends aim rays to the server (which validates and decides
 -- hits); draws the local tracer/muzzle flash immediately so firing feels responsive.
 -- Also handles weapon switching, reload, melee, utilities and consumable hotkeys.
 local Players = game:GetService("Players")
@@ -6967,7 +7148,7 @@ function Combat.Start()
 end
 
 return Combat
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX46"><Properties><string name="Name">EffectsController</string><ProtectedString name="Source"><![CDATA[-- Visual and audio presentation: tracers, muzzle flashes, impacts, explosions, tether beams,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX47"><Properties><string name="Name">EffectsController</string><ProtectedString name="Source"><![CDATA[-- Visual and audio presentation: tracers, muzzle flashes, impacts, explosions, tether beams,
 -- the radiation-storm sphere, the planet backdrop, flickering damaged lights, electrical crackle
 -- and suit audio. Purely cosmetic; never affects gameplay state.
 --
@@ -7381,7 +7562,7 @@ function Effects.Start()
 end
 
 return Effects
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX47"><Properties><string name="Name">HUDController</string><ProtectedString name="Source"><![CDATA[-- In-match HUD, inventory screen, results screen and spectating.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX48"><Properties><string name="Name">HUDController</string><ProtectedString name="Source"><![CDATA[-- In-match HUD, inventory screen, results screen and spectating.
 --   Vitals (health, shield, oxygen, boost, tether, suit status) bottom-left
 --   Weapon, ammo, slots, utility bottom-right
 --   Phase / timer / survivors top-centre; kill feed top-right; tactical map top-left
@@ -7975,7 +8156,7 @@ local function update()
 		local q, minP = matchState:GetAttribute("Queued") or 0, matchState:GetAttribute("MinPlayers") or 2
 		local bots = matchState:GetAttribute("Bots") or 0
 		refs.sub.Text = string.format("%d / %d ready%s   |   %s", q, minP, bots > 0 and string.format(" + %d bots", bots) or "",
-			player:GetAttribute("Queued") and "You are queued" or "Not queued - open menu (M) and press PLAY")
+			player:GetAttribute("Queued") and "You are queued" or "<font color=\"#FFB060\">NOT QUEUED - press M, then DEPLOY</font>")
 	elseif endsAt > 0 then
 		refs.sub.Text = string.format("%s   |   %d ready", UI.formatTime(endsAt - serverNow()), (matchState:GetAttribute("Queued") :: number?) or 0)
 	else
@@ -8046,7 +8227,7 @@ function HUD.Start()
 end
 
 return HUD
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX48"><Properties><string name="Name">InputController</string><ProtectedString name="Source"><![CDATA[-- Turns keyboard / gamepad state into abstract movement and look input, so the movement and camera
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">InputController</string><ProtectedString name="Source"><![CDATA[-- Turns keyboard / gamepad state into abstract movement and look input, so the movement and camera
 -- code never reads devices directly (keeps mobile/controller support a matter of mapping here).
 local UserInputService = game:GetService("UserInputService")
 local State = require(script.Parent.ClientState)
@@ -8113,7 +8294,7 @@ function Input.Start()
 end
 
 return Input
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">MenuController</string><ProtectedString name="Source"><![CDATA[-- Main menu (opens on join and with M): Deploy, Practice, Loadout, Locker, Settings, Statistics,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX50"><Properties><string name="Name">MenuController</string><ProtectedString name="Source"><![CDATA[-- Main menu (opens on join and with M): Deploy, Practice, Loadout, Locker, Settings, Statistics,
 -- Tutorial, Credits. Every option shown is implemented. During a match only Resume, Settings and
 -- Tutorial are offered.
 --
@@ -8213,21 +8394,28 @@ function pages.home()
 		return
 	end
 	local queued = player:GetAttribute("Queued") == true
-	para(queued and "<font color=\"#46FFAA\">QUEUED</font> - you deploy with the next drop. Practise on the range while you wait."
-		or "Not queued. Hit DEPLOY to join the next drop (bots fill every empty seat).", 4)
-	local b = UI.button(page, queued and "LEAVE QUEUE" or "DEPLOY", { LayoutOrder = 5, Size = UDim2.new(1, 0, 0, 58), TextSize = 22 }, nil,
-		{ primary = not queued })
-	b.MouseButton1Click:Connect(function()
+	para(queued and "<font color=\"#46FFAA\">QUEUED</font> - you drop with the next match (countdown at the top of the screen). Practise on the range while you wait."
+		or "<font color=\"#FFB060\">NOT QUEUED</font> - hit DEPLOY to join the next drop (bots fill every empty seat).", 4)
+	-- DEPLOY always means "put me in the next match" and closes the menu; leaving the queue is a
+	-- separate, smaller button so it can't be mistaken for the play button.
+	UI.button(page, "DEPLOY", { LayoutOrder = 5, Size = UDim2.new(1, 0, 0, 58), TextSize = 22 }, function()
 		Effects.Play("ui")
-		Remotes.Match:FireServer({ action = "queue", value = not queued })
-		task.wait(0.2)
-		if not queued then setOpen(false) else Menu.Show("home") end
-	end)
-	UI.button(page, "PRACTICE RANGE  (stay in the lobby)", { LayoutOrder = 6 }, function()
-		Effects.Play("ui")
-		Remotes.Match:FireServer({ action = "queue", value = false })
+		Remotes.Match:FireServer({ action = "queue", value = true })
 		setOpen(false)
-	end)
+	end, { primary = true })
+	if queued then
+		UI.button(page, "LEAVE QUEUE  (practice only, skip the next match)", { LayoutOrder = 6 }, function()
+			Effects.Play("ui")
+			Remotes.Match:FireServer({ action = "queue", value = false })
+			task.wait(0.2)
+			Menu.Show("home")
+		end)
+	else
+		UI.button(page, "PRACTICE RANGE  (stay out of matches)", { LayoutOrder = 6 }, function()
+			Effects.Play("ui")
+			setOpen(false)
+		end)
+	end
 end
 
 function pages.loadout()
@@ -8517,7 +8705,7 @@ function Menu.Start()
 end
 
 return Menu
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX50"><Properties><string name="Name">MovementController</string><ProtectedString name="Source"><![CDATA[-- Six-degree-of-freedom zero-gravity movement for the local character.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">MovementController</string><ProtectedString name="Source"><![CDATA[-- Six-degree-of-freedom zero-gravity movement for the local character.
 --
 -- Model: the Humanoid is held in the Physics state (no walking/falling logic), the body is turned
 -- toward the camera by an AlignOrientation, and translation is a momentum model integrated here:
@@ -8695,7 +8883,7 @@ function Movement.Start()
 end
 
 return Movement
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- UI construction kit: one "orbital HUD" look shared by every screen.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX52"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- UI construction kit: one "orbital HUD" look shared by every screen.
 --   * deep-space glass panels (navy with a soft vertical sheen) edged by a light-catching cyan stroke
 --   * HUD corner brackets on major panels
 --   * Michroma display type, Titillium body, Sarpanch for numbers and short readouts
@@ -8883,6 +9071,6 @@ function UIKit.formatTime(seconds: number): string
 end
 
 return UIKit
-]]></ProtectedString></Properties></Item></Item></Item><Item class="StarterCharacterScripts" referent="RBX55"><Properties><string name="Name">StarterCharacterScripts</string></Properties><Item class="Script" referent="RBX54"><Properties><string name="Name">Health</string><ProtectedString name="Source"><![CDATA[-- Intentionally empty: replaces Roblox's default "Health" regeneration script.
+]]></ProtectedString></Properties></Item></Item></Item><Item class="StarterCharacterScripts" referent="RBX56"><Properties><string name="Name">StarterCharacterScripts</string></Properties><Item class="Script" referent="RBX55"><Properties><string name="Name">Health</string><ProtectedString name="Source"><![CDATA[-- Intentionally empty: replaces Roblox's default "Health" regeneration script.
 -- Health regeneration rules (delay, rate, cap) live in CombatService.
 ]]></ProtectedString></Properties></Item></Item></Item></roblox>

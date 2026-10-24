@@ -32,6 +32,7 @@ Config.Bots = {
 	SightRange = 450,
 	HuntRange = 1100, -- bots track enemies this far away when nothing else needs doing
 	LobbyPractice = true, -- bots shoot the lobby range drones between matches
+	EndWhenHumansOut = true, -- once every real player is eliminated, end the match (no waiting on a bots-only fight)
 }
 
 -- Arena geometry (studs). Arena is centred on the origin.
@@ -127,6 +128,17 @@ Config.Melee = {
 	Range = 8,
 	Damage = 35,
 	Cooldown = 0.8,
+}
+
+-- Lag compensation: a player aims at where their screen shows a target, which is where the server
+-- had it about one round trip plus Roblox's interpolation delay ago. Shots that miss a target's
+-- current body are re-tested against its recent past positions (see LagCompensation).
+Config.LagCompensation = {
+	Enabled = true,
+	InterpDelay = 0.12, -- seconds the client renders other characters behind the server (added to ping)
+	MaxRewind = 0.5, -- never rewind further than this, however high the ping
+	Window = 0.1, -- also test this far either side of the estimate (ping jitter)
+	HitRadius = 1.3, -- body capsule radius in studs (a little wider than the 2-stud torso)
 }
 
 Config.Inventory = {

@@ -98,21 +98,28 @@ function pages.home()
 		return
 	end
 	local queued = player:GetAttribute("Queued") == true
-	para(queued and "<font color=\"#46FFAA\">QUEUED</font> - you deploy with the next drop. Practise on the range while you wait."
-		or "Not queued. Hit DEPLOY to join the next drop (bots fill every empty seat).", 4)
-	local b = UI.button(page, queued and "LEAVE QUEUE" or "DEPLOY", { LayoutOrder = 5, Size = UDim2.new(1, 0, 0, 58), TextSize = 22 }, nil,
-		{ primary = not queued })
-	b.MouseButton1Click:Connect(function()
+	para(queued and "<font color=\"#46FFAA\">QUEUED</font> - you drop with the next match (countdown at the top of the screen). Practise on the range while you wait."
+		or "<font color=\"#FFB060\">NOT QUEUED</font> - hit DEPLOY to join the next drop (bots fill every empty seat).", 4)
+	-- DEPLOY always means "put me in the next match" and closes the menu; leaving the queue is a
+	-- separate, smaller button so it can't be mistaken for the play button.
+	UI.button(page, "DEPLOY", { LayoutOrder = 5, Size = UDim2.new(1, 0, 0, 58), TextSize = 22 }, function()
 		Effects.Play("ui")
-		Remotes.Match:FireServer({ action = "queue", value = not queued })
-		task.wait(0.2)
-		if not queued then setOpen(false) else Menu.Show("home") end
-	end)
-	UI.button(page, "PRACTICE RANGE  (stay in the lobby)", { LayoutOrder = 6 }, function()
-		Effects.Play("ui")
-		Remotes.Match:FireServer({ action = "queue", value = false })
+		Remotes.Match:FireServer({ action = "queue", value = true })
 		setOpen(false)
-	end)
+	end, { primary = true })
+	if queued then
+		UI.button(page, "LEAVE QUEUE  (practice only, skip the next match)", { LayoutOrder = 6 }, function()
+			Effects.Play("ui")
+			Remotes.Match:FireServer({ action = "queue", value = false })
+			task.wait(0.2)
+			Menu.Show("home")
+		end)
+	else
+		UI.button(page, "PRACTICE RANGE  (stay out of matches)", { LayoutOrder = 6 }, function()
+			Effects.Play("ui")
+			setOpen(false)
+		end)
+	end
 end
 
 function pages.loadout()

@@ -393,7 +393,7 @@ local Security = svc("SecurityService")
 for _, name in { "Roster" } do svc(name).Start() end
 Security.Start(Roster.IsActive, function(p, amount, cause) Combat.ApplyDamage(p, amount, nil, cause) end)
 for _, name in { "CharacterService", "DataService", "InventoryService", "CombatService", "LootService", "OxygenService", "SafeZoneService",
-	"EquipmentService", "HazardService", "BotService", "MatchService" } do
+	"EquipmentService", "HazardService", "LagCompensation", "BotService", "MatchService" } do
 	svc(name).Start()
 end
 local Inventory = svc("InventoryService")
@@ -526,6 +526,52 @@ test("shields absorb damage before health", function()
 	shoot()
 	check(h.Health == hp, "health dropped while shield up")
 	check(bob:GetAttribute("Armor") < 50, "shield not reduced")
+end)
+
+test("lag compensation: shots at where the shooter saw a moving target hit; walls and stale aim don't", function()
+	local LC = Config.LagCompensation
+	bob:SetAttribute("Armor", 0)
+	local h = hum(bob)
+	h.Health = 100
+	face()
+	root(alice)._props.AssemblyLinearVelocity = V3.zero
+	local v = V3.new(30, 0, 0) -- bob strafes sideways
+	root(bob)._props.AssemblyLinearVelocity = v
+	Mock.advance(0.8)
+	Mock.ping = 0.08
+	local delay = Mock.ping + LC.InterpDelay
+	local o = root(alice)._props.CFrame.p + V3.new(0, 0.5, 0)
+	local function fireAt(target)
+		Mock.advance(0.2) -- respect the pistol's fire rate
+		local mag = Inventory.Get(alice).weapons[1].mag
+		local hp = h.Health
+		shoot({ (target() - o).Unit }, o, mag - 1)
+		check(Inventory.Get(alice).weapons[1].mag == mag - 1, "shot was rejected")
+		return h.Health < hp
+	end
+	-- 1. aimed exactly where alice's screen shows bob: misses his current body, hits after rewinding
+	local hit = fireAt(function()
+		local seen = root(bob)._props.CFrame.p - v * delay
+		local direct = (root(bob)._props.CFrame.p - seen).Magnitude
+		check(direct > 4, "test setup: the aim point should be clear of bob's current body (%.1f studs)", direct)
+		return seen
+	end)
+	check(hit, "a shot at where the shooter saw the target did no damage")
+	-- 2. aimed where bob was far longer ago than any real latency: no rewind that far
+	check(not fireAt(function() return root(bob)._props.CFrame.p - v * (LC.MaxRewind + LC.Window + 0.25) end),
+		"rewound further than MaxRewind")
+	-- 3. a wall between the shooter and the rewound body still blocks the shot
+	local wall = Mock.Instance.new("Part")
+	wall.Anchored = true
+	wall.Size = V3.new(30, 30, 1)
+	local seenNow = root(bob)._props.CFrame.p + v * 0.2 - v * delay
+	wall.CFrame = CF.lookAt(o:Lerp(seenNow, 0.5), seenNow)
+	wall.Parent = Mock.workspace
+	check(not fireAt(function() return root(bob)._props.CFrame.p - v * delay end), "compensated shot went through a wall")
+	wall:Destroy()
+	root(bob)._props.AssemblyLinearVelocity = V3.zero
+	Mock.ping = nil
+	check(#Mock.errors == 0, "errors: %s", table.concat(Mock.errors, "; "))
 end)
 
 test("reload refills the magazine from reserve after the reload time", function()
@@ -777,7 +823,7 @@ end)
 
 -------------------------------------------------------------------------------------------- client UI smoke
 print("\n== Client bootstrap, HUD, menu and effects (smoke) ==")
-cam.ViewportSize = Vector2.new(1280, 720)
+cam._props.ViewportSize = Vector2.new(1280, 720) -- read-only in Roblox; set raw like the engine would
 local RS2 = Mock.services.RunService
 local function frames(n)
 	for _ = 1, n do
@@ -789,9 +835,17 @@ end
 
 test("ClientMain boots every controller without errors", function()
 	Mock.errors = {}
+	local warnedBefore = #Mock.warnings
 	Mock.require(Mock.services.StarterPlayer.StarterPlayerScripts.ClientMain)
 	frames(10)
 	check(#Mock.errors == 0, "errors: %s", table.concat(Mock.errors, "; "))
+	-- ClientMain isolates each controller with pcall and only warns, so a controller that fails to
+	-- start (e.g. the menu, leaving the player stuck in the lobby) shows up as a warning
+	local failed = {}
+	for i = warnedBefore + 1, #Mock.warnings do
+		if string.find(Mock.warnings[i], "failed", 1, true) then table.insert(failed, Mock.warnings[i]) end
+	end
+	check(#failed == 0, "controllers failed: %s", table.concat(failed, "; "))
 	check(localPlayer.PlayerGui:FindFirstChild("ZG_HUD") ~= nil, "HUD not created")
 	check(localPlayer.PlayerGui:FindFirstChild("ZG_Menu") ~= nil, "menu not created")
 end)
@@ -918,6 +972,7 @@ for _, st in Config.Zone.Stages do
 	st.shrink *= 0.35
 end
 test("a full 20-combatant match plays out to a winner", function()
+	Config.Bots.EndWhenHumansOut = false -- keep the bots fighting after Alice (who never moves) is eliminated
 	Mock.sent = {}
 	local rays0, clock0 = Mock.stats.rays, os.clock()
 	check(advanceUntil(function() return matchState:GetAttribute("Phase") == "Active" end, 60), "match never started (%s)",
@@ -973,6 +1028,7 @@ test("bots looted, used the validated fire path and never tripped security", fun
 	check(#(Mock.errors or {}) == 0, "errors: %s", table.concat(Mock.errors or {}, "; "))
 end)
 
+local carol
 test("after the match bots return to the lobby and a new round begins", function()
 	advanceUntil(function() return matchState:GetAttribute("Phase") == "Countdown" or matchState:GetAttribute("Phase") == "Active" end, 40)
 	local inLobby = 0
@@ -982,10 +1038,34 @@ test("after the match bots return to the lobby and a new round begins", function
 	end
 	check(#Bots.All() == 19 and inLobby >= 15, "bots %d, in lobby %d", #Bots.All(), inLobby)
 	-- a second real player joining replaces a bot (between matches)
-	local carol = Mock.addPlayer("Carol", 7)
+	carol = Mock.addPlayer("Carol", 7)
 	Mock.advance(1)
 	local r = Roster.Get(carol)
 	check(#Bots.All() == 18 or (r and r.inMatch), "bot count after join: %d", #Bots.All())
+end)
+
+test("once every real player is eliminated the match ends (no waiting on a bots-only fight)", function()
+	Config.Bots.EndWhenHumansOut = true
+	Mock.sent = {}
+	check(advanceUntil(function() return matchState:GetAttribute("Phase") == "Active" end, 90), "next match never started (%s)",
+		tostring(matchState:GetAttribute("Phase")))
+	Mock.advance(Config.Match.DeployProtection + 0.5)
+	local humans = {}
+	for _, p in { alice, carol } do
+		if p and Roster.IsActive(p) then table.insert(humans, p) end
+	end
+	check(#humans >= 1, "no real player deployed")
+	check(matchState:GetAttribute("AliveCount") >= #humans + 5, "too few bots alive to prove anything (%d)", matchState:GetAttribute("AliveCount"))
+	for _, p in humans do hum(p).Health = 0 end
+	check(advanceUntil(function()
+		local ph = matchState:GetAttribute("Phase")
+		return ph == "Ending" or ph == "Results"
+	end, 5), "match kept running after the last real player was eliminated (%s)", tostring(matchState:GetAttribute("Phase")))
+	local w = matchState:GetAttribute("Winner")
+	check(w ~= nil and w ~= "", "no winner declared")
+	check(advanceUntil(function() return #sentTo(alice, "Match", "results") > 0 end, 10), "no results sent to the eliminated player")
+	check(advanceUntil(function() return matchState:GetAttribute("Phase") == "Countdown" end, Config.Match.ResultsTime + 10),
+		"the next countdown did not start")
 end)
 
 print(string.format("\n%d passed, %d failed", passed, failed))
