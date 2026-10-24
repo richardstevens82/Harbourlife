@@ -1,0 +1,2 @@
+-- Intentionally empty: replaces Roblox's default "Health" regeneration script.
+-- Health regeneration rules (delay, rate, cap) live in CombatService.

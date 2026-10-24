@@ -1,0 +1,347 @@
+{
+ "name": "ZeroGravityLastOrbit",
+ "className": "DataModel",
+ "children": [
+  {
+   "name": "ReplicatedStorage",
+   "className": "ReplicatedStorage",
+   "children": [
+    {
+     "name": "Shared",
+     "className": "Folder",
+     "children": [
+      {
+       "name": "Config",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ReplicatedStorage/Shared/Config.luau"
+       ]
+      },
+      {
+       "name": "Cosmetics",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ReplicatedStorage/Shared/Cosmetics.luau"
+       ]
+      },
+      {
+       "name": "ItemDefinitions",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ReplicatedStorage/Shared/ItemDefinitions.luau"
+       ]
+      },
+      {
+       "name": "Loadouts",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ReplicatedStorage/Shared/Loadouts.luau"
+       ]
+      },
+      {
+       "name": "LootTables",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ReplicatedStorage/Shared/LootTables.luau"
+       ]
+      },
+      {
+       "name": "Remotes",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ReplicatedStorage/Shared/Remotes.luau"
+       ]
+      },
+      {
+       "name": "WeaponDefinitions",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ReplicatedStorage/Shared/WeaponDefinitions.luau"
+       ]
+      },
+      {
+       "name": "WeaponModels",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ReplicatedStorage/Shared/WeaponModels.luau"
+       ]
+      },
+      {
+       "name": "ZoneMath",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ReplicatedStorage/Shared/ZoneMath.luau"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "ServerScriptService",
+   "className": "ServerScriptService",
+   "children": [
+    {
+     "name": "Services",
+     "className": "Folder",
+     "children": [
+      {
+       "name": "CharacterService",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Services/CharacterService.luau"
+       ]
+      },
+      {
+       "name": "CombatService",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Services/CombatService.luau"
+       ]
+      },
+      {
+       "name": "DataService",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Services/DataService.luau"
+       ]
+      },
+      {
+       "name": "EquipmentService",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Services/EquipmentService.luau"
+       ]
+      },
+      {
+       "name": "HazardService",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Services/HazardService.luau"
+       ]
+      },
+      {
+       "name": "InventoryService",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Services/InventoryService.luau"
+       ]
+      },
+      {
+       "name": "LootService",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Services/LootService.luau"
+       ]
+      },
+      {
+       "name": "MatchService",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Services/MatchService.luau"
+       ]
+      },
+      {
+       "name": "OxygenService",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Services/OxygenService.luau"
+       ]
+      },
+      {
+       "name": "Roster",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Services/Roster.luau"
+       ]
+      },
+      {
+       "name": "SafeZoneService",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Services/SafeZoneService.luau"
+       ]
+      },
+      {
+       "name": "SecurityService",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Services/SecurityService.luau"
+       ]
+      },
+      {
+       "name": "WorldBuilder",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Services/WorldBuilder.luau"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Builders",
+     "className": "Folder",
+     "children": [
+      {
+       "name": "AsteroidField",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Builders/AsteroidField.luau"
+       ]
+      },
+      {
+       "name": "Backdrop",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Builders/Backdrop.luau"
+       ]
+      },
+      {
+       "name": "Debris",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Builders/Debris.luau"
+       ]
+      },
+      {
+       "name": "Kit",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Builders/Kit.luau"
+       ]
+      },
+      {
+       "name": "Lobby",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Builders/Lobby.luau"
+       ]
+      },
+      {
+       "name": "Ship",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Builders/Ship.luau"
+       ]
+      },
+      {
+       "name": "Station",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Builders/Station.luau"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Main",
+     "className": "Script",
+     "filePaths": [
+      "src/ServerScriptService/Main.server.luau"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "StarterPlayer",
+   "className": "StarterPlayer",
+   "children": [
+    {
+     "name": "StarterPlayerScripts",
+     "className": "StarterPlayerScripts",
+     "children": [
+      {
+       "name": "ClientMain",
+       "className": "LocalScript",
+       "filePaths": [
+        "src/StarterPlayer/StarterPlayerScripts/ClientMain.client.luau"
+       ]
+      },
+      {
+       "name": "Controllers",
+       "className": "Folder",
+       "children": [
+        {
+         "name": "CameraController",
+         "className": "ModuleScript",
+         "filePaths": [
+          "src/StarterPlayer/StarterPlayerScripts/Controllers/CameraController.luau"
+         ]
+        },
+        {
+         "name": "ClientState",
+         "className": "ModuleScript",
+         "filePaths": [
+          "src/StarterPlayer/StarterPlayerScripts/Controllers/ClientState.luau"
+         ]
+        },
+        {
+         "name": "CombatController",
+         "className": "ModuleScript",
+         "filePaths": [
+          "src/StarterPlayer/StarterPlayerScripts/Controllers/CombatController.luau"
+         ]
+        },
+        {
+         "name": "EffectsController",
+         "className": "ModuleScript",
+         "filePaths": [
+          "src/StarterPlayer/StarterPlayerScripts/Controllers/EffectsController.luau"
+         ]
+        },
+        {
+         "name": "HUDController",
+         "className": "ModuleScript",
+         "filePaths": [
+          "src/StarterPlayer/StarterPlayerScripts/Controllers/HUDController.luau"
+         ]
+        },
+        {
+         "name": "InputController",
+         "className": "ModuleScript",
+         "filePaths": [
+          "src/StarterPlayer/StarterPlayerScripts/Controllers/InputController.luau"
+         ]
+        },
+        {
+         "name": "MenuController",
+         "className": "ModuleScript",
+         "filePaths": [
+          "src/StarterPlayer/StarterPlayerScripts/Controllers/MenuController.luau"
+         ]
+        },
+        {
+         "name": "MovementController",
+         "className": "ModuleScript",
+         "filePaths": [
+          "src/StarterPlayer/StarterPlayerScripts/Controllers/MovementController.luau"
+         ]
+        },
+        {
+         "name": "UIKit",
+         "className": "ModuleScript",
+         "filePaths": [
+          "src/StarterPlayer/StarterPlayerScripts/Controllers/UIKit.luau"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "StarterCharacterScripts",
+     "className": "StarterCharacterScripts",
+     "children": [
+      {
+       "name": "Health",
+       "className": "Script",
+       "filePaths": [
+        "src/StarterPlayer/StarterCharacterScripts/Health.server.luau"
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
