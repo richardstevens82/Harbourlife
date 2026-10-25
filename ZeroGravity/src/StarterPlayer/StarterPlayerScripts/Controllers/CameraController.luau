@@ -15,7 +15,9 @@ local yaw, pitch = 0, 0
 local recoil = 0
 local fovNow = Config.Camera.DefaultFov
 local lastFocus = Vector3.zero
+local trauma = 0
 local C = Config.Camera
+local MV = Config.Movement
 
 function CameraController.Rotation(): CFrame
 	return CFrame.Angles(0, math.rad(yaw), 0) * CFrame.Angles(math.rad(pitch), 0, 0)
@@ -24,6 +26,12 @@ end
 function CameraController.Kick(degrees: number)
 	recoil += degrees
 	yaw += (math.random() - 0.5) * degrees * 0.4
+end
+
+-- Screen shake: adds trauma (0..1) that decays over about half a second. The offset grows with
+-- trauma squared, so small knocks stay subtle and big hits feel heavy.
+function CameraController.Shake(amount: number)
+	trauma = math.clamp(trauma + amount, 0, 1)
 end
 
 -- Point the camera along a direction (used on spawn so players face the arena).
@@ -79,8 +87,17 @@ local function update(dt: number)
 	if hit then
 		want = hit.Position + (lastFocus - want).Unit * 0.8
 	end
-	camera.CFrame = CFrame.new(want) * rot
+	local shake = CFrame.identity
+	if trauma > 0 then
+		local k, t = trauma * trauma * C.ShakeAngle, os.clock() * 28
+		shake = CFrame.Angles(math.rad(k * math.noise(t, 1.3)), math.rad(k * math.noise(t, 7.1)), math.rad(0.6 * k * math.noise(t, 13.7)))
+		trauma = math.max(0, trauma - dt * 1.8)
+	end
+	camera.CFrame = CFrame.new(want) * rot * shake
 	local targetFov = aiming and State.Settings.fov * C.AimFovScale or State.Settings.fov
+	if not aiming and not State.Spectating then -- FOV kick at boost speed: the world rushes past
+		targetFov += C.BoostFovKick * math.clamp((State.Speed - MV.MaxSpeed) / (MV.BoostMaxSpeed - MV.MaxSpeed), 0, 1)
+	end
 	fovNow += (targetFov - fovNow) * math.min(1, dt * 12)
 	camera.FieldOfView = fovNow
 end

@@ -24,6 +24,8 @@ local function fresh()
 		lastAttacker = nil :: Player?,
 		lastAttackerAt = 0,
 		loadout = "scout",
+		chain = 0, lastKillAt = -math.huge, medals = 0, -- kill medals (MatchService)
+		lastHead = false, lastDist = 0, -- how the last weapon hit landed (headshot medal, long shot)
 	}
 end
 
@@ -96,6 +98,7 @@ function Roster.ResetMatchStats(player: Player)
 	local r = Roster.Get(player)
 	r.kills, r.damage, r.deployedAt, r.eliminatedAt, r.placement = 0, 0, 0, 0, 0
 	r.lastAttacker, r.lastAttackerAt, r.lastHurt, r.protectUntil = nil, 0, 0, 0
+	r.chain, r.lastKillAt, r.medals, r.lastHead, r.lastDist = 0, -math.huge, 0, false, 0
 end
 
 function Roster.Start()

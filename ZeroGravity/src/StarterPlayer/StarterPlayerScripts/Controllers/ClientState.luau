@@ -58,12 +58,15 @@ State.Spectating = nil :: Player?
 State.Boost = 0
 State.BoostMax = Config.Movement.BoostMax
 State.Tether = nil -- { point = Vector3, untilT = number }
+State.Speed = 0 -- local body speed (MovementController), for camera and HUD effects
+State.Boosting = false
 
 State.InventoryChanged = signal()
 State.ProfileChanged = signal()
 State.Notice = signal() -- (text, color)
-State.Hit = signal() -- (amount, kill)
-State.Damaged = signal() -- (fromPos, amount, shield)
+State.Hit = signal() -- (amount, kill, headshot, shieldBreak, worldPos)
+State.Damaged = signal() -- (fromPos, amount, shield, shieldBreak)
+State.Medal = signal() -- ({ medal names })
 State.KillFeed = signal() -- (data)
 State.Results = signal() -- (data)
 State.Eliminated = signal() -- (data)

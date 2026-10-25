@@ -166,6 +166,7 @@ local function step(dt: number)
 		v = Motion.Step(v, thrust, boosting, Input.Braking(), speedMult, dt)
 	end
 	root.AssemblyLinearVelocity = v
+	State.Speed, State.Boosting = v.Magnitude, boosting
 end
 
 function Movement.Start()

@@ -3,26 +3,30 @@
 Ordered roughly by impact within each group. ★ = recommended first.
 
 ## Movement and feel
-1. ★ **Real animations.** *Mostly done:* `CharacterAnimator` now poses floating idle, thrust, boost, banking, air rolls, weapon hold, aim, recoil and death procedurally, with both hands placed on the gun by IK. Still to add: reload, weapon-switch and melee motions.
+1. ★ **Real animations.** *Done:* `CharacterAnimator` poses all of these procedurally, with both hands placed on the gun by IK:
+   - floating idle, thrust, boost and banking
+   - air rolls
+   - weapon hold, aim, recoil, reload, weapon swap and melee
+   - death
 2. ★ **Magnetic boots.** Lock onto hull surfaces for steady aim, silent hull-walking ambushes and a clear grounded/floating contrast.
 3. **Grab and push off.** Grab handrails and ledges, then kick off them for quick, silent changes of direction without spending boost.
 4. **Ramming melee.** Melee and body-checks deal damage scaled by impact speed, so momentum becomes a weapon.
 5. **Thruster signature.** Boosting briefly shows you on enemy radar: a clear trade-off between speed and stealth.
 6. **Optional roll control** for advanced pilots, with an auto-level assist that keeps beginners comfortable. (Q/E is now the barrel-roll dodge; free roll would need another binding.)
-7. **Camera polish.** FOV kick and speed lines on boost, impact shake, and a subtle visor overlay with condensation when oxygen is low.
+7. **Camera polish.** *Mostly done:* FOV kick and speed lines on boost, and impact shake. Still to add: a visor overlay with condensation when oxygen is low.
 
 ## Combat
 8. ★ **Lag compensation.** The server rewinds hitboxes by about 150 ms so fast strafing fights register what the shooter saw.
 9. **Projectile weapons.** Rail slugs and plasma bolts with travel time. Leading targets in 3D adds a skill ceiling.
 10. **Attachments.** Scopes, extended mags and stabilisers, rolled by rarity, so loot stays interesting all match.
 11. **Learnable recoil patterns** per weapon instead of random kick.
-12. **Shield-break feedback.** A distinct crack VFX and sound, plus armour that takes directional damage.
-13. **Medals and streak audio** for headshots, multi-kills and long-range eliminations.
+12. **Shield-break feedback.** *Done:* a crack sound, a blue screen-edge flash and a blue hit marker. Still possible: armour that takes directional damage.
+13. **Medals and streak audio.** *Done:* medals for headshots, multi-kills, long shots, first blood, melee and explosive kills, plus spree announcements.
 14. **New utility.** Gravity well grenade (pulls players in), EMP (disables boost and HUD), decoy hologram.
 15. ★ **Deployables from your reference sheet.** Proximity mines, timed charges and an auto-tracking turret, plus inflatable cover.
 
 ## World and map
-16. ★ **Dynamic events.** Meteor showers, a reactor meltdown that turns engineering into a hazard, and drop pods carrying legendary loot.
+16. ★ **Dynamic events.** *Started:* supply-drop pods with rare-to-legendary loot (`EventService`). Still to add: meteor showers, and a reactor meltdown that turns engineering into a hazard.
 17. **A rotating habitat ring.** Real rotation with centrifugal "gravity" inside it: a unique arena where you can walk.
 18. **A planet-surface final zone.** Low-gravity landings on the cratered moon as a possible last circle.
 19. **Destructible exterior.** Shot-off solar panels and hull plates drift away as physics debris.
@@ -55,7 +59,7 @@ Ordered roughly by impact within each group. ★ = recommended first.
 40. ★ **Kill cam and final-fight replay** for the winner's last engagement.
 
 ## UX and accessibility
-41. ★ **Full mobile controls.** Virtual thrust stick, up/down buttons, auto-fire and aim assist. Input is already abstracted for this.
+41. ★ **Full mobile controls.** *Done:* thumbstick, drag-to-look and action buttons (`TouchController`). Still to add: auto-fire and aim assist.
 42. **Controller aim assist and rumble.**
 43. **Interactive tutorial** in the lobby: movement checkpoints, tether course, airlock, loot and shoot.
 44. **More settings.** Colourblind palettes, graphics presets, audio sliders, and keybinds that are saved.
@@ -63,7 +67,7 @@ Ordered roughly by impact within each group. ★ = recommended first.
 46. **Loot comparison.** Green/red stat deltas against what you have equipped, before you pick an item up.
 
 ## Tech, live-ops and polish
-47. **Network efficiency.** Batch tracers per frame, send cosmetic effects over UnreliableRemoteEvent, turn on StreamingEnabled.
+47. **Network efficiency.** *Started:* tracers are batched per frame over an UnreliableRemoteEvent. Still to add: other cosmetic effects, and StreamingEnabled.
 48. **Stronger anti-cheat.** Velocity history, anomaly scoring and server-side line-of-sight replay of suspicious kills.
 49. **Analytics.** AnalyticsService funnels and death heatmaps to tune weapons, loot and the storm.
 50. ★ **Licensed audio and dynamic music.** A score that intensifies with each storm stage and the final circle, plus suit breathing.

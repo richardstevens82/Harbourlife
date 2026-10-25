@@ -71,6 +71,8 @@ Config.Movement = {
 }
 
 Config.Camera = {
+	BoostFovKick = 12, -- extra field of view at full boost speed
+	ShakeAngle = 3.5, -- degrees of camera shake at full trauma
 	Offset = Vector3.new(2.2, 2.2, 11), -- over-the-shoulder
 	AimOffset = Vector3.new(1.6, 1.4, 5.5),
 	PitchLimit = 85,
@@ -194,6 +196,21 @@ Config.Rewards = {
 	WinBonus = 200,
 	PlacementBonus = { [1] = 150, [2] = 90, [3] = 60, [4] = 40, [5] = 25 },
 	CreditsPerXp = 0.5,
+	PerMedal = 15, -- XP for each medal earned in the match
+}
+
+-- Dynamic match events (EventService).
+Config.Events = {
+	SupplyDropTimes = { 120, 300, 480 }, -- seconds after deployment
+	DropFallTime = 10, -- seconds from the warning to touchdown
+	DropItems = { min = 4, max = 6 },
+}
+
+-- Kill medals (MatchService): shown to the killer, sprees announced to everyone.
+Config.Medals = {
+	ChainWindow = 5, -- seconds between kills for DOUBLE / TRIPLE / MULTI KILL
+	LongShot = 150, -- studs
+	Streaks = { [3] = "KILLING SPREE", [5] = "RAMPAGE", [8] = "UNSTOPPABLE", [12] = "ORBITAL LEGEND" },
 }
 
 function Config.XpForLevel(level: number): number

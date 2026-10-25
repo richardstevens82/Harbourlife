@@ -11,6 +11,7 @@ Loot.RarityWeights = {
 	low = { common = 60, uncommon = 28, rare = 10, epic = 2, legendary = 0 },
 	mid = { common = 44, uncommon = 32, rare = 17, epic = 6, legendary = 1 },
 	high = { common = 25, uncommon = 33, rare = 26, epic = 12, legendary = 4 },
+	drop = { common = 0, uncommon = 8, rare = 37, epic = 37, legendary = 18 }, -- supply drops (EventService)
 }
 
 -- Category weights by tier.
@@ -18,6 +19,7 @@ Loot.CategoryWeights = {
 	low = { weapon = 18, ammo = 34, consumable = 30, armor = 8, utility = 7, upgrade = 3 },
 	mid = { weapon = 26, ammo = 26, consumable = 24, armor = 11, utility = 8, upgrade = 5 },
 	high = { weapon = 34, ammo = 18, consumable = 18, armor = 14, utility = 8, upgrade = 8 },
+	drop = { weapon = 40, ammo = 12, consumable = 16, armor = 18, utility = 6, upgrade = 8 },
 }
 
 -- Weapon pools per rarity: strong weapons appear mainly at higher rarity.

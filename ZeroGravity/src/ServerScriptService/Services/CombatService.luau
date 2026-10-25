@@ -15,6 +15,7 @@ local LagComp = require(script.Parent.LagCompensation)
 
 local Combat = {}
 local state: { [Player]: any } = {} -- per-player fire/reload timing
+local pendingTracers: { [Player]: { any } } = {}
 Combat.OnTargetDamaged = nil :: ((BasePart, number, Player?) -> ())? -- set by HazardService (barrels, breach plates)
 
 local function st(player: Player)
@@ -43,25 +44,28 @@ local function inLobby(player: Player): boolean
 	return root ~= nil and (root.Position - Config.Arena.LobbyCenter).Magnitude < 120
 end
 
--- Central damage entry point. attacker nil = environment. Returns damage actually dealt.
-function Combat.ApplyDamage(victim: Player, amount: number, attacker: Player?, cause: string, fromPos: Vector3?): number
-	if amount <= 0 or not Roster.IsActive(victim) then return 0 end
+-- Central damage entry point. attacker nil = environment. Returns damage actually dealt, and whether
+-- this hit broke the victim's shield.
+function Combat.ApplyDamage(victim: Player, amount: number, attacker: Player?, cause: string, fromPos: Vector3?): (number, boolean)
+	if amount <= 0 or not Roster.IsActive(victim) then return 0, false end
 	local r = Roster.Get(victim)
 	local now = os.clock()
-	if now < r.protectUntil then return 0 end
+	if now < r.protectUntil then return 0, false end
 	if attacker then
-		if attacker == victim and cause ~= "explosion" then return 0 end
+		if attacker == victim and cause ~= "explosion" then return 0, false end
 		local ar = Roster.Get(attacker)
-		if attacker ~= victim and (not ar or not ar.inMatch) then return 0 end
-		if ar and attacker ~= victim and ar.team ~= 0 and ar.team == r.team then return 0 end -- squads
+		if attacker ~= victim and (not ar or not ar.inMatch) then return 0, false end
+		if ar and attacker ~= victim and ar.team ~= 0 and ar.team == r.team then return 0, false end -- squads
 	end
 	local hum = victim.Character and victim.Character:FindFirstChildOfClass("Humanoid")
-	if not hum or hum.Health <= 0 then return 0 end
+	if not hum or hum.Health <= 0 then return 0, false end
 	local armor = (victim:GetAttribute("Armor") :: number?) or 0
 	local absorbed = 0
+	local broke = false
 	if cause ~= "zone" and cause ~= "hypoxia" and armor > 0 then -- shields don't stop radiation or suffocation
 		absorbed = math.min(armor, amount)
 		victim:SetAttribute("Armor", armor - absorbed)
+		broke = armor - absorbed <= 0
 	end
 	local toHealth = math.min(amount - absorbed, hum.Health)
 	local dealt = absorbed + toHealth
@@ -75,8 +79,8 @@ function Combat.ApplyDamage(victim: Player, amount: number, attacker: Player?, c
 		if ar then ar.damage += dealt end
 	end
 	hum.Health -= toHealth
-	Remotes.FX:FireClient(victim, { t = "damaged", from = fromPos, amount = dealt, shield = absorbed > 0, cause = cause })
-	return dealt
+	Remotes.FX:FireClient(victim, { t = "damaged", from = fromPos, amount = dealt, shield = absorbed > 0, shieldBreak = broke or nil, cause = cause })
+	return dealt, broke
 end
 
 -- Area damage with line-of-sight and linear falloff. Used by grenades, barrels and the Helios.
@@ -188,6 +192,7 @@ local function onFire(player: Player, req)
 	params.FilterDescendantsInstances = { char :: Model }
 	local ends = {}
 	local hitAny, killAny, total = false, false, 0
+	local headAny, breakAny, hitPos = false, false, nil
 	local victimsHit: { [Player]: boolean } = {}
 	for _, d in dirs do
 		local dir = d.Unit
@@ -210,9 +215,12 @@ local function onFire(player: Player, req)
 		if victim and dmg > 0 then
 			if head then dmg *= 1.5 end
 			if not practice then
-				local dealt = Combat.ApplyDamage(victim, dmg, player, "weapon", origin)
+				local vr = Roster.Get(victim)
+				if vr then vr.lastHead, vr.lastDist = head, dist end -- read by the kill medals
+				local dealt, broke = Combat.ApplyDamage(victim, dmg, player, "weapon", origin)
 				if dealt > 0 then
 					hitAny, total = true, total + dealt
+					headAny, breakAny, hitPos = headAny or head, breakAny or broke, origin + dir * dist
 					victimsHit[victim] = true
 					if not Roster.IsActive(victim) then killAny = true end
 				end
@@ -220,6 +228,7 @@ local function onFire(player: Player, req)
 		elseif hitPart and CollectionService:HasTag(hitPart, "PracticeTarget") and dmg > 0 then
 			practiceHit(hitPart, dmg)
 			hitAny, total = true, total + dmg
+			hitPos = origin + dir * dist
 		elseif hitPart and Combat.OnTargetDamaged and dmg > 0 then
 			Combat.OnTargetDamaged(hitPart, dmg, player)
 		end
@@ -228,12 +237,19 @@ local function onFire(player: Player, req)
 		end
 	end
 	if hitAny then
-		Remotes.FX:FireClient(player, { t = "hit", amount = math.floor(total + 0.5), kill = killAny })
+		Remotes.FX:FireClient(player, { t = "hit", amount = math.floor(total + 0.5), kill = killAny, head = headAny or nil, shieldBreak = breakAny or nil,
+			pos = hitPos })
 	end
-	-- Tracers for everyone else (the shooter already drew its own locally)
+	-- Tracers for everyone else (the shooter already drew its own locally), sent in per-frame batches
+	local tracer = { from = origin, ends = ends, weapon = weapon.id, shooter = char }
 	for _, p in Players:GetPlayers() do
 		if p ~= player then
-			Remotes.FX:FireClient(p, { t = "tracer", from = origin, ends = ends, weapon = weapon.id, shooter = char })
+			local q = pendingTracers[p]
+			if not q then
+				q = {}
+				pendingTracers[p] = q
+			end
+			table.insert(q, tracer)
 		end
 	end
 	if weapon.mag ~= req.expectMag then
@@ -256,6 +272,11 @@ local function onReload(player: Player)
 	s.reloadSerial += 1
 	local serial, slot = s.reloadSerial, inv.active
 	Remotes.FX:FireClient(player, { t = "reload", time = def.reload })
+	local char = player.Character
+	if char then -- everyone's CharacterAnimator plays the reload from these
+		char:SetAttribute("ReloadTime", def.reload)
+		char:SetAttribute("ReloadEnd", workspace:GetServerTimeNow() + def.reload)
+	end
 	task.delay(def.reload, function()
 		if s.reloadSerial ~= serial or Inventory.Get(player) ~= inv or inv.active ~= slot or inv.weapons[slot] ~= weapon then return end
 		local need = magSize - weapon.mag
@@ -273,6 +294,7 @@ local function onEquip(player: Player, slot)
 		s.reloadSerial += 1 -- cancels a reload in progress
 		s.reloadUntil = 0
 		s.equipAt = os.clock() + 0.3
+		if player.Character then player.Character:SetAttribute("ReloadEnd", 0) end
 	end
 end
 
@@ -282,8 +304,10 @@ local function onMelee(player: Player)
 	local now = os.clock()
 	if now - s.lastMelee < Config.Melee.Cooldown then return end
 	s.lastMelee = now
-	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
-	if not root then return end
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not (char and root) then return end
+	char:SetAttribute("MeleeAt", workspace:GetServerTimeNow())
 	local best, bestD = nil, Config.Melee.Range
 	for _, p in Roster.Active() do
 		if p ~= player then
@@ -298,9 +322,11 @@ local function onMelee(player: Player)
 	end
 	Remotes.FX:FireAllClients({ t = "melee", pos = root.Position + root.CFrame.LookVector * 3 })
 	if best then
-		local dealt = Combat.ApplyDamage(best, Config.Melee.Damage, player, "melee", root.Position)
+		local dealt, broke = Combat.ApplyDamage(best, Config.Melee.Damage, player, "melee", root.Position)
 		if dealt > 0 then
-			Remotes.FX:FireClient(player, { t = "hit", amount = dealt, kill = not Roster.IsActive(best) })
+			local br = best.Character and best.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+			Remotes.FX:FireClient(player, { t = "hit", amount = dealt, kill = not Roster.IsActive(best), shieldBreak = broke or nil,
+				pos = br and br.Position })
 			Remotes.FX:FireClient(best, { t = "impulse", v = root.CFrame.LookVector * 30 }) -- knockback: momentum matters
 			Security.AllowBurst(best, 1)
 		end
@@ -328,6 +354,28 @@ end
 
 function Combat.ResetPlayer(player: Player)
 	state[player] = nil
+end
+
+-- Once per frame: each player's queued tracers go out over the unreliable FXFast remote, chunked to
+-- stay well under its ~900-byte packet limit (an oversized unreliable packet is silently dropped).
+-- Size estimate per tracer: keys, origin, weapon id and shooter ~70 bytes, plus ~14 per pellet end.
+local function flushTracers()
+	for p, q in pendingTracers do
+		if p.Parent then
+			local chunk, bytes = {}, 0
+			for _, m in q do
+				local size = 70 + 14 * #m.ends
+				if bytes + size > 600 and #chunk > 0 then
+					Remotes.FXFast:FireClient(p, { t = "tracers", list = chunk })
+					chunk, bytes = {}, 0
+				end
+				table.insert(chunk, m)
+				bytes += size
+			end
+			if #chunk > 0 then Remotes.FXFast:FireClient(p, { t = "tracers", list = chunk }) end
+		end
+	end
+	table.clear(pendingTracers)
 end
 
 -- Presentation state other clients animate from (CharacterAnimator): aiming down sights, and air
@@ -368,7 +416,11 @@ function Combat.Start()
 			onMelee(player)
 		end
 	end)
-	Players.PlayerRemoving:Connect(function(p) state[p] = nil end)
+	Players.PlayerRemoving:Connect(function(p)
+		state[p] = nil
+		pendingTracers[p] = nil
+	end)
+	game:GetService("RunService").Heartbeat:Connect(flushTracers)
 	-- Health regeneration (capped; medical items needed to go higher)
 	local H = Config.Health
 	task.spawn(function()

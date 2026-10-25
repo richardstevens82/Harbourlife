@@ -128,6 +128,13 @@
        ]
       },
       {
+       "name": "EventService",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Services/EventService.luau"
+       ]
+      },
+      {
        "name": "HazardService",
        "className": "ModuleScript",
        "filePaths": [
@@ -202,6 +209,13 @@
        "className": "ModuleScript",
        "filePaths": [
         "src/ServerScriptService/Services/WorldBuilder.luau"
+       ]
+      },
+      {
+       "name": "WorldQuery",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ServerScriptService/Services/WorldQuery.luau"
        ]
       }
      ]
@@ -350,6 +364,13 @@
          "className": "ModuleScript",
          "filePaths": [
           "src/StarterPlayer/StarterPlayerScripts/Controllers/MovementController.luau"
+         ]
+        },
+        {
+         "name": "TouchController",
+         "className": "ModuleScript",
+         "filePaths": [
+          "src/StarterPlayer/StarterPlayerScripts/Controllers/TouchController.luau"
          ]
         },
         {

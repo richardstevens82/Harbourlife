@@ -207,6 +207,11 @@ local V2mt = {}
 local function v2(x, y) return setmetatable({ X = x or 0, Y = y or 0 }, V2mt) end
 V2mt.__index = function(t, k)
 	if k == "Magnitude" then return math.sqrt(t.X * t.X + t.Y * t.Y) end
+	if k == "Unit" then
+		local m = math.sqrt(t.X * t.X + t.Y * t.Y)
+		return if m > 0 then v2(t.X / m, t.Y / m) else v2(0 / 0, 0 / 0)
+	end
+	if k == "Dot" then return function(a, b) return a.X * b.X + a.Y * b.Y end end
 	return nil
 end
 V2mt.__add = function(a, b) return v2(a.X + b.X, a.Y + b.Y) end
@@ -633,7 +638,16 @@ function methods.IsDescendantOf(self, other)
 	end
 	return false
 end
-function methods.SetAttribute(self, k, v) self._attrs[k] = v end
+function methods.SetAttribute(self, k, v)
+	local old = self._attrs[k]
+	self._attrs[k] = v
+	if old ~= v then -- like Roblox: attribute-changed signals fire on every change
+		local s = self._signals["attr_" .. k]
+		if s then s:Fire() end
+		local any = rawget(self._props, "AttributeChanged")
+		if any then any:Fire(k) end
+	end
+end
 function methods.GetAttribute(self, k) return self._attrs[k] end
 function methods.GetAttributes(self) return table.clone(self._attrs) end
 function methods.GetAttributeChangedSignal(self, k)
@@ -683,8 +697,10 @@ function methods.SetStateEnabled() end
 -- RemoteEvent
 function methods.FireClient(self, player, msg)
 	Mock.sent = Mock.sent or {}
-	-- tracers are by far the most frequent message: keep only their type
-	table.insert(Mock.sent, { remote = self._props.Name, player = player, msg = msg.t == "tracer" and { t = "tracer" } or msg })
+	-- tracers are by far the most frequent message: keep only their type (and batch size)
+	local keep = msg
+	if msg.t == "tracer" then keep = { t = "tracer" } elseif msg.t == "tracers" then keep = { t = "tracers", n = #msg.list } end
+	table.insert(Mock.sent, { remote = self._props.Name, player = player, msg = keep })
 end
 function methods.FireServer(self, msg)
 	Mock.sent = Mock.sent or {}

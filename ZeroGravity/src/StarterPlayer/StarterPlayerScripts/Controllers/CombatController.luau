@@ -186,39 +186,62 @@ function Combat.Equip(slot: number)
 	Effects.Play("equip")
 end
 
+-- Actions shared by the keyboard/mouse, gamepad and touch (TouchController) inputs.
+function Combat.SetTrigger(held: boolean)
+	triggerHeld = held
+	if held then tryFire() end
+end
+
+function Combat.SetAiming(on: boolean)
+	State.Aiming = on and canAct()
+end
+
+Combat.UseUtility = useUtility
+Combat.UseConsumable = useConsumable
+
+function Combat.SwapUtility()
+	State.SelectedUtility = State.SelectedUtility == "tether" and "grenade" or "tether"
+	State.InventoryChanged:Fire(State.Inventory)
+end
+
+function Combat.Melee()
+	if canAct() then
+		Remotes.Combat:FireServer({ action = "melee" })
+		Effects.Play("melee")
+	end
+end
+
+function Combat.Roll(dir: number)
+	if canAct() and Movement.Roll(dir) then Animator.Roll(dir) end
+end
+
+function Combat.CycleWeapon()
+	local inv = State.Inventory
+	if inv then Combat.Equip(inv.active % Config.Inventory.WeaponSlots + 1) end
+end
+
 function Combat.Start()
 	local B = State.Bindings
 	UserInputService.InputBegan:Connect(function(io, processed)
 		if io.UserInputType == Enum.UserInputType.MouseButton1 or io.KeyCode == Enum.KeyCode.ButtonR2 then
 			if processed and State.UIOpen then return end
-			triggerHeld = true
-			tryFire()
+			Combat.SetTrigger(true)
 			return
 		elseif io.UserInputType == Enum.UserInputType.MouseButton2 or io.KeyCode == Enum.KeyCode.ButtonL2 then
-			State.Aiming = canAct()
+			Combat.SetAiming(true)
 			return
 		end
 		if processed then return end
 		local k = io.KeyCode
 		if k == B.Reload or k == Enum.KeyCode.ButtonY then Combat.Reload()
 		elseif k == B.Utility or k == Enum.KeyCode.ButtonR1 then useUtility()
-		elseif k == B.SwapUtility or k == Enum.KeyCode.DPadUp then
-			State.SelectedUtility = State.SelectedUtility == "tether" and "grenade" or "tether"
-			State.InventoryChanged:Fire(State.Inventory)
-		elseif k == B.Melee or k == Enum.KeyCode.ButtonR3 then
-			if canAct() then
-				Remotes.Combat:FireServer({ action = "melee" })
-				Effects.Play("melee")
-			end
-		elseif k == B.RollLeft or k == B.RollRight then
-			local dir = if k == B.RollRight then 1 else -1
-			if canAct() and Movement.Roll(dir) then Animator.Roll(dir) end
+		elseif k == B.SwapUtility or k == Enum.KeyCode.DPadUp then Combat.SwapUtility()
+		elseif k == B.Melee or k == Enum.KeyCode.ButtonR3 then Combat.Melee()
+		elseif k == B.RollLeft or k == B.RollRight then Combat.Roll(if k == B.RollRight then 1 else -1)
 		elseif k == B.Slot1 then Combat.Equip(1)
 		elseif k == B.Slot2 then Combat.Equip(2)
 		elseif k == B.Slot3 then Combat.Equip(3)
-		elseif k == Enum.KeyCode.ButtonL1 then
-			local inv = State.Inventory
-			if inv then Combat.Equip(inv.active % Config.Inventory.WeaponSlots + 1) end
+		elseif k == Enum.KeyCode.ButtonL1 then Combat.CycleWeapon()
 		elseif k == B.Heal or k == Enum.KeyCode.DPadLeft then useConsumable("heal")
 		elseif k == B.Shield or k == Enum.KeyCode.DPadRight then useConsumable("shield")
 		elseif k == B.Oxygen or k == Enum.KeyCode.DPadDown then useConsumable("oxygen")
@@ -226,7 +249,7 @@ function Combat.Start()
 	end)
 	UserInputService.InputEnded:Connect(function(io)
 		if io.UserInputType == Enum.UserInputType.MouseButton1 or io.KeyCode == Enum.KeyCode.ButtonR2 then
-			triggerHeld = false
+			Combat.SetTrigger(false)
 		elseif io.UserInputType == Enum.UserInputType.MouseButton2 or io.KeyCode == Enum.KeyCode.ButtonL2 then
 			State.Aiming = false
 		end

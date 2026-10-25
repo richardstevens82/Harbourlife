@@ -21,6 +21,8 @@ local Oxygen = require(script.Parent.OxygenService)
 local SafeZone = require(script.Parent.SafeZoneService)
 local Hazards = require(script.Parent.HazardService)
 local Bots = require(script.Parent.BotService)
+local Events = require(script.Parent.EventService)
+local WorldQuery = require(script.Parent.WorldQuery)
 local Lobby = require(script.Parent.Parent:WaitForChild("Builders"):WaitForChild("Lobby"))
 
 local Match = {}
@@ -29,6 +31,7 @@ local stateObj: Configuration
 local participants: { Player } = {}
 local matchSerial = 0
 local matchStart = 0
+local matchKills = 0
 local diedConns: { [Player]: RBXScriptConnection } = {}
 
 local function setPhase(phase: string, duration: number?)
@@ -95,22 +98,8 @@ local function updateCounts()
 	stateObj:SetAttribute("MaxPlayers", M.MaxPlayers)
 end
 
--- Free of solid geometry and terrain?
 local function isClear(pos: Vector3): boolean
-	local params = OverlapParams.new()
-	params.RespectCanCollide = true
-	if #workspace:GetPartBoundsInRadius(pos, 5, params) > 0 then return false end
-	local region = Region3.new(pos - Vector3.one * 6, pos + Vector3.one * 6):ExpandToGrid(4)
-	local materials = workspace.Terrain:ReadVoxels(region, 4)
-	local size = materials.Size
-	for x = 1, size.X do
-		for y = 1, size.Y do
-			for z = 1, size.Z do
-				if materials[x][y][z] ~= Enum.Material.Air then return false end
-			end
-		end
-	end
-	return true
+	return WorldQuery.IsClear(pos, 5)
 end
 
 -- Greedy spaced selection of deployment points inside the starting zone.
@@ -173,6 +162,37 @@ local CAUSE_TEXT = {
 	explosion = "an explosion", boundary = "the void", melee = "a suit-knife", weapon = "gunfire",
 }
 
+-- Kill medals for the killer (headshot, long shot, multi-kills, first blood, sprees). Sprees are
+-- announced to everyone; each medal is worth Config.Rewards.PerMedal XP at the end of the match.
+local function awardMedals(killer, kr, vr, cause: string)
+	local MC = Config.Medals
+	local now = os.clock()
+	local list = {}
+	matchKills += 1
+	if matchKills == 1 then table.insert(list, "FIRST BLOOD") end
+	kr.chain = if now - kr.lastKillAt <= MC.ChainWindow then kr.chain + 1 else 1
+	kr.lastKillAt = now
+	if kr.chain == 2 then
+		table.insert(list, "DOUBLE KILL")
+	elseif kr.chain == 3 then
+		table.insert(list, "TRIPLE KILL")
+	elseif kr.chain >= 4 then
+		table.insert(list, "MULTI KILL")
+	end
+	if cause == "weapon" and vr.lastHead then table.insert(list, "HEADSHOT") end
+	if cause == "weapon" and vr.lastDist >= MC.LongShot then table.insert(list, "LONG SHOT") end
+	if cause == "melee" then table.insert(list, "CLOSE QUARTERS") end
+	if cause == "explosion" then table.insert(list, "DEMOLITION") end
+	local streak = MC.Streaks[kr.kills]
+	if streak then
+		table.insert(list, streak)
+		Remotes.FX:FireAllClients({ t = "notice", text = string.format("%s IS ON A %s  (%d eliminations)", string.upper(killer.Name), streak, kr.kills),
+			color = Color3.fromRGB(255, 170, 60), sound = "warn" })
+	end
+	kr.medals += #list
+	if #list > 0 then Remotes.Match:FireClient(killer, { t = "medal", list = list }) end
+end
+
 -- Elimination (death or disconnect while alive in the match).
 local function eliminate(player: Player, disconnected: boolean)
 	local r = Roster.Get(player)
@@ -182,14 +202,15 @@ local function eliminate(player: Player, disconnected: boolean)
 	r.placement = #Roster.Alive() + 1
 	local killer = r.lastAttacker
 	if killer and (os.clock() - r.lastAttackerAt > 12 or not killer.Parent or killer == player) then killer = nil end
+	local cause = disconnected and "disconnect" or (r.lastCause or "weapon")
 	if killer then
 		local kr = Roster.Get(killer)
 		if kr then
 			kr.kills += 1
+			awardMedals(killer, kr, r, cause)
 			Roster.Sync(killer)
 		end
 	end
-	local cause = disconnected and "disconnect" or (r.lastCause or "weapon")
 	Remotes.FX:FireAllClients({
 		t = "killfeed", killer = killer and killer.Name or nil, victim = player.Name, weapon = killer and weaponName(killer) or nil,
 		cause = disconnected and "disconnected" or CAUSE_TEXT[cause] or cause,
@@ -233,11 +254,11 @@ local function awardAndReport(winner: Player?)
 			local survived = (r.eliminatedAt > 0 and r.eliminatedAt or os.clock()) - r.deployedAt
 			-- still alive at a time-limit finish without winning = runner-up
 			local placement = r.placement > 0 and r.placement or (p == winner and 1 or 2)
-			local stats = { kills = r.kills, damage = r.damage, placement = placement, survived = survived }
+			local stats = { kills = r.kills, damage = r.damage, placement = placement, survived = survived, medals = r.medals }
 			local reward = DataService.AwardMatch(p, stats)
 			Remotes.Match:FireClient(p, {
 				t = "results", winner = winner and winner.Name or nil, placement = stats.placement, total = total, kills = stats.kills,
-				damage = math.floor(stats.damage), survived = math.floor(survived), xp = reward.xp, credits = reward.credits,
+				damage = math.floor(stats.damage), survived = math.floor(survived), medals = stats.medals, xp = reward.xp, credits = reward.credits,
 				levelUp = reward.levelUp, level = reward.level,
 			})
 		end
@@ -246,6 +267,7 @@ end
 
 local function cleanupMatch()
 	SafeZone.Stop()
+	Events.Stop()
 	for p, c in diedConns do
 		c:Disconnect()
 		diedConns[p] = nil
@@ -269,6 +291,7 @@ end
 
 local function runMatch()
 	matchSerial += 1
+	matchKills = 0
 	local serial = matchSerial
 	-- PREPARING -------------------------------------------------------------------------------------
 	setPhase("Preparing", M.PrepareTime)
@@ -326,6 +349,7 @@ local function runMatch()
 	task.wait(1.5)
 	updateCounts()
 	SafeZone.Begin(finalPos, #participants > 1)
+	Events.Begin()
 	Remotes.FX:FireAllClients({ t = "notice", text = "DEPLOYED - " .. #participants .. " combatants. Last one in orbit wins.", color = Color3.fromRGB(110, 190, 255), sound = "start" })
 
 	-- ACTIVE / FINAL ---------------------------------------------------------------------------------

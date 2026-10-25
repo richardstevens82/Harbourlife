@@ -16,6 +16,9 @@
 --   gun   - low ready, shouldered when aiming or firing, recoil kick per shot (WeaponMount)
 --   arms  - two-bone IK puts the right hand on the weapon's Grip and the left hand on its Support;
 --           unarmed arms float loosely
+--   moves - reload (gun canted, support hand pulls and seats the magazine), weapon swap (the new gun
+--           swings up from low), melee (a forward jab with the gun, or a straight punch when unarmed); driven by
+--           the ReloadEnd / ReloadTime / MeleeAt attributes and by the HeldWeapon model changing
 --   death - limp spread-eagle tumble
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -36,6 +39,7 @@ local SHOT_HOLD = 1.2 -- seconds a shot keeps the gun shouldered
 local POLE = { Right = Vector3.new(0.8, -1, 0.5), Left = Vector3.new(-0.7, -1, 0.1) } -- elbow hints (upper-torso space)
 local FAR, MID = 420, 160 -- studs from the camera: no updates beyond FAR, 30 Hz beyond MID
 local SIDES = { Right = 1, Left = -1 }
+local SWAP_TIME, MELEE_TIME = 0.4, 0.35
 local XAXIS = Vector3.xAxis
 
 local function lerp(a: number, b: number, t: number): number
@@ -108,6 +112,7 @@ local function newRig(char: Model)
 		s = { fwd = 0, side = 0, up = 0, boost = 0, aim = 0, armed = 0, dead = 0 },
 		kick = 0, lastShot = -math.huge, rollStart = -math.huge, rollDir = 1, localRollUntil = -math.huge,
 		rollAt = char:GetAttribute("RollAt"), diedAt = nil :: number?,
+		held = nil :: Instance?, equipStart = -math.huge, meleeAt = char:GetAttribute("MeleeAt"), meleeStart = -math.huge, magLocal = nil :: Vector3?,
 	}
 	for side in SIDES do
 		r.legs[side] = { hip = J[side .. "UpperLeg"], knee = J[side .. "LowerLeg"], ankle = J[side .. "Foot"] }
@@ -159,7 +164,7 @@ local function solveArm(arm, target: Vector3, pole: Vector3)
 	wr.Transform = CFrame.identity
 end
 
-local function floatArms(r, t: number, life: number)
+local function floatArms(r, t: number, life: number, punch: number?)
 	local s = r.s
 	for side, sign in SIDES do
 		local a = r.arms[side]
@@ -168,6 +173,9 @@ local function floatArms(r, t: number, life: number)
 			local flex = lerp(0.25 + bob - 0.7 * s.boost, 0.2, s.dead)
 			local out = sign * lerp(0.35 - 0.23 * s.boost, 1.1, s.dead)
 			local bend = lerp(0.55 + 0.12 * math.sin(t * 1.1 + sign) - 0.35 * s.boost, 0.35, s.dead)
+			if punch and sign > 0 then -- unarmed melee: a straight right jab
+				flex, out, bend = lerp(flex, 1.55, punch), lerp(out, 0.05, punch), lerp(bend, 0.05, punch)
+			end
 			a.shoulder.Transform = CFrame.fromEulerAnglesYXZ(flex, 0, out)
 			a.elbow.Transform = CFrame.Angles(math.max(bend, 0.05), 0, 0)
 			if a.wrist then a.wrist.Transform = CFrame.Angles(0.15, 0, 0) end
@@ -227,6 +235,23 @@ local function update(r, dt: number, now: number)
 	s.aim += ((if aiming then 1 else 0) - s.aim) * (1 - math.exp(-dt * 12))
 	r.kick *= math.exp(-dt * 14)
 
+	-- weapon swaps (a new HeldWeapon model) and melee strikes
+	if held ~= r.held then
+		r.held, r.magLocal = held, nil
+		if held then r.equipStart = now end
+	end
+	local meleeAt = char:GetAttribute("MeleeAt")
+	if meleeAt ~= r.meleeAt then
+		r.meleeAt = meleeAt
+		if meleeAt then r.meleeStart = now end
+	end
+	local mp = (now - r.meleeStart) / MELEE_TIME
+	local melee = if mp >= 0 and mp < 1 then math.sin(mp * math.pi) else 0
+	local reloadEnd = (char:GetAttribute("ReloadEnd") :: number?) or 0
+	local reloadTime = math.max((char:GetAttribute("ReloadTime") :: number?) or 1, 0.1)
+	local sn = workspace:GetServerTimeNow()
+	local reload = if armed and reloadEnd > sn then math.clamp(1 - (reloadEnd - sn) / reloadTime, 0, 1) else -1
+
 	-- air rolls announced by the server (the local player's own roll already started in Roll())
 	local rollAt = char:GetAttribute("RollAt")
 	if rollAt ~= r.rollAt then
@@ -246,6 +271,7 @@ local function update(r, dt: number, now: number)
 		local k = (now - r.diedAt) * s.dead
 		B *= CFrame.Angles(k * 0.5, k * 0.2, k * 0.3) -- slow tumble
 	end
+	if melee > 0 then B *= CFrame.new(0, 0, -0.35 * melee) end -- lunge into the strike
 
 	local waistT = CFrame.fromEulerAnglesYXZ(-0.3 * s.boost * (1 - s.armed) + 0.25 * s.dead, -BLADE * s.armed, 0)
 	if r.r15 then
@@ -263,6 +289,19 @@ local function update(r, dt: number, now: number)
 		local aimCF = mount.C0
 		local kick = r.kick
 		local pose = (aimCF * READY):Lerp(aimCF, s.aim) * CFrame.new(0, 0.03 * kick, 0.22 * kick) * CFrame.Angles(0.15 * kick, 0, 0)
+		local e = (now - r.equipStart) / SWAP_TIME
+		if e >= 0 and e < 1 then -- new weapon swings up from pointing down
+			local low = 1 - e * e * (3 - 2 * e)
+			pose *= CFrame.new(0, -0.45 * low, 0.15 * low) * CFrame.Angles(-1.1 * low, 0, 0.35 * low)
+		end
+		local w = 0
+		if reload >= 0 then -- canted and lowered while the magazine is swapped
+			w = math.clamp(math.min(reload, 1 - reload) / 0.12, 0, 1)
+			pose *= CFrame.new(-0.05 * w, -0.18 * w, 0.12 * w) * CFrame.Angles(0.3 * w, 0.15 * w, 0.65 * w)
+		end
+		if melee > 0 then -- the gun comes up level and jabs forward
+			pose = pose:Lerp(aimCF, melee) * CFrame.new(0, 0.1 * melee, -0.8 * melee) * CFrame.Angles(0.15 * melee, 0, 0)
+		end
 		local final = B * pose
 		mount.Transform = aimCF:Inverse() * final
 		if r.r15 then
@@ -270,13 +309,30 @@ local function update(r, dt: number, now: number)
 			local UT = B * r.rootJ.C0 * r.rootJ.C1:Inverse() * r.waist.C0 * waistT * r.waist.C1:Inverse()
 			solveArm(r.arms.Right, UT:PointToObjectSpace(handleCF * gripA.Position), POLE.Right)
 			if supA then
-				solveArm(r.arms.Left, UT:PointToObjectSpace(handleCF * supA.Position), POLE.Left)
+				local support = supA.Position
+				if reload >= 0 then
+					-- support hand: to the magazine, pull it out and away, seat a fresh one, back to the grip
+					if not r.magLocal then
+						local mag = held and held:FindFirstChild("Magazine") :: BasePart?
+						r.magLocal = if mag and handle
+							then handle.CFrame:PointToObjectSpace(mag.Position - mag.CFrame.UpVector * mag.Size.Y * 0.45)
+							else support + Vector3.new(0, -0.2, 0.25)
+					end
+					local mag = r.magLocal :: Vector3
+					local out = mag + Vector3.new(-0.15, -0.75, 0.2)
+					local p = reload
+					support = if p < 0.3 then support:Lerp(mag, p / 0.3)
+						elseif p < 0.55 then mag:Lerp(out, (p - 0.3) / 0.25)
+						elseif p < 0.8 then out:Lerp(mag, (p - 0.55) / 0.25)
+						else mag:Lerp(support, (p - 0.8) / 0.2)
+				end
+				solveArm(r.arms.Left, UT:PointToObjectSpace(handleCF * support), POLE.Left)
 			else
 				floatArms(r, t, life)
 			end
 		end
 	elseif r.r15 then
-		floatArms(r, t, life)
+		floatArms(r, t, life, if melee > 0 then melee else nil)
 	end
 end
 

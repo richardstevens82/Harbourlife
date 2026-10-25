@@ -164,6 +164,7 @@ local KIND_LOOK = {
 	pod = { size = Vector3.new(2.6, 2.6, 2.6), color = Color3.fromRGB(200, 120, 50), label = "Pod Stowage" },
 	cache = { size = Vector3.new(3, 2, 3), color = Color3.fromRGB(150, 80, 40), label = "Salvage Cache" },
 	suit = { size = Vector3.new(3, 3, 3), color = Color3.fromRGB(40, 90, 200), label = "Suit Locker" },
+	drop = { size = Vector3.new(4, 3.4, 4), color = Color3.fromRGB(225, 228, 235), label = "Supply Drop" },
 }
 
 local function container(cf: CFrame, kind: string, tier: string, contents, title: string?)
@@ -182,7 +183,8 @@ local function container(cf: CFrame, kind: string, tier: string, contents, title
 	strip.CFrame = cf * CFrame.new(0, look.size.Y / 2 - 0.4, 0)
 	strip.Anchored, strip.CanCollide, strip.CanQuery = true, false, false
 	strip.Material = Enum.Material.Neon
-	strip.Color = tier == "high" and Color3.fromRGB(255, 170, 40) or tier == "mid" and Color3.fromRGB(70, 150, 255) or Color3.fromRGB(150, 220, 160)
+	strip.Color = (tier == "drop" and Color3.fromRGB(255, 215, 60)) or (tier == "high" and Color3.fromRGB(255, 170, 40))
+		or (tier == "mid" and Color3.fromRGB(70, 150, 255)) or Color3.fromRGB(150, 220, 160)
 	strip.Parent = box
 	box:SetAttribute("Tier", tier)
 	CollectionService:AddTag(box, "LootContainer")
@@ -232,6 +234,12 @@ function Loot.PickupsNear(pos: Vector3, radius: number): { BasePart }
 		if part.Parent and (part.Position - pos).Magnitude <= radius then table.insert(out, part) end
 	end
 	return out
+end
+
+-- A supply-drop container: rare-to-legendary loot, more of it than a normal container.
+function Loot.SpawnDrop(cf: CFrame): BasePart
+	local E = Config.Events
+	return container(cf, "drop", "drop", LootTables.RollContainer(rng, "drop", E.DropItems.min, E.DropItems.max), "Supply Drop")
 end
 
 -- Drop everything an eliminated player carried in a suit locker at their position.

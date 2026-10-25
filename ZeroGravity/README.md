@@ -58,6 +58,17 @@ progress isn't saving.
 Keyboard bindings can be changed in **Menu → Settings**. The change lasts for the current session
 only.
 
+**Phones and tablets** get touch controls automatically. To try them in Studio, use the **Device**
+emulator.
+- **Left half of the screen:** a floating thumbstick for thrust. It appears where your thumb lands.
+- **Right half:** drag to look.
+- **Buttons:**
+  - FIRE (hold), AIM, RELOAD and HEAL
+  - BOOST, UP, DOWN and BRAKE (hold)
+  - ROLL ◄ / ►, UTIL (tether or pulse charge) and SWAP (next weapon)
+  - MENU, MAP and BAG along the top
+- Searching, picking up and airlocks use Roblox's normal tap prompts.
+
 ## How the project is organised
 
 ```
@@ -71,14 +82,14 @@ src/
     Services/                     WorldBuilder, Roster, SecurityService, CharacterService,
                                   DataService, InventoryService, CombatService, LootService,
                                   OxygenService, SafeZoneService, EquipmentService,
-                                  HazardService, LagCompensation, NavGraph, BotService,
-                                  MatchService
+                                  HazardService, LagCompensation, EventService (supply drops),
+                                  WorldQuery, NavGraph, BotService, MatchService
   StarterPlayer/StarterPlayerScripts/
     ClientMain.client.luau        bootstrap + server-message routing
     Controllers/                  Input, Camera, Movement (zero-g), Combat, CharacterAnimator
                                   (procedural flying/aiming/rolling poses, hand IK on the gun),
                                   Effects (VFX/audio, storm sphere, planet), HUD, Menu, UIKit,
-                                  ClientState
+                                  Touch (mobile controls), ClientState
   StarterPlayer/StarterCharacterScripts/
     Animate.client.luau           empty: replaces Roblox's walk/fall animations
     Health.server.luau            empty: replaces Roblox's health regeneration

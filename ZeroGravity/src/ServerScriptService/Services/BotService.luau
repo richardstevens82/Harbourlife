@@ -750,7 +750,10 @@ local function thinkMatch(bot, root: BasePart, params: RaycastParams)
 		local box = brain.taskObj
 		if not (box and box.Parent and not box:GetAttribute("Searched")) then
 			if box and claims[box] == bot then claims[box] = nil end
-			box = nearestOf(Loot.OpenContainers(), pos, 650, function(b) return claims[b] == nil or claims[b] == bot end)
+			-- supply drops are worth a detour and are contested (no claim needed); otherwise the nearest unclaimed box
+			local open = Loot.OpenContainers()
+			box = nearestOf(open, pos, 900, function(b) return b:GetAttribute("SupplyDrop") == true end)
+				or nearestOf(open, pos, 650, function(b) return claims[b] == nil or claims[b] == bot end)
 			brain.taskObj = box
 			if box then claims[box] = bot end
 		end

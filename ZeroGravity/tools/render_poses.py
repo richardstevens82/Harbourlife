@@ -59,6 +59,19 @@ local function pose(label, opts)
 		Anim.Roll(1)
 		for _ = 1, math.floor(M.RollTime * opts.roll * 60) do frame() end
 	end
+	if opts.reload then
+		char:SetAttribute("ReloadTime", 2)
+		char:SetAttribute("ReloadEnd", Mock.clock() + 2 * (1 - opts.reload))
+		frame()
+	end
+	if opts.swap then
+		CS.SetWeaponVisual(plr, opts.weapon, "epic")
+		for _ = 1, math.floor(0.4 * opts.swap * 60) do frame() end
+	end
+	if opts.melee then
+		char:SetAttribute("MeleeAt", Mock.clock())
+		for _ = 1, math.floor(0.35 * opts.melee * 60) do frame() end
+	end
 	if opts.fire then
 		Anim.Fired()
 		frame()
@@ -95,6 +108,10 @@ pose("Air roll 1/3", { weapon = "assault", roll = 0.33 })
 pose("Air roll 2/3", { weapon = "assault", roll = 0.62 })
 pose("Pistol, aiming", { weapon = "pistol", aim = true })
 pose("Sniper, aiming", { weapon = "precision", aim = true })
+pose("Reloading (magazine out)", { weapon = "assault", reload = 0.45 })
+pose("Weapon swap (raising)", { weapon = "burst", swap = 0.35 })
+pose("Melee strike", { weapon = "assault", melee = 0.5 })
+pose("Unarmed punch", { melee = 0.5 })
 pose("Unarmed drift", {})
 pose("Unarmed boost", { vel = V3.new(0, 0, -82) })
 pose("Eliminated (tumbling)", { dead = true, settle = 2.5 })

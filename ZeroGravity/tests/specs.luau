@@ -86,7 +86,7 @@ end)
 
 test("loot rolls: valid ids, ammo with weapons, rarity rules", function()
 	local rng = Random.new(99)
-	for _, tier in { "low", "mid", "high" } do
+	for _, tier in { "low", "mid", "high", "drop" } do
 		for _ = 1, 3000 do
 			local items = Loot.RollContainer(rng, tier, 2, 4)
 			for i, e in items do
@@ -115,6 +115,21 @@ test("loot quality improves with tier", function()
 	end
 	local lo, mi, hi = avg("low"), avg("mid"), avg("high")
 	check(lo < mi and mi < hi, "avg rarity low %.2f mid %.2f high %.2f", lo, mi, hi)
+end)
+
+test("supply-drop loot: better than any container tier, never common gear", function()
+	local rng = Random.new(17)
+	local sum, legendary = 0, 0
+	for _ = 1, 4000 do
+		local r = Loot.RollRarity(rng, "drop")
+		check(r ~= "common", "a supply drop rolled common")
+		sum += table.find(Items.Rarities, r)
+		if r == "legendary" then legendary += 1 end
+	end
+	local hiRng, hiSum = Random.new(17), 0
+	for _ = 1, 4000 do hiSum += table.find(Items.Rarities, Loot.RollRarity(hiRng, "high")) end
+	check(sum > hiSum, "drop loot not better than high tier")
+	check(legendary > 400, "too few legendaries in drops (%d / 4000)", legendary)
 end)
 
 test("zone: every next sphere lies inside the previous one", function()
@@ -393,7 +408,7 @@ local Security = svc("SecurityService")
 for _, name in { "Roster" } do svc(name).Start() end
 Security.Start(Roster.IsActive, function(p, amount, cause) Combat.ApplyDamage(p, amount, nil, cause) end)
 for _, name in { "CharacterService", "DataService", "InventoryService", "CombatService", "LootService", "OxygenService", "SafeZoneService",
-	"EquipmentService", "HazardService", "LagCompensation", "BotService", "MatchService" } do
+	"EquipmentService", "HazardService", "LagCompensation", "EventService", "BotService", "MatchService" } do
 	svc(name).Start()
 end
 local Inventory = svc("InventoryService")
@@ -528,6 +543,70 @@ test("shields absorb damage before health", function()
 	check(bob:GetAttribute("Armor") < 50, "shield not reduced")
 end)
 
+test("hit feedback: headshots, shield breaks and the hit position reach the shooter", function()
+	Mock.advance(0.3)
+	face()
+	bob:SetAttribute("Armor", 5)
+	Mock.sent = {}
+	local o = root(alice)._props.CFrame.p + V3.new(0, 0.5, 0)
+	local head = bob.Character.Head._props.CFrame.p
+	shoot({ (head - o).Unit }, o, Inventory.Get(alice).weapons[1].mag - 1)
+	local hits = sentTo(alice, "FX", "hit")
+	check(#hits == 1, "no hit message")
+	check(hits[1].head == true, "headshot not reported")
+	check(hits[1].shieldBreak == true, "shield break not reported to the shooter")
+	check(Mock.GLOBAL.typeof(hits[1].pos) == "Vector3" and (hits[1].pos - head).Magnitude < 2, "hit position missing or wrong")
+	local dmg = sentTo(bob, "FX", "damaged")
+	check(#dmg >= 1 and dmg[#dmg].shieldBreak == true, "the victim was not told the shield broke")
+end)
+
+test("tracers are batched once per frame over the unreliable FXFast remote", function()
+	check(RS.Remotes.FXFast.ClassName == "UnreliableRemoteEvent", "FXFast is a %s", RS.Remotes.FXFast.ClassName)
+	Mock.advance(0.3)
+	face()
+	Mock.sent = {}
+	shoot(nil, nil, Inventory.Get(alice).weapons[1].mag - 1)
+	check(#sentTo(bob, "FXFast", "tracers") == 0, "tracer sent before the frame flush")
+	Mock.advance(1 / 60)
+	local batches = sentTo(bob, "FXFast", "tracers")
+	check(#batches == 1 and batches[1].n == 1, "expected one batch with one tracer (got %d)", #batches)
+	check(#sentTo(alice, "FXFast", "tracers") == 0, "the shooter was sent its own tracer")
+end)
+
+test("supply drop: lands where called as a rare-loot container, beacon until opened", function()
+	local Events = svc("EventService")
+	local LootS = svc("LootService")
+	Mock.sent = {}
+	local target = V3.new(0, 700, 300)
+	local pod = Events.SupplyDrop(target)
+	local told = false
+	for _, n in sentTo(alice, "FX", "notice") do
+		if string.find(n.text, "SUPPLY DROP", 1, true) then told = true end
+	end
+	check(told, "no supply drop announcement")
+	check(CS:HasTag(pod.PrimaryPart, "SupplyDrop") and pod:FindFirstChild("Beacon") ~= nil, "pod not marked for the map")
+	Mock.advance(Config.Events.DropFallTime + 0.5)
+	local box
+	for _, c in CS:GetTagged("LootContainer") do
+		if c:GetAttribute("SupplyDrop") then box = c end
+	end
+	check(box ~= nil and (box._props.CFrame.p - target).Magnitude < 0.5 and box:GetAttribute("Tier") == "drop", "no drop container at the landing spot")
+	place(alice, target + V3.new(0, 0, 6), target)
+	LootS.Search(alice, box)
+	check(box:GetAttribute("Searched") == true, "drop could not be searched")
+	local gear = 0
+	for _, p in LootS.PickupsNear(target, 30) do
+		local e = LootS.EntryOf(p)
+		local def = e and Items.Get(e.id)
+		if def and (def.kind == "weapon" or def.kind == "armor") then
+			gear += 1
+			check(e.rarity ~= "common", "common %s in a supply drop", e.id)
+		end
+	end
+	check(not CS:HasTag(pod.PrimaryPart, "SupplyDrop") and pod:FindFirstChild("Beacon") == nil, "beacon still shown after the drop was opened")
+	print(string.format("        drop held %d weapons/armour", gear))
+end)
+
 test("lag compensation: shots at where the shooter saw a moving target hit; walls and stale aim don't", function()
 	local LC = Config.LagCompensation
 	bob:SetAttribute("Armor", 0)
@@ -586,6 +665,18 @@ test("reload refills the magazine from reserve after the reload time", function(
 	check(inv.ammo.light == reserve - (12 - mag), "reserve not reduced correctly")
 end)
 
+test("reload and melee are published for everyone's animator", function()
+	local w = Inventory.Get(alice).weapons[1]
+	w.mag = 3
+	Mock.advance(0.3)
+	Remotes.Combat.OnServerEvent:Fire(alice, { action = "reload" })
+	local char = alice.Character
+	check((char:GetAttribute("ReloadEnd") or 0) > Mock.clock() and (char:GetAttribute("ReloadTime") or 0) > 0, "reload not published")
+	Mock.advance(Weapons.Get("pistol").reload + 0.1)
+	Remotes.Combat.OnServerEvent:Fire(alice, { action = "melee" })
+	check(math.abs((char:GetAttribute("MeleeAt") or -1) - Mock.clock()) < 0.01, "melee not published")
+end)
+
 test("inventory: stack limits, ammo caps, weapon swap drops the old weapon", function()
 	local inv = Inventory.Get(alice)
 	for _ = 1, 10 do Inventory.Add(alice, { id = "stim", rarity = "common", amount = 1 }) end
@@ -632,6 +723,7 @@ end)
 test("oxygen drains in vacuum, refills inside, hypoxia only after the grace period", function()
 	face()
 	bob:SetAttribute("O2", 10)
+	bob:SetAttribute("O2Efficiency", nil) -- an O2 recycler picked up in an earlier test would slow the drain
 	local h = hum(bob)
 	h.Health = 100
 	Mock.advance(10 / (Config.Oxygen.DrainPerSecond) + 0.5)
@@ -681,6 +773,11 @@ test("elimination: kill feed, death locker, last player standing wins, rewards s
 	check(Roster.Get(bob).alive == false, "bob still alive in roster")
 	check(Roster.Get(alice).kills == 1, "kill not credited")
 	check(#sentTo(alice, "FX", "killfeed") > 0, "no kill feed")
+	local medals = {}
+	for _, m in sentTo(alice, "Match", "medal") do
+		for _, name in m.list do medals[name] = true end
+	end
+	check(medals["FIRST BLOOD"], "no FIRST BLOOD medal for the match's first kill")
 	local lockers = 0
 	for _, c in CS:GetTagged("LootContainer") do
 		local pr = c:FindFirstChildOfClass("ProximityPrompt")
@@ -692,6 +789,7 @@ test("elimination: kill feed, death locker, last player standing wins, rewards s
 	Mock.advance(Config.Match.ResultsTime + 3)
 	local res = sentTo(alice, "Match", "results")
 	check(#res == 1 and res[1].placement == 1 and res[1].kills == 1, "alice results wrong")
+	check((res[1].medals or 0) >= 1, "medals missing from the results")
 	local resB = sentTo(bob, "Match", "results")
 	check(#resB == 1 and resB[1].placement == 2, "bob results wrong")
 	check(DataService.Get(alice).xp > xpBefore and DataService.Get(alice).wins == 1, "rewards not applied")
@@ -868,7 +966,9 @@ test("every server->client message type is handled", function()
 	for _, msg in {
 		{ t = "tracer", from = V3.new(0, 500, 0), ends = { V3.new(0, 500, -50) }, weapon = "helios" },
 		{ t = "hit", amount = 33, kill = false }, { t = "hit", amount = 50, kill = true },
+		{ t = "hit", amount = 41, kill = false, head = true, shieldBreak = true, pos = V3.new(0, 500, -30) },
 		{ t = "damaged", from = V3.new(20, 500, 0), amount = 15, shield = true }, { t = "damaged", amount = 3, cause = "zone" },
+		{ t = "damaged", from = V3.new(0, 500, 20), amount = 25, shield = true, shieldBreak = true },
 		{ t = "killfeed", killer = "Alice", victim = "Bob", weapon = "AR-7 Pulse Rifle", cause = "gunfire" },
 		{ t = "killfeed", victim = "Carol", cause = "the radiation storm" },
 		{ t = "notice", text = "STORM CONTRACTING", sound = "alarm" }, { t = "explosion", pos = V3.new(0, 500, -10), radius = 20 },
@@ -879,10 +979,13 @@ test("every server->client message type is handled", function()
 	} do
 		FX:Fire(msg)
 	end
+	Remotes.FXFast.OnClientEvent:Fire({ t = "tracers", list = { { from = V3.new(0, 500, 0), ends = { V3.new(0, 500, -40), V3.new(1, 500, -40) },
+		weapon = "shotgun", shooter = alice.Character }, { from = V3.zero, ends = { V3.new(0, 0, -9) }, weapon = "smg" } } })
+	MatchR:Fire({ t = "medal", list = { "FIRST BLOOD", "HEADSHOT", "KILLING SPREE" } })
 	frames(30)
 	MatchR:Fire({ t = "eliminated", by = "Alice", cause = "gunfire", placement = 2 })
-	MatchR:Fire({ t = "results", winner = "Alice", placement = 2, total = 12, kills = 3, damage = 812, survived = 431, xp = 260, credits = 130,
-		levelUp = true, level = 4 })
+	MatchR:Fire({ t = "results", winner = "Alice", placement = 2, total = 12, kills = 3, damage = 812, survived = 431, medals = 4, xp = 260,
+		credits = 130, levelUp = true, level = 4 })
 	frames(30)
 	InvR:Fire({ t = "clear" })
 	frames(5)
@@ -907,6 +1010,117 @@ test("HUD keeps running through lobby, match, spectate and results states", func
 	matchState:SetAttribute("Phase", "Active")
 	frames(10)
 	check(#Mock.errors == 0, "errors:\n          %s", table.concat(Mock.errors, "\n          "))
+end)
+
+local function closeModals()
+	for _, n in { "menu", "results", "inventory" } do CState.SetModal(n, false) end
+	CState.Spectating = nil
+	localPlayer:SetAttribute("InMatch", false)
+	localPlayer:SetAttribute("Alive", true)
+end
+
+test("combat feedback: damage numbers, headshot and shield-break markers, medal popups", function()
+	Mock.errors = {}
+	CState.Hit:Fire(42, false, true, true, V3.new(0, 500, -20))
+	CState.Medal:Fire({ "FIRST BLOOD", "HEADSHOT" })
+	CState.Damaged:Fire(V3.new(10, 500, 0), 20, true, true)
+	frames(6)
+	local numbers = 0
+	for _, a in Mock.workspace.Terrain:GetChildren() do
+		local bb = a:FindFirstChildOfClass("BillboardGui")
+		if bb and bb:FindFirstChildOfClass("TextLabel").Text == "42" then numbers += 1 end
+	end
+	check(numbers == 1, "no floating damage number")
+	local medal = false
+	for _ = 1, 600 do -- medals queue behind any still showing
+		for _, d in localPlayer.PlayerGui.ZG_HUD:GetDescendants() do
+			if d.ClassName == "TextLabel" and d.Text == "FIRST BLOOD" and d.TextTransparency < 0.5 then medal = true end
+		end
+		if medal then break end
+		frames(1)
+	end
+	check(medal, "medal popup not shown")
+	frames(200) -- the popups play out
+	check(#Mock.errors == 0, "errors: %s", table.concat(Mock.errors, "; "))
+end)
+
+test("camera feel: boost speed widens the view and streams speed lines; damage shakes the view", function()
+	closeModals()
+	local cam = Mock.workspace.CurrentCamera
+	local function flyAt(speed, n)
+		for _ = 1, n do
+			proot.AssemblyLinearVelocity = V3.new(0, 0, -speed)
+			frames(1)
+		end
+	end
+	flyAt(0, 40)
+	local fov0 = cam.FieldOfView
+	flyAt(Config.Movement.BoostMaxSpeed, 40)
+	check(cam.FieldOfView > fov0 + 8, "no FOV kick at boost speed (%.1f -> %.1f)", fov0, cam.FieldOfView)
+	local streaming = 0
+	for _, l in localPlayer.PlayerGui.ZG_HUD.SpeedLines:GetChildren() do
+		if l.BackgroundTransparency < 0.95 then streaming += 1 end
+	end
+	check(streaming >= 5, "speed lines not showing (%d)", streaming)
+	flyAt(0, 60)
+	check(math.abs(cam.FieldOfView - fov0) < 1, "FOV did not settle back")
+	local CameraController = client("CameraController")
+	frames(1)
+	local calm = cam.CFrame
+	CameraController.Shake(0.8)
+	local d = 0
+	for _ = 1, 12 do
+		frames(1)
+		d = math.max(d, math.deg(math.acos(math.clamp(calm.LookVector:Dot(cam.CFrame.LookVector), -1, 1))))
+	end
+	check(d > 0.3, "camera did not shake (%.2f deg)", d)
+	frames(90)
+	proot.AssemblyLinearVelocity = V3.zero
+end)
+
+test("touch controls: thumbstick thrusts, drag looks, buttons fire, boost and roll", function()
+	local UIS = Mock.services.UserInputService
+	UIS._props.TouchEnabled, UIS._props.KeyboardEnabled = true, false
+	client("TouchController").Start()
+	local tg = localPlayer.PlayerGui:FindFirstChild("ZG_Touch")
+	check(tg ~= nil, "no touch UI on a touch device")
+	closeModals()
+	local Input = client("InputController")
+	local stick = { Position = V3.new(150, 520, 0) }
+	UIS.TouchStarted:Fire(stick, false)
+	stick.Position = V3.new(150, 450, 0)
+	UIS.TouchMoved:Fire(stick, false)
+	check(Input.MoveVector().Z > 0.9, "thumbstick up should thrust forward (%.2f)", Input.MoveVector().Z)
+	UIS.TouchEnded:Fire(stick, false)
+	check(Input.MoveVector().Magnitude < 1e-6, "thrust stuck after the thumb lifted")
+	local look = { Position = V3.new(900, 300, 0) }
+	UIS.TouchStarted:Fire(look, false)
+	look.Position = V3.new(960, 300, 0)
+	UIS.TouchMoved:Fire(look, false)
+	check(Input.LookDelta(1 / 60).X > 5, "dragging did not turn the view")
+	UIS.TouchEnded:Fire(look, false)
+	local A = tg.Actions
+	A.BOOST.MouseButton1Down:Fire()
+	check(Input.Boosting(), "BOOST button not held")
+	A.BOOST.MouseButton1Up:Fire()
+	check(not Input.Boosting(), "BOOST stuck")
+	CState.Boost = Config.Movement.BoostMax
+	Remotes.Inventory.OnClientEvent:Fire({ t = "sync", weapons = { { id = "smg", rarity = "rare", mag = 30, magSize = 30 }, false, false }, active = 1,
+		ammo = { light = 60, medium = 0, heavy = 0, shells = 0, energy = 0 }, items = { medkit = 0, stim = 0, o2canister = 0, shieldcell = 0, grenade = 0 },
+		tether = 0, upgrades = {}, armorMax = 0, practice = true })
+	Mock.advance(Config.Movement.RollCooldown + 0.1)
+	Mock.sent = {}
+	A["ROLL ►"].MouseButton1Down:Fire()
+	A.FIRE.MouseButton1Down:Fire()
+	A.FIRE.MouseButton1Up:Fire()
+	local fired, rolled = false, false
+	for _, m in Mock.sent do
+		if m.remote == "Combat" and m.msg.action == "fire" then fired = true end
+		if m.remote == "Combat" and m.msg.action == "roll" then rolled = true end
+	end
+	check(rolled, "ROLL button did nothing")
+	check(fired, "FIRE button did nothing")
+	UIS._props.TouchEnabled, UIS._props.KeyboardEnabled = false, true
 end)
 
 ------------------------------------------------------------------------------------ character animation
@@ -1245,7 +1459,7 @@ test("lobby bots drift and practise on the range without hurting anyone", functi
 		if b.Character and (b.Character.HumanoidRootPart._props.CFrame.p - before[b]).Magnitude > 2 then moved += 1 end
 	end
 	check(moved >= 10, "only %d bots moved", moved)
-	check(#sentTo(alice, "FX", "tracer") > 0, "no practice shots seen")
+	check(#sentTo(alice, "FXFast", "tracers") > 0, "no practice shots seen")
 	check(h.Health == hp, "lobby practice hurt a player")
 end)
 
@@ -1296,6 +1510,14 @@ test("a full 20-combatant match plays out to a winner", function()
 	print(string.format("        (mock: %d raycasts, %.1fs CPU)", Mock.stats.rays - rays0, os.clock() - clock0))
 	check(winner ~= nil and winner ~= "", "no winner declared")
 	check(kills >= 5, "bots barely fought (%d kills)", kills)
+	local drops = 0
+	for _, s in Mock.sent or {} do
+		if s.msg.t == "notice" and type(s.msg.text) == "string" and string.find(s.msg.text, "SUPPLY DROP", 1, true) then drops += 1 end
+	end
+	if matchStats.duration > Config.Events.SupplyDropTimes[1] + 5 then
+		check(drops >= 1, "no supply drop in a %.0f s match", matchStats.duration)
+	end
+	print(string.format("        supply drops announced: %d", drops))
 	check(#sentTo(alice, "FX", "killfeed") >= 10, "too few eliminations in the kill feed")
 end)
 

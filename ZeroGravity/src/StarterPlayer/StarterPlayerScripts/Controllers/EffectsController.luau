@@ -43,6 +43,10 @@ local SOUNDS = {
 	crackle = { id = "rbxasset://sounds/electronicpingshort.wav", vol = 0.25, pitch = 2.5 },
 	damage = { id = "rbxasset://sounds/collide.wav", vol = 0.5 },
 	breath = { id = "rbxasset://sounds/electronicpingshort.wav", vol = 0.35, pitch = 0.35 },
+	headshot = { id = "rbxasset://sounds/electronicpingshort.wav", vol = 0.6, pitch = 2.4 },
+	shieldbreak = { id = "rbxasset://sounds/glassbreak.wav", vol = 0.6 },
+	medal = { id = "rbxasset://sounds/electronicpingshort.wav", vol = 0.55, pitch = 1.5 },
+	drop = { id = "rbxasset://sounds/Rocket whoosh 01.wav", vol = 0.6, pitch = 0.7 },
 }
 
 local suitGroup: SoundGroup

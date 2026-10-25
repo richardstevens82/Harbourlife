@@ -329,6 +329,11 @@ local function buildStars(parent: Instance)
 	end)
 end
 
+function Menu.Toggle()
+	buildNav()
+	setOpen(not root.Visible)
+end
+
 function Menu.Start()
 	gui = new("ScreenGui", { Name = "ZG_Menu", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = 10 })
 	local scale = new("UIScale", {}, gui)
@@ -386,10 +391,7 @@ function Menu.Start()
 			return
 		end
 		if processed then return end
-		if io.KeyCode == State.Bindings.Menu or io.KeyCode == Enum.KeyCode.ButtonStart then
-			buildNav()
-			setOpen(not root.Visible)
-		end
+		if io.KeyCode == State.Bindings.Menu or io.KeyCode == Enum.KeyCode.ButtonStart then Menu.Toggle() end
 	end)
 	State.ProfileChanged:Connect(function()
 		if root.Visible then

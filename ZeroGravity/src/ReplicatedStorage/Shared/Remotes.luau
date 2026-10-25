@@ -4,13 +4,16 @@
 --   Inventory: use / drop                               (InventoryService)  server -> client: inventory sync
 --   Equipment: tether / tetherRelease / grenade         (EquipmentService)
 --   Match:     queue / unqueue / cosmetic               (MatchService)      server -> client: phase, results
---   FX:        server -> clients only (tracers, kill feed, hit markers, damage indicators, notices)
+--   FX:        server -> clients only (kill feed, hit markers, damage indicators, notices, ...)
+--   FXFast:    server -> clients, UnreliableRemoteEvent: batched tracers (cosmetic; a lost packet only
+--              loses a tracer, and nothing waits on resends)
 -- On the server each entry is a thin wrapper (FireClient / FireAllClients / OnServerEvent) so bots can
 -- be addressed like players; on the client each entry is the RemoteEvent itself.
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local NAMES = { "Combat", "Inventory", "Equipment", "Match", "FX" }
+local NAMES = { "Combat", "Inventory", "Equipment", "Match", "FX", "FXFast" }
+local UNRELIABLE = { FXFast = true }
 local Remotes = {}
 
 local folder
@@ -20,7 +23,7 @@ if RunService:IsServer() then
 	folder.Parent = ReplicatedStorage
 	for _, name in NAMES do
 		if not folder:FindFirstChild(name) then
-			local r = Instance.new("RemoteEvent")
+			local r = Instance.new(if UNRELIABLE[name] then "UnreliableRemoteEvent" else "RemoteEvent")
 			r.Name = name
 			r.Parent = folder
 		end
@@ -33,7 +36,7 @@ end
 -- is not a Player instance) goes to the bot brain via Remotes.BotSink instead of the network.
 Remotes.BotSink = nil :: ((any, string, any) -> ())?
 for _, name in NAMES do
-	local remote = folder:WaitForChild(name) :: RemoteEvent
+	local remote = folder:WaitForChild(name) :: any
 	if RunService:IsServer() then
 		Remotes[name] = {
 			Instance = remote,

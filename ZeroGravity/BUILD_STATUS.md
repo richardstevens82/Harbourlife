@@ -175,6 +175,42 @@ tactical map that shows the current and next ring plus whether the safe centre i
 barrels with a fuse, which chain. Smoke in damaged rooms. Flickering lights. Interlocked airlocks:
 only one door opens at a time, with a pressure cycle in between.
 
+**Game-feel update.**
+- **Combat feedback:**
+  - Hit markers turn gold for headshots and blue when a shield breaks. A damage number floats up
+    from where each hit landed.
+  - When your own shield breaks, the screen edges flash blue and you hear a crack.
+- **Kill medals** pop up for the killer and are worth `Config.Rewards.PerMedal` XP each. The results
+  screen shows the total.
+  - FIRST BLOOD
+  - DOUBLE, TRIPLE and MULTI KILL, for kills within 5 s of each other
+  - HEADSHOT
+  - LONG SHOT, from 150 studs or more
+  - CLOSE QUARTERS, for a melee kill
+  - DEMOLITION, for an explosive kill
+  - Sprees, announced to everyone: KILLING SPREE at 3, RAMPAGE at 5, UNSTOPPABLE at 8 and ORBITAL
+    LEGEND at 12.
+- **Camera feel:** the field of view widens by up to 12° at boost speed, speed lines stream past, and
+  the camera shakes when you take damage or an explosion goes off nearby.
+- **Supply drops** (`EventService`) arrive at 2:00, 5:00 and 8:00 of a match.
+  - A pod falls into the next safe zone, with an announcement, a gold beacon beam, a label visible
+    through walls and a map marker.
+  - It lands as a "drop"-tier container: rare-to-legendary loot, never common gear, and 4–6 items.
+  - Bots treat drops as worth a detour and contest them.
+- **More animation:**
+  - **Reload:** the gun cants, and the support hand pulls the magazine and seats a new one.
+  - **Weapon swap:** the new gun swings up from low.
+  - **Melee:** a level jab with the gun, or a straight right punch when unarmed.
+  - Everyone sees these, driven by the `ReloadEnd`, `ReloadTime` and `MeleeAt` character attributes.
+- **Mobile controls** (`TouchController`):
+  - A floating thumbstick and drag-to-look.
+  - FIRE, AIM, RELOAD, HEAL, BOOST, UP, DOWN, BRAKE, ROLL, UTIL and SWAP buttons, plus MENU, MAP and
+    BAG.
+  - They are only built on touch devices without a keyboard. Every button goes through the same
+    client actions as the keyboard.
+- **Network:** tracers for other players are batched once per frame and sent over an
+  `UnreliableRemoteEvent` (`FXFast`). Batches are chunked to stay under its packet-size limit.
+
 **UI.** An "orbital HUD" style throughout (`UIKit`):
 - **Look:** deep-space glass panels with light-catching cyan edges and HUD corner brackets.
 - **Type:** Michroma display type, Titillium body text and Sarpanch readouts.
@@ -197,7 +233,7 @@ in Studio, with a warning shown. Cosmetics only: no paid items and no random rew
 
 ## Tests performed
 
-**Automated: `python3 tests/run.py` → 62 passed, 0 failed** (about 3 minutes, most of it the simulated bot match).
+**Automated: `python3 tests/run.py` → 70 passed, 0 failed** (about 3 minutes, most of it the simulated bot match).
 Every run checks member access against Roblox's real API tables, so an invalid property name or a
 write to a read-only property fails the test that reaches it.
 - *Pure logic:* the CFrame mock; all 8 weapons complete; damage falloff is monotonic; time-to-kill is
@@ -222,6 +258,21 @@ write to a read-only property fails the test that reaches it.
   credited, the kill feed fires, a death locker spawns, the winner is declared, and results and XP
   are saved. The match returns to the lobby, a second match starts automatically, and a mid-match
   disconnect ends it cleanly. No server thread errors occur.
+- *Game-feel update:*
+  - Headshots, shield breaks and the hit position reach the shooter, and the victim is told when the
+    shield breaks.
+  - The first kill of a match earns FIRST BLOOD, and medals appear in the results.
+  - Tracers are sent once per frame in a single batch on the unreliable remote, never back to the
+    shooter.
+  - A supply drop lands where it's called as a drop-tier container with no common gear. Its beacon
+    and map tag go once it's opened, and a full bot match includes one.
+  - Drop loot beats the high tier, with over 10% legendaries.
+  - Reload and melee are published as character attributes.
+  - The HUD shows damage numbers and medal popups. Boost speed widens the field of view and streams
+    speed lines, and the camera shakes on damage.
+  - Touch controls: the thumbstick thrusts, dragging turns the view, and the FIRE, BOOST and ROLL
+    buttons send the same requests as the keyboard.
+  - The mock now fires attribute-changed signals and has `Vector2.Unit`.
 - *Character animation* (the mock now builds full R15 rigs with Motor6D joints, and a joint solver
   places every part from C0 · Transform · C1⁻¹):
   - Guns are mounted at the aim grip and scaled to the body. The server copy points along the aim.

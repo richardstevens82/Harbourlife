@@ -2,9 +2,11 @@
 --   Vitals (health, shield, oxygen, boost, tether, suit status) bottom-left
 --   Weapon, ammo, slots, utility bottom-right
 --   Phase / timer / survivors top-centre; kill feed top-right; tactical map top-left
---   Crosshair, hit markers, directional damage, notices, use/reload progress, low-O2 vignette
+--   Crosshair, hit markers (headshot / shield break), floating damage numbers, kill medals,
+--   directional damage, shield-crack flash, notices, use/reload progress, low-O2 vignette, speed lines
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -157,6 +159,25 @@ local function buildCenter()
 	refs.hitText = new("TextLabel", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0.5, 26, 0.5, -18),
 		Size = UDim2.fromOffset(80, 20), Text = "", TextColor3 = C.Orange, TextSize = 16, Font = UI.Fonts.Bold, TextXAlignment = Enum.TextXAlignment.Left,
 		TextTransparency = 1 }, gui)
+	-- kill medals (centre, below the crosshair)
+	refs.medal = new("TextLabel", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.62),
+		Size = UDim2.fromOffset(500, 44), Text = "", TextColor3 = C.Orange, TextStrokeTransparency = 0.4, Font = UI.Fonts.Display, TextSize = 30,
+		TextTransparency = 1 }, gui)
+	refs.medalScale = new("UIScale", {}, refs.medal)
+	-- shield-break flash (cyan edges)
+	local sf = new("Frame", { BackgroundColor3 = C.Shield, BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 0 }, gui)
+	new("UIGradient", { Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.25, 1),
+		NumberSequenceKeypoint.new(0.75, 1), NumberSequenceKeypoint.new(1, 0) }), Rotation = 90 }, sf)
+	refs.shieldFlash = sf
+	-- speed lines streaming past at boost speed
+	local sl = new("Frame", { Name = "SpeedLines", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 0 }, gui)
+	refs.speedLines = {}
+	for i = 1, 28 do
+		local a = (i / 28) * math.pi * 2 + math.random() * 0.2
+		local line = new("Frame", { BackgroundColor3 = Color3.fromRGB(200, 230, 255), BorderSizePixel = 0, AnchorPoint = Vector2.new(0.5, 0.5),
+			Size = UDim2.fromOffset(2, 60 + math.random(0, 80)), Rotation = math.deg(a) + 90, BackgroundTransparency = 1, ZIndex = 0 }, sl)
+		table.insert(refs.speedLines, { frame = line, angle = a, r = 0.3 + math.random() * 0.4 })
+	end
 	-- damage indicators container
 	refs.damage = new("Frame", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromOffset(0, 0) }, gui)
@@ -315,8 +336,8 @@ local function showResults(d)
 	refs.resTitle.Text = d.placement == 1 and "VICTORY - LAST IN ORBIT" or string.format("PLACED #%d OF %d", d.placement, d.total)
 	refs.resTitle.TextColor3 = d.placement == 1 and C.Orange or C.Text
 	refs.resWinner.Text = d.winner and ("Winner: " .. d.winner) or "No survivors"
-	refs.resStats.Text = string.format("Placement  <b>#%d / %d</b>\nEliminations  <b>%d</b>\nDamage dealt  <b>%d</b>\nSurvival time  <b>%s</b>",
-		d.placement, d.total, d.kills, d.damage, UI.formatTime(d.survived))
+	refs.resStats.Text = string.format("Placement  <b>#%d / %d</b>\nEliminations  <b>%d</b>\nDamage dealt  <b>%d</b>\nSurvival time  <b>%s</b>\nMedals  <b>%d</b>",
+		d.placement, d.total, d.kills, d.damage, UI.formatTime(d.survived), d.medals or 0)
 	refs.resRewards.Text = string.format("+%d XP   +%d credits%s", d.xp, d.credits, d.levelUp and ("\n<b>LEVEL UP! Now level " .. tostring(d.level) .. "</b>") or "")
 	refs.results.Visible = true
 	State.SetModal("results", true)
@@ -356,12 +377,34 @@ local function banner(text: string, color: Color3?, seconds: number)
 end
 HUD.Banner = banner
 
-local function hitMarker(amount: number, kill: boolean)
-	refs.hitmarker.TextColor3 = kill and C.Red or Color3.new(1, 1, 1)
+-- Damage number floating up from where the hit landed (world-space billboard, always on top).
+local function damageNumber(pos: Vector3, amount: number, color: Color3)
+	local a = Instance.new("Attachment")
+	a.WorldPosition = pos
+	a.Parent = workspace.Terrain
+	local bb = new("BillboardGui", { Size = UDim2.fromOffset(90, 32), AlwaysOnTop = true, LightInfluence = 0, MaxDistance = 800 }, a)
+	local l = new("TextLabel", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Text = tostring(math.floor(amount + 0.5)), TextColor3 = color,
+		TextScaled = true, Font = UI.Fonts.Bold, TextStrokeTransparency = 0.4 }, bb)
+	task.spawn(function()
+		for i = 1, 20 do
+			bb.StudsOffsetWorldSpace = Vector3.new(0, i * 0.12, 0)
+			local fade = math.max(0, (i - 10) / 10)
+			l.TextTransparency, l.TextStrokeTransparency = fade, 0.4 + 0.6 * fade
+			task.wait(0.04)
+		end
+		a:Destroy()
+	end)
+end
+
+local function hitMarker(amount: number, kill: boolean, head: boolean?, shieldBreak: boolean?, pos: Vector3?)
+	local color = (kill and C.Red) or (head and C.Orange) or (shieldBreak and C.Shield) or Color3.new(1, 1, 1)
+	refs.hitmarker.TextColor3 = color
 	refs.hitmarker.TextTransparency = 0
-	refs.hitText.Text = (kill and "ELIMINATED  " or "") .. tostring(math.floor(amount))
+	refs.hitText.Text = (kill and "ELIMINATED  " or head and "HEADSHOT  " or shieldBreak and "SHIELD BROKEN  " or "") .. tostring(math.floor(amount))
 	refs.hitText.TextTransparency = 0
-	Effects.Play(kill and "kill" or "hit")
+	Effects.Play(kill and "kill" or (head and "headshot") or "hit")
+	if shieldBreak then Effects.Play("shieldbreak") end
+	if typeof(pos) == "Vector3" then damageNumber(pos, amount, color) end
 	local t = os.clock()
 	refs.hitAt = t
 	task.delay(0.25, function()
@@ -372,8 +415,13 @@ local function hitMarker(amount: number, kill: boolean)
 	end)
 end
 
-local function damageIndicator(from: Vector3?, _amount: number, shield: boolean)
+local function damageIndicator(from: Vector3?, _amount: number, shield: boolean, shieldBreak: boolean?)
 	Effects.Play("damage")
+	if shieldBreak then
+		Effects.Play("shieldbreak")
+		refs.shieldFlash.BackgroundTransparency = 0.25
+		TweenService:Create(refs.shieldFlash, TweenInfo.new(0.6), { BackgroundTransparency = 1 }):Play()
+	end
 	if not from then
 		refs.vignette.BackgroundTransparency = 0.5
 		task.delay(0.2, function() refs.vignette.BackgroundTransparency = 1 end)
@@ -393,6 +441,47 @@ local function damageIndicator(from: Vector3?, _amount: number, shield: boolean)
 		end
 		arrow:Destroy()
 	end)
+end
+
+-- Medals pop in one after another (scale punch + sound), then fade.
+local medalQueue: { string } = {}
+local medalBusy = false
+local function showMedals(list: { string })
+	for _, m in list do table.insert(medalQueue, m) end
+	if medalBusy then return end
+	medalBusy = true
+	task.spawn(function()
+		while #medalQueue > 0 do
+			refs.medal.Text = table.remove(medalQueue, 1) :: string
+			refs.medal.TextTransparency, refs.medal.TextStrokeTransparency = 0, 0.4
+			refs.medalScale.Scale = 1.7
+			TweenService:Create(refs.medalScale, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+			Effects.Play("medal")
+			task.wait(1.1)
+			for i = 1, 6 do
+				refs.medal.TextTransparency, refs.medal.TextStrokeTransparency = i / 6, 0.4 + 0.6 * i / 6
+				task.wait(0.03)
+			end
+		end
+		medalBusy = false
+	end)
+end
+
+-- Speed lines: streaks flowing outward from the centre, fading in above cruise speed.
+local SPEED_MIN = Config.Movement.MaxSpeed * 1.05
+local function updateSpeedLines(dt: number)
+	local k = math.clamp((State.Speed - SPEED_MIN) / (Config.Movement.BoostMaxSpeed - SPEED_MIN), 0, 1)
+	if State.UIOpen or not inMatchAlive() and player:GetAttribute("InMatch") then k = 0 end
+	for _, l in refs.speedLines do
+		if k <= 0 then
+			l.frame.BackgroundTransparency = 1
+		else
+			l.r += dt * (0.6 + 1.6 * k)
+			if l.r > 0.75 then l.r = 0.28 + math.random() * 0.1 end
+			l.frame.Position = UDim2.fromScale(0.5 + math.cos(l.angle) * l.r, 0.5 + math.sin(l.angle) * l.r)
+			l.frame.BackgroundTransparency = 1 - k * 0.45 * math.clamp((l.r - 0.28) * 4, 0, 1)
+		end
+	end
 end
 
 local function killFeed(d)
@@ -505,6 +594,20 @@ local function updateMap()
 		local look = workspace.CurrentCamera.CFrame.LookVector
 		refs.mapMe.Rotation = math.deg(math.atan2(look.X, -look.Z))
 	end
+	-- supply drops (gold markers while unopened)
+	refs.dropDots = refs.dropDots or {}
+	local drops = CollectionService:GetTagged("SupplyDrop")
+	for i, part in drops do
+		local dot = refs.dropDots[i]
+		if not dot then
+			dot = new("TextLabel", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(60, 14), Text = "▼ DROP",
+				TextColor3 = Color3.fromRGB(255, 205, 60), TextSize = 10, Font = UI.Fonts.Bold, ZIndex = 6 }, refs.mapDisc)
+			refs.dropDots[i] = dot
+		end
+		dot.Visible = part:IsA("BasePart")
+		if part:IsA("BasePart") then dot.Position = toMap(part.Position) end
+	end
+	for i = #drops + 1, #refs.dropDots do refs.dropDots[i].Visible = false end
 	-- landmarks (tagged FinalZone markers carry readable labels)
 	if #refs.landmarks == 0 then
 		for _, m in CollectionService:GetTagged("FinalZone") do
@@ -602,6 +705,12 @@ local function update()
 	if refs.map.Visible then updateMap() end
 end
 
+function HUD.ToggleMap()
+	refs.mapBig = not refs.mapBig
+	local s = refs.map:FindFirstChildOfClass("UIScale") or new("UIScale", {}, refs.map)
+	s.Scale = refs.mapBig and 2 or 1
+end
+
 function HUD.Start()
 	gui = new("ScreenGui", { Name = "ZG_HUD", ResetOnSpawn = false, IgnoreGuiInset = true, ZIndexBehavior = Enum.ZIndexBehavior.Sibling })
 	local scale = new("UIScale", {}, gui)
@@ -625,6 +734,7 @@ function HUD.Start()
 
 	State.Notice:Connect(HUD.Notice)
 	State.Hit:Connect(hitMarker)
+	State.Medal:Connect(showMedals)
 	State.Damaged:Connect(damageIndicator)
 	State.KillFeed:Connect(killFeed)
 	State.Results:Connect(showResults)
@@ -644,9 +754,7 @@ function HUD.Start()
 		if io.KeyCode == State.Bindings.Inventory or io.KeyCode == Enum.KeyCode.ButtonSelect then
 			HUD.ToggleInventory()
 		elseif io.KeyCode == State.Bindings.Map then
-			refs.mapBig = not refs.mapBig
-			local s = refs.map:FindFirstChildOfClass("UIScale") or new("UIScale", {}, refs.map)
-			s.Scale = refs.mapBig and 2 or 1
+			HUD.ToggleMap()
 		elseif State.Spectating and (io.KeyCode == Enum.KeyCode.Q or io.KeyCode == Enum.KeyCode.E) then
 			spectateIndex += io.KeyCode == Enum.KeyCode.E and 1 or -1
 		elseif io.KeyCode == Enum.KeyCode.Backspace and player:GetAttribute("InMatch") and not player:GetAttribute("Alive") then
@@ -660,6 +768,7 @@ function HUD.Start()
 		end
 	end)
 	RunService.RenderStepped:Connect(update)
+	RunService.RenderStepped:Connect(updateSpeedLines)
 end
 
 return HUD

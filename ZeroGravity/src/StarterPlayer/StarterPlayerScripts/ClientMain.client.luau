@@ -18,12 +18,13 @@ local function start(name: string)
 	if not ok then warn("[ZG] " .. name .. " failed: " .. tostring(err)) end
 end
 for _, name in { "InputController", "CameraController", "MovementController", "EffectsController", "CharacterAnimator", "CombatController",
-	"HUDController", "MenuController" } do
+	"HUDController", "MenuController", "TouchController" } do
 	start(name)
 end
 
 local Effects = require(Controllers.EffectsController)
 local Animator = require(Controllers.CharacterAnimator)
+local CameraController = require(Controllers.CameraController)
 local Movement = require(Controllers.MovementController)
 local HUD = require(Controllers.HUDController)
 local Items = require(Shared.ItemDefinitions)
@@ -31,13 +32,14 @@ local Items = require(Shared.ItemDefinitions)
 Remotes.FX.OnClientEvent:Connect(function(msg)
 	if type(msg) ~= "table" then return end
 	local t = msg.t
-	if t == "tracer" then
+	if t == "tracer" then -- single tracer (older servers); batches arrive on FXFast
 		Effects.Shot(msg.from, msg.ends, msg.weapon, false)
 		Animator.OnShot(msg.shooter)
 	elseif t == "hit" then
-		State.Hit:Fire(msg.amount, msg.kill)
+		State.Hit:Fire(msg.amount, msg.kill, msg.head, msg.shieldBreak, msg.pos)
 	elseif t == "damaged" then
-		State.Damaged:Fire(msg.from, msg.amount, msg.shield)
+		State.Damaged:Fire(msg.from, msg.amount, msg.shield, msg.shieldBreak)
+		CameraController.Shake(math.clamp((msg.amount or 0) / 40, 0.12, 0.6))
 	elseif t == "killfeed" then
 		State.KillFeed:Fire(msg)
 	elseif t == "notice" then
@@ -45,6 +47,11 @@ Remotes.FX.OnClientEvent:Connect(function(msg)
 		if msg.sound then Effects.Play(msg.sound) end
 	elseif t == "explosion" then
 		Effects.Explosion(msg.pos, msg.radius)
+		local cam = workspace.CurrentCamera
+		if cam and typeof(msg.pos) == "Vector3" then
+			local d = (cam.CFrame.Position - msg.pos).Magnitude
+			if d < (msg.radius or 10) * 6 then CameraController.Shake(0.7 * (1 - d / ((msg.radius or 10) * 6))) end
+		end
 	elseif t == "fuse" then
 		Effects.Play("alarm", msg.pos)
 	elseif t == "using" then
@@ -74,6 +81,16 @@ Remotes.FX.OnClientEvent:Connect(function(msg)
 	end
 end)
 
+Remotes.FXFast.OnClientEvent:Connect(function(msg)
+	if type(msg) ~= "table" or msg.t ~= "tracers" or type(msg.list) ~= "table" then return end
+	for _, m in msg.list do
+		if type(m) == "table" and typeof(m.from) == "Vector3" and type(m.ends) == "table" then
+			Effects.Shot(m.from, m.ends, m.weapon, false)
+			Animator.OnShot(m.shooter)
+		end
+	end
+end)
+
 Remotes.Match.OnClientEvent:Connect(function(msg)
 	if type(msg) ~= "table" then return end
 	if msg.t == "profile" then
@@ -84,6 +101,8 @@ Remotes.Match.OnClientEvent:Connect(function(msg)
 	elseif msg.t == "deployed" then
 		HUD.Banner("DEPLOYED", Color3.fromRGB(110, 190, 255), 2)
 		State.Notice:Fire(string.format("Deployment shield active for %ds", msg.protect), Color3.fromRGB(110, 190, 255))
+	elseif msg.t == "medal" then
+		State.Medal:Fire(msg.list)
 	elseif msg.t == "eliminated" then
 		State.Eliminated:Fire(msg)
 	elseif msg.t == "results" then

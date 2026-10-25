@@ -91,7 +91,7 @@ DataService.LevelFromXp = levelFromXp
 function DataService.AwardMatch(player: Player, stats)
 	local d = profiles[player]
 	local R = Config.Rewards
-	local xp = R.Participation + stats.kills * R.PerKill + math.floor(stats.damage * R.PerDamage)
+	local xp = R.Participation + stats.kills * R.PerKill + math.floor(stats.damage * R.PerDamage) + (stats.medals or 0) * (R.PerMedal or 0)
 		+ (R.PlacementBonus[stats.placement] or 0) + (stats.placement == 1 and R.WinBonus or 0)
 	local credits = math.floor(xp * R.CreditsPerXp)
 	if not d then return { xp = xp, credits = credits, levelUp = false } end
