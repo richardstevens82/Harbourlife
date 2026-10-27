@@ -1,0 +1,34 @@
+{
+  "name": "ZeroGravityLastOrbit",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Shared": { "$path": "src/ReplicatedStorage/Shared" }
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "Services": { "$path": "src/ServerScriptService/Services" },
+      "Builders": { "$path": "src/ServerScriptService/Builders" },
+      "Main": { "$path": "src/ServerScriptService/Main.server.luau" }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "$properties": { "EnableMouseLockOption": false, "GameSettingsAvatar": "R15" },
+      "StarterPlayerScripts": { "$className": "StarterPlayerScripts", "$path": "src/StarterPlayer/StarterPlayerScripts" },
+      "StarterCharacterScripts": { "$className": "StarterCharacterScripts", "$path": "src/StarterPlayer/StarterCharacterScripts" }
+    },
+    "Workspace": {
+      "$className": "Workspace",
+      "$properties": { "Gravity": 0, "StreamingEnabled": false }
+    },
+    "Lighting": {
+      "$className": "Lighting",
+      "$properties": { "Technology": "Future" }
+    },
+    "Players": {
+      "$className": "Players",
+      "$properties": { "CharacterAutoLoads": false }
+    }
+  }
+}
