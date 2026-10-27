@@ -397,6 +397,35 @@ test("pressurised volumes cover interiors but not hangars/airlocks", function()
 	check(Oxygen.IsPressurized(WorldBuilder.ShipCFrame * V3.new(18, 0, 0)), "ship cargo hold pressurised")
 end)
 
+test("artificial gravity on level decks; lifts, shafts, the ring and open space are zero-g", function()
+	local Gravity = shared("Gravity")
+	local S = builder("Station").Scale
+	local function zoneCentre(id)
+		for _, z in CS:GetTagged("Pressurized") do
+			if z:GetAttribute("ZoneId") == id then return z._props.CFrame.p end
+		end
+		error("no zone " .. id)
+	end
+	local zones, lifts = CS:GetTagged("GravityZone"), CS:GetTagged("LiftZone")
+	print(string.format("        %d gravity decks, %d lift columns", #zones, #lifts))
+	check(#zones >= 20 and #lifts >= 5, "too few gravity decks (%d) or lift columns (%d)", #zones, #lifts)
+	for _, z in zones do
+		check(math.abs(z._props.CFrame.UpVector.Y) > 0.95, "gravity zone %s is not level", tostring(z:GetAttribute("ZoneId")))
+	end
+	local up = Gravity.UpAt(V3.new(0, -15, 15) * S)
+	check(up ~= nil and up.Y > 0.99, "hub deck should pull down")
+	check(Gravity.UpAt(V3.new(14, 75, 14) * S) ~= nil, "command module deck should have gravity")
+	check(Gravity.UpAt(zoneCentre("ship_bridge")) ~= nil, "ship bridge should have gravity")
+	check(Gravity.UpAt(zoneCentre("lobby") + V3.new(20, 0, 20)) ~= nil, "lobby should have gravity")
+	check(Gravity.UpAt(zoneCentre("hydro") + V3.new(20, 0, 20)) ~= nil, "hydroponics should have gravity")
+	check(Gravity.UpAt(V3.new(0, -15, 0) * S) == nil, "the hub's floor hatch should be a zero-g lift column")
+	check(Gravity.UpAt(V3.new(0, 15, 0) * S) == nil, "the hub's ceiling hatch should be a zero-g lift column")
+	check(Gravity.UpAt(zoneCentre("cmd_corridor")) == nil, "vertical shafts are zero-g")
+	check(Gravity.UpAt(zoneCentre("ringseg1")) == nil, "the habitat ring is zero-g")
+	check(Gravity.UpAt(V3.new(0, 300, 900)) == nil, "open space is zero-g")
+	check(Gravity.UpAt(V3.new(0, -96, 0) * S) == nil, "the open docking bay is zero-g")
+end)
+
 -------------------------------------------------------------------------------------------- server match
 print("\n== Server systems (simulated match) ==")
 Mock.errors = {}
@@ -720,6 +749,47 @@ test("loot containers: search spawns pickups, pickups go into the inventory", fu
 	local _ = LootSvc
 end)
 
+test("loot containers in rooms with gravity rest on a surface instead of floating", function()
+	local Gravity = shared("Gravity")
+	local params = Mock.GLOBAL.RaycastParams.new()
+	params.FilterType = Mock.GLOBAL.Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { Mock.workspace.Loot }
+	local resting, floating = 0, {}
+	for _, box in CS:GetTagged("LootContainer") do
+		local p = box._props.CFrame.p
+		local up = Gravity.UpAt(p)
+		if up and not box:GetAttribute("SupplyDrop") then
+			local bottom = p - up * (box._props.Size.Y / 2 - 0.1)
+			if Mock.workspace:Raycast(bottom, -up * 0.6, params) then
+				resting += 1
+			else
+				table.insert(floating, tostring(p))
+			end
+		end
+	end
+	check(#floating == 0, "%d containers float in gravity rooms: %s", #floating, table.concat(floating, "; "))
+	check(resting >= 10, "only %d containers checked", resting)
+end)
+
+test("upright under gravity, aim may pitch freely but must match the heading", function()
+	local S = builder("Station").Scale
+	local deck = V3.new(10, -15, 22) * S
+	place(alice, deck, deck + V3.new(0, 0, -10)) -- upright, facing -Z
+	local w = Inventory.Get(alice).weapons[1]
+	w.mag = math.max(w.mag, 5)
+	local function try(dir)
+		Mock.advance(Weapons.FireInterval(w.id) + 0.05) -- the slot may hold a slow rifle from an earlier test
+		local mag = w.mag
+		shoot({ dir.Unit }, root(alice)._props.CFrame.p + V3.new(0, 0.5, 0), mag - 1)
+		return w.mag == mag - 1
+	end
+	check(try(V3.new(0, 1, 0)), "shooting straight up a shaft from the deck was rejected")
+	check(try(V3.new(0, 3, -1)), "a steep upward shot along the heading was rejected")
+	check(not try(V3.new(1, 3, 0)), "a steep shot off to the side was accepted")
+	place(alice, V3.new(0, 700, 400), V3.new(0, 700, 340)) -- zero-g: the body turns with the aim
+	check(not try(V3.new(0, 1, 0)), "zero-g: a shot 90 degrees off the body was accepted")
+end)
+
 test("oxygen drains in vacuum, refills inside, hypoxia only after the grace period", function()
 	face()
 	bob:SetAttribute("O2", 10)
@@ -917,6 +987,62 @@ test("server impulses (explosions/knockback) add to velocity; boundary push sets
 	check(near(vel().X, 25), "impulse not applied: %s", tostring(vel()))
 	Movement.ApplyImpulse(V3.new(0, 0, 40), true)
 	check(near(vel().X, 0) and near(vel().Z, 40), "set-impulse should replace velocity")
+end)
+
+test("walking under gravity: lands on the deck, walks, sprints, jumps, jetpacks, floats in lift columns", function()
+	local S = builder("Station").Scale
+	local G = Config.Gravity
+	local CStateG = client("ClientState")
+	Security.Teleported(localPlayer)
+	pilotChar:PivotTo(CF.new(V3.new(0, -5, 22) * S))
+	proot.AssemblyLinearVelocity = V3.zero
+	local params = Mock.GLOBAL.RaycastParams.new()
+	params.FilterType = Mock.GLOBAL.Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { pilotChar }
+	local function height()
+		local hit = Mock.workspace:Raycast(proot._props.CFrame.p, V3.new(0, -200, 0), params)
+		return hit and proot._props.CFrame.p.Y - hit.Position.Y or math.huge
+	end
+	sim(2.5)
+	check(CStateG.Gravity ~= nil and CStateG.Grounded, "not standing on the hub deck")
+	check(math.abs(height() - G.HipHeight) < 0.15, "standing height %.2f (want %.1f)", height(), G.HipHeight)
+	local p0 = proot._props.CFrame.p
+	sim(0.5, { "D" })
+	local moved = proot._props.CFrame.p - p0
+	check(math.abs(vel().Magnitude - G.WalkSpeed) < 1 and V3.new(moved.X, 0, moved.Z).Magnitude > 5, "walk speed %.1f", vel().Magnitude)
+	check(math.abs(moved.Y) < 0.2, "walking changed height by %.2f", moved.Y)
+	sim(0.3, { "D", "LeftShift" })
+	check(math.abs(vel().Magnitude - G.SprintSpeed) < 1.5, "sprint speed %.1f", vel().Magnitude)
+	sim(0.5)
+	check(vel().Magnitude < 1 and math.abs(height() - G.HipHeight) < 0.15, "did not stop on the deck")
+	local h0, peak = height(), 0
+	table.clear(Mock.keys)
+	Mock.keys.Space = true
+	for i = 1, 70 do
+		if i == 6 then Mock.keys.Space = nil end
+		RunService.PreSimulation:Fire(1 / 60)
+		Mock.advance(1 / 60)
+		peak = math.max(peak, height() - h0)
+	end
+	check(peak > 3.5 and peak < 7, "tap jump height %.2f", peak)
+	check(math.abs(height() - G.HipHeight) < 0.2, "did not land from the jump")
+	CStateG.Boost = Config.Movement.BoostMax
+	sim(2, { "Space" })
+	check(height() - h0 > 12 and CStateG.Boost < Config.Movement.BoostMax - 20, "jetpack: rose %.1f, boost %.0f", height() - h0, CStateG.Boost)
+	sim(3)
+	check(CStateG.Grounded, "did not come back down to the deck")
+	-- walk into the floor-hatch lift column: gravity off, Space floats up
+	pilotChar:PivotTo(CF.new(V3.new(0, -20, 0) * S))
+	sim(0.2)
+	check(CStateG.Gravity == nil, "lift column should be zero-g")
+	local y0 = proot._props.CFrame.p.Y
+	sim(0.8, { "Space" })
+	check(proot._props.CFrame.p.Y > y0 + 4, "could not float up the lift column")
+	-- back to the open-space test position
+	Security.Teleported(localPlayer)
+	pilotChar:PivotTo(CF.new(0, 500, 0))
+	proot.AssemblyLinearVelocity = V3.zero
+	sim(0.1)
 end)
 
 -------------------------------------------------------------------------------------------- client UI smoke
@@ -1391,6 +1517,58 @@ test("rounded pressure suit: blocky parts hidden, smooth shells with knee, elbow
 	setVel(V3.zero)
 end)
 
+test("under gravity: upright walk cycle, no zero-g banking, gun pitched to the aim", function()
+	-- a deck with gravity around a test bot, far from everything else
+	local at = V3.new(3000, 0, 3000)
+	local zone = Mock.Instance.new("Part")
+	zone.Anchored, zone.CanCollide, zone.CanQuery, zone.Transparency = true, false, false, 1
+	zone.Size = V3.new(80, 30, 80)
+	zone.CFrame = CF.new(at)
+	zone.Parent = Mock.workspace
+	CS:AddTag(zone, "GravityZone")
+	local floor = Mock.Instance.new("Part")
+	floor.Anchored, floor.Size = true, V3.new(80, 1, 80)
+	floor.CFrame = CF.new(at - V3.new(0, Config.Gravity.HipHeight + 0.5, 0))
+	floor.Parent = Mock.workspace
+	Mock.advance(2.5) -- Gravity refreshes its zone list
+	local rig = Mock.buildRig("WalkBot", CF.new(at))
+	rig.Parent = Mock.workspace:FindFirstChild("BotCharacters")
+	CharacterService.SetWeaponVisual({ Character = rig }, "assault", "rare")
+	local r = rig.HumanoidRootPart
+	local function walk(v)
+		r._props.AssemblyLinearVelocity = v
+		Mock.advance(0) -- keep position; animate only
+	end
+	-- strafing sideways: zero-g would bank the body; under gravity it stays upright
+	local zs, zmin, zmax = {}, math.huge, -math.huge
+	for _ = 1, 90 do
+		walk(V3.new(Config.Gravity.WalkSpeed, 0, 0))
+		r._props.CFrame = CF.new(at) -- hold it in place on the deck
+		animate(rig, 1 / 60)
+		local foot = r._props.CFrame:PointToObjectSpace(rig.RightFoot._props.CFrame.p)
+		zmin, zmax = math.min(zmin, foot.Z), math.max(zmax, foot.Z)
+		table.insert(zs, foot.Z)
+	end
+	check(zmax - zmin > 0.8, "no stride: right foot only moved %.2f studs fore-aft", zmax - zmin)
+	local up = r._props.CFrame:VectorToObjectSpace(rig.UpperTorso._props.CFrame.UpVector)
+	check(math.abs(up.X) < 0.15, "body banks under gravity (up.x %.2f)", up.X)
+	local r1, l1 = handGaps(rig)
+	check(r1 < 0.05 and l1 < 0.12, "hands left the gun while walking (%.2f / %.2f)", r1, l1)
+	-- aiming up 40 degrees while upright: the gun follows
+	r._props.AssemblyLinearVelocity = V3.zero
+	rig:SetAttribute("Aiming", true)
+	rig:SetAttribute("AimPitch", 40)
+	animate(rig, 0.8)
+	local look = rig.HeldWeapon.PrimaryPart._props.CFrame.LookVector
+	local pitch = math.deg(math.asin(look.Y))
+	check(math.abs(pitch - 40) < 6, "gun pitched %.1f deg for a 40 deg aim", pitch)
+	local r2, l2 = handGaps(rig)
+	check(r2 < 0.05 and l2 < 0.12, "hands left the gun when aiming up (%.2f / %.2f)", r2, l2)
+	rig:Destroy()
+	zone:Destroy()
+	floor:Destroy()
+end)
+
 test("eliminated bodies go limp and tumble", function()
 	local h = pilot:FindFirstChildOfClass("Humanoid")
 	CharacterService.SetWeaponVisual(localPlayer, nil)
@@ -1459,6 +1637,19 @@ test("lobby bots drift and practise on the range without hurting anyone", functi
 		if b.Character and (b.Character.HumanoidRootPart._props.CFrame.p - before[b]).Magnitude > 2 then moved += 1 end
 	end
 	check(moved >= 10, "only %d bots moved", moved)
+	-- the lobby has gravity: bots walk its deck at standing height
+	local params = Mock.GLOBAL.RaycastParams.new()
+	params.FilterType = Mock.GLOBAL.Enum.RaycastFilterType.Exclude
+	local standing = 0
+	for _, b in Bots.All() do
+		local r = b.Character and b.Character:FindFirstChild("HumanoidRootPart")
+		if r then
+			params.FilterDescendantsInstances = { b.Character }
+			local hit = Mock.workspace:Raycast(r._props.CFrame.p, V3.new(0, -50, 0), params)
+			if hit and math.abs(r._props.CFrame.p.Y - hit.Position.Y - Config.Gravity.HipHeight) < 0.6 then standing += 1 end
+		end
+	end
+	check(standing >= 12, "only %d of %d lobby bots stand on the deck", standing, #Bots.All())
 	check(#sentTo(alice, "FXFast", "tracers") > 0, "no practice shots seen")
 	check(h.Health == hp, "lobby practice hurt a player")
 end)

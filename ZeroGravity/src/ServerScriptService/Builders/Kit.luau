@@ -200,7 +200,16 @@ function Kit.room(parent: Instance, cf: CFrame, size: Vector3, opts)
 		Kit.light(lp, opts.lightColor, math.clamp(math.max(size.X, size.Z) * 0.9, 24, 60), 1.1)
 	end
 	if opts.pressurized then
-		Kit.zone(m, cf, size, opts.pressurized)
+		-- Artificial gravity on level decks: pressurised rooms and corridors with a floor that sit
+		-- level. Vertical shafts, tilted wrecks and rooms without a deck stay zero-g; floor and
+		-- ceiling hatches get a zero-g lift column so you can float between decks.
+		local gravity = opts.deck == true and opts.gravity ~= false and math.abs(cf.UpVector.Y) > 0.95
+		Kit.zone(m, cf, size, opts.pressurized, gravity)
+		if gravity then
+			for _, face in { "+Y", "-Y" } do
+				if openings[face] then Kit.liftColumn(m, cf, size, t, face, openings[face]) end
+			end
+		end
 	end
 	table.insert(Kit.NavSpaces, { cf = cf, size = size, openings = openings, wall = t, model = m })
 	return m
@@ -373,12 +382,45 @@ function Kit.marker(parent: Instance, tag: string, cf: CFrame, attrs)
 end
 
 -- Pressurised volume: OxygenService refills oxygen inside any part tagged "Pressurized".
-function Kit.zone(parent: Instance, cf: CFrame, size: Vector3, id: string)
+function Kit.zone(parent: Instance, cf: CFrame, size: Vector3, id: string, gravity: boolean?)
 	local p = Kit.part(parent, { Name = "PressurizedZone", CFrame = cf, Size = size, Transparency = 1, CanCollide = false,
 		CanQuery = false, CanTouch = false, CastShadow = false })
 	p:SetAttribute("ZoneId", id)
 	CollectionService:AddTag(p, "Pressurized")
+	if gravity then
+		-- Shared.Gravity pulls toward the zone's local -Y (its floor)
+		p:SetAttribute("Gravity", true)
+		CollectionService:AddTag(p, "GravityZone")
+	end
 	return p
+end
+
+-- Zero-g lift column through a floor or ceiling hatch of a room with artificial gravity: inside it
+-- gravity is off, so you float up or down through the hatch (Space / Ctrl). A shimmering field and
+-- glowing frames at the floor and ceiling mark it.
+function Kit.liftColumn(parent: Instance, cf: CFrame, size: Vector3, t: number, face: string, hole)
+	local w, d, x, z
+	if hole == true then
+		w, d, x, z = size.X, size.Z, 0, 0
+	else
+		-- face-local hole offsets: +Y wall's local Y runs along the room's -Z, -Y wall's along +Z
+		w, d, x = hole.w, hole.h, hole.x or 0
+		z = if face == "+Y" then -(hole.y or 0) else (hole.y or 0)
+	end
+	local ccf = cf * CFrame.new(x, 0, z)
+	local zone = Kit.part(parent, { Name = "LiftZone", CFrame = ccf, Size = Vector3.new(w, size.Y + 2 * t + 4, d), Transparency = 1,
+		CanCollide = false, CanQuery = false, CanTouch = false, CastShadow = false })
+	CollectionService:AddTag(zone, "LiftZone")
+	Kit.part(parent, { Name = "LiftField", CFrame = ccf, Size = Vector3.new(math.max(w - 0.8, 1), size.Y - 0.6, math.max(d - 0.8, 1)),
+		Material = Enum.Material.ForceField, Color = P.BlueGlow, Transparency = 0.2, CanCollide = false, CanQuery = false, CanTouch = false,
+		CastShadow = false })
+	for _, y in { -size.Y / 2 + 0.2, size.Y / 2 - 0.2 } do
+		for _, e in { { 0, d / 2, w, 0.3 }, { 0, -d / 2, w, 0.3 }, { w / 2, 0, 0.3, d }, { -w / 2, 0, 0.3, d } } do
+			Kit.part(parent, { Name = "LiftRing", CFrame = ccf * CFrame.new(e[1], y, e[2]), Size = Vector3.new(e[3], 0.25, e[4]),
+				Material = Enum.Material.Neon, Color = P.BlueGlow, CanCollide = false, CanQuery = false, CastShadow = false })
+		end
+	end
+	return zone
 end
 
 -- Airlock: a 14-long chamber between an inner and an outer sliding door. Door logic lives in

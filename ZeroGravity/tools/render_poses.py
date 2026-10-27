@@ -38,7 +38,25 @@ local Config = Mock.module("ReplicatedStorage", "Shared", "Config")
 local M = Config.Movement
 
 local function f(n) return string.format("%.3f", n) end
+local CollectionService = Mock.services.CollectionService
 local function pose(label, opts)
+	-- gravity poses: a deck with artificial gravity around the origin (and a floor unless airborne)
+	local zone, floor
+	if opts.gravity then
+		zone = Mock.Instance.new("Part")
+		zone.Anchored, zone.CanCollide, zone.CanQuery, zone.Transparency = true, false, false, 1
+		zone.Size, zone.CFrame = V3.new(200, 60, 200), CF.identity
+		zone.Parent = Mock.workspace
+		CollectionService:AddTag(zone, "GravityZone")
+		if not opts.airborne then
+			floor = Mock.Instance.new("Part")
+			floor.Anchored, floor.Transparency, floor.Size = true, 1, V3.new(200, 1, 200)
+			floor.CFrame = CF.new(0, -Config.Gravity.HipHeight - 0.5, 0)
+			floor.Parent = Mock.workspace
+		end
+		Mock.advance(2.1) -- Gravity refreshes its zone list every 2 s
+	end
+	cam.CFrame = if opts.camPitch then CF.Angles(math.rad(opts.camPitch), 0, 0) else CF.identity
 	local char = Mock.buildRig("Pilot", CF.identity)
 	char.Parent = Mock.workspace
 	plr._props.Character = char
@@ -78,6 +96,8 @@ local function pose(label, opts)
 	end
 	root._props.CFrame = CF.identity
 	Mock.solveJoints(char)
+	if zone then zone:Destroy() end
+	if floor then floor:Destroy() end
 	print("POSE|" .. label)
 	for _, p in char:GetDescendants() do
 		local pr = p._props
@@ -112,6 +132,11 @@ pose("Reloading (magazine out)", { weapon = "assault", reload = 0.45 })
 pose("Weapon swap (raising)", { weapon = "burst", swap = 0.35 })
 pose("Melee strike", { weapon = "assault", melee = 0.5 })
 pose("Unarmed punch", { melee = 0.5 })
+pose("Gravity: standing", { weapon = "assault", gravity = true })
+pose("Gravity: walking", { weapon = "assault", gravity = true, vel = V3.new(0, 0, -18), settle = 1.13 })
+pose("Gravity: walking, unarmed", { gravity = true, vel = V3.new(0, 0, -18), settle = 1.0 })
+pose("Gravity: aiming up 35°", { weapon = "assault", gravity = true, aim = true, camPitch = 35 })
+pose("Gravity: jetpack / airborne", { weapon = "assault", gravity = true, airborne = true, vel = V3.new(0, 15, 0) })
 pose("Unarmed drift", {})
 pose("Unarmed boost", { vel = V3.new(0, 0, -82) })
 pose("Eliminated (tumbling)", { dead = true, settle = 2.5 })
@@ -293,8 +318,9 @@ def main():
         ax.set_title(label, color="white", fontsize=11)
     for ax in list(axes.flat)[len(poses):]:
         ax.set_visible(False)
-    fig.suptitle("Zero-g character animation (CharacterAnimator on an R15 rig) - three-quarter view from the front right", color="white", fontsize=13)
-    fig.tight_layout()
+    fig.suptitle("ZERO GRAVITY character animation (CharacterAnimator on an R15 rig): zero-g flight, then walking under station gravity - three-quarter view from the front right",
+                 color="white", fontsize=13)
+    fig.tight_layout(rect=(0, 0, 1, 1 - 0.5 / (rows * 4.0)))
     path = os.path.join(OUT, "pose_sheet.png")
     fig.savefig(path, dpi=100)
     print("wrote", os.path.relpath(path, ROOT))

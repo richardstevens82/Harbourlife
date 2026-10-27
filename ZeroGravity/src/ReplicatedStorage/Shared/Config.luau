@@ -141,6 +141,23 @@ Config.Melee = {
 	Cooldown = 0.8,
 }
 
+-- Artificial gravity on level pressurised decks (Shared.Gravity): walk, jump, and a jetpack on held
+-- Space. Lift columns through floor and ceiling hatches, shafts, the ring and open space are zero-g.
+Config.Gravity = {
+	Strength = 70, -- studs/s^2 (about a third of Roblox's 196: light station-deck jumps)
+	HipHeight = 3.0, -- root height above the floor when standing (R15 feet sit 3 studs below the root)
+	FloorProbe = 4.2, -- a floor within this distance below the root counts as underfoot
+	Stiffness = 14, -- how firmly the legs hold standing height
+	WalkSpeed = 18,
+	SprintSpeed = 28, -- Shift
+	GroundAccel = 110,
+	AirAccel = 25, -- steering while airborne; momentum from zero-g carries over
+	JumpVelocity = 27, -- about a 5-stud jump
+	JetAccel = 95, -- holding Space after the jump apex: jetpack (beats gravity by 25 studs/s^2), uses boost energy
+	JetMaxRise = 22,
+	MaxFall = 85,
+}
+
 -- Character presentation: weapon size in the hands and where the gun sits when shouldered.
 Config.Character = {
 	HeldWeaponScale = 0.45, -- weapon models are built at display size; this scales them to the body

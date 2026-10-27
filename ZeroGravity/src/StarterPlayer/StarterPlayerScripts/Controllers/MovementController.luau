@@ -1,4 +1,5 @@
--- Six-degree-of-freedom zero-gravity movement for the local character.
+-- Movement for the local character: six-degree-of-freedom zero-gravity flight, and walking under
+-- the artificial gravity of level pressurised decks (Shared.Gravity; see the gravity branch of step).
 --
 -- Model: the Humanoid is held in the Physics state (no walking/falling logic), the body is turned
 -- toward the camera by an AlignOrientation, and translation is a momentum model integrated here:
@@ -16,6 +17,7 @@ local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Remotes = require(Shared.Remotes)
 local Motion = require(Shared.ZeroGMotion)
+local Gravity = require(Shared.Gravity)
 local State = require(script.Parent.ClientState)
 local Input = require(script.Parent.InputController)
 local CameraController = require(script.Parent.CameraController)
@@ -132,41 +134,75 @@ function Movement.ReleaseTether()
 	end
 end
 
+-- Tether pull (overrides thrust and gravity while active). Returns the new velocity.
+local function tetherPull(v: Vector3, dt: number): Vector3
+	local tether = State.Tether
+	if not (tether and root) then return v end
+	local to = tether.point - root.Position
+	if os.clock() > tether.untilT or to.Magnitude < Config.Tether.ReleaseDistance or Input.Braking() then
+		Movement.ReleaseTether()
+		return v
+	end
+	return v:Lerp(to.Unit * Config.Tether.PullSpeed, math.min(1, dt * 6))
+end
+
+local floorParams = RaycastParams.new()
+floorParams.FilterType = Enum.RaycastFilterType.Exclude
+
 local function step(dt: number)
 	if not (root and hum and align and root.Parent) or hum.Health <= 0 then return end
 	dt = math.min(dt, 0.1)
 	if hum:GetState() ~= Enum.HumanoidStateType.Physics then hum:ChangeState(Enum.HumanoidStateType.Physics) end
 	local rot = CameraController.Rotation()
-	align.CFrame = rot
-
 	local speedMult = player:GetAttribute("SpeedMult") or 1
 	local boostMax = M.BoostMax * (player:GetAttribute("BoostMaxMult") or 1)
+	local regenMult = player:GetAttribute("BoostRegenMult") or 1
 	State.BoostMax = boostMax
 	local v = root.AssemblyLinearVelocity
 	local move = Input.MoveVector()
-	local thrust = rot:VectorToWorldSpace(Vector3.new(move.X, move.Y, -move.Z))
+	local up = Gravity.UpAt(root.Position)
+	local grounded = false
 
-	-- Boost energy
-	local energy, isBoosting, lastUse = Motion.Boost(State.Boost, Input.Boosting() and thrust.Magnitude > 0.1, lastBoostUse, os.clock(), boostMax,
-		player:GetAttribute("BoostRegenMult") or 1, dt)
-	State.Boost, boosting, lastBoostUse = energy, isBoosting, lastUse
-	if thruster then thruster.Rate = boosting and 120 or (thrust.Magnitude > 0.1 and 15 or 0) end
-
-	local tether = State.Tether
-	if tether then
-		local to = tether.point - root.Position
-		if os.clock() > tether.untilT or to.Magnitude < Config.Tether.ReleaseDistance or Input.Braking() then
-			Movement.ReleaseTether()
+	if up then
+		-- ARTIFICIAL GRAVITY: walk on the deck, body upright and facing the camera's heading.
+		-- W/S/A/D walk, Shift sprints, Space jumps (hold it past the top of the jump for the jetpack),
+		-- Ctrl drops faster.
+		local look = rot.LookVector
+		local fwd = look - up * look:Dot(up)
+		if fwd.Magnitude < 0.05 then fwd = rot.UpVector - up * rot.UpVector:Dot(up) end -- looking straight up or down
+		fwd = fwd.Unit
+		local dir = fwd:Cross(up) * move.X + fwd * move.Z
+		if dir.Magnitude > 1 then dir = dir.Unit end
+		floorParams.FilterDescendantsInstances = { root.Parent :: Instance }
+		local floorDist = Gravity.FloorDistance(root.Position, up, Config.Gravity.FloorProbe, floorParams)
+		grounded = Motion.IsGrounded(v, up, floorDist)
+		local energy, jetOn, lastUse = Motion.Boost(State.Boost, Motion.WantsJet(v, up, grounded, move.Y), lastBoostUse, os.clock(), boostMax,
+			regenMult, dt)
+		State.Boost, boosting, lastBoostUse = energy, false, lastUse
+		if thruster then thruster.Rate = jetOn and 120 or 0 end
+		align.CFrame = CFrame.lookAt(Vector3.zero, fwd, up)
+		if State.Tether then
+			v = tetherPull(v, dt)
 		else
-			local want = to.Unit * Config.Tether.PullSpeed
-			v = v:Lerp(want, math.min(1, dt * 6))
+			v, grounded = Motion.GroundStep(v, dir, up, floorDist, move.Y, Input.Boosting(), jetOn, speedMult, dt)
+		end
+	else
+		-- ZERO-G: six-direction thrust relative to the camera; the body turns with the view.
+		align.CFrame = rot
+		local thrust = rot:VectorToWorldSpace(Vector3.new(move.X, move.Y, -move.Z))
+		local energy, isBoosting, lastUse = Motion.Boost(State.Boost, Input.Boosting() and thrust.Magnitude > 0.1, lastBoostUse, os.clock(),
+			boostMax, regenMult, dt)
+		State.Boost, boosting, lastBoostUse = energy, isBoosting, lastUse
+		if thruster then thruster.Rate = boosting and 120 or (thrust.Magnitude > 0.1 and 15 or 0) end
+		if State.Tether then
+			v = tetherPull(v, dt)
+		end
+		if not State.Tether then
+			v = Motion.Step(v, thrust, boosting, Input.Braking(), speedMult, dt)
 		end
 	end
-	if not State.Tether then
-		v = Motion.Step(v, thrust, boosting, Input.Braking(), speedMult, dt)
-	end
 	root.AssemblyLinearVelocity = v
-	State.Speed, State.Boosting = v.Magnitude, boosting
+	State.Speed, State.Boosting, State.Gravity, State.Grounded = v.Magnitude, boosting, up, grounded
 end
 
 function Movement.Start()

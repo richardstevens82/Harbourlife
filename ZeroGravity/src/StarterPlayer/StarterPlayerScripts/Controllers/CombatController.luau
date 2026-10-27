@@ -270,11 +270,23 @@ function Combat.Start()
 	-- Other players see us shoulder the gun: the server mirrors our aim state onto the character
 	-- (throttled; the latest state is always sent).
 	local sentAim, lastAimSend = false, 0
+	local sentPitch, lastPitchSend = 0, 0
 	RunService.RenderStepped:Connect(function()
 		local aimingNow = State.Aiming == true
 		if aimingNow ~= sentAim and os.clock() - lastAimSend > 0.15 then
 			sentAim, lastAimSend = aimingNow, os.clock()
 			Remotes.Combat:FireServer({ action = "aim", value = aimingNow })
+		end
+		-- walking upright under gravity the body doesn't pitch, so others tilt our gun and head to this
+		local pitch = 0
+		local up = State.Gravity
+		if up then
+			local look = workspace.CurrentCamera.CFrame.LookVector
+			pitch = math.floor(math.deg(math.asin(math.clamp(look:Dot(up), -1, 1))) / 3 + 0.5) * 3
+		end
+		if pitch ~= sentPitch and os.clock() - lastPitchSend > 0.1 then
+			sentPitch, lastPitchSend = pitch, os.clock()
+			Remotes.Combat:FireServer({ action = "pitch", value = pitch })
 		end
 		if triggerHeld then
 			local w = activeWeapon()

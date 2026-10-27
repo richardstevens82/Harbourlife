@@ -66,7 +66,8 @@ local function buildVitals()
 	refs.setShield = row("SHIELD", C.Shield)
 	refs.setO2 = row("OXYGEN", C.Oxygen)
 	refs.setBoost = row("BOOST", C.Boost)
-	refs.suit = UI.label(f, "", { TextSize = 13, Font = UI.Fonts.Bold })
+	refs.suit = UI.label(f, "", { TextSize = 13, Font = UI.Fonts.Bold, TextScaled = true })
+	UI.new("UITextSizeConstraint", { MaxTextSize = 13 }, refs.suit)
 	refs.equip = UI.label(f, "", { TextSize = 13, TextColor3 = C.Dim })
 	refs.vitals = f
 end
@@ -646,7 +647,8 @@ local function update()
 		elseif player:GetAttribute("InStorm") then status, refs.suit.TextColor3 = "RADIATION EXPOSURE", C.Storm
 		elseif pressurized then status, refs.suit.TextColor3 = "PRESSURISED - O2 RECHARGING", C.Green
 		else status, refs.suit.TextColor3 = "VACUUM - SUIT ON RESERVE O2", C.Text end
-		refs.suit.Text = status
+		-- artificial gravity or zero-g (gravity: SPACE jumps, hold it for the jetpack)
+		refs.suit.Text = status .. (if State.Gravity then string.format("  ·  %.2fG", Config.Gravity.Strength / 196.2) else "  ·  ZERO-G")
 		local util = State.SelectedUtility == "tether" and "TETHER" or "PULSE CHARGE"
 		refs.equip.Text = string.format("TETHER x%d   PULSE x%d   [Z] %s", player:GetAttribute("TetherCharges") or 0, inv and inv.items.grenade or 0, util)
 		local low = o2 < Config.Oxygen.WarnAt or hum.Health < 30

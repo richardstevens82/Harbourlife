@@ -27,7 +27,7 @@ Ordered roughly by impact within each group. ★ = recommended first.
 
 ## World and map
 16. ★ **Dynamic events.** *Started:* supply-drop pods with rare-to-legendary loot (`EventService`). Still to add: meteor showers, and a reactor meltdown that turns engineering into a hazard.
-17. **A rotating habitat ring.** Real rotation with centrifugal "gravity" inside it: a unique arena where you can walk.
+17. **A rotating habitat ring.** Real rotation with centrifugal "gravity" inside it: a unique arena where you can walk. *Groundwork done:* artificial gravity and walking on the station and ship decks (`Shared/Gravity`, `ZeroGMotion.GroundStep`). The ring itself is still zero-g.
 18. **A planet-surface final zone.** Low-gravity landings on the cratered moon as a possible last circle.
 19. **Destructible exterior.** Shot-off solar panels and hull plates drift away as physics debris.
 20. **Moving transport.** A shuttle or tram between the station and the ship as contested moving cover.

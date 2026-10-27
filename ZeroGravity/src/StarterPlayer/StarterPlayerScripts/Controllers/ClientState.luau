@@ -60,6 +60,8 @@ State.BoostMax = Config.Movement.BoostMax
 State.Tether = nil -- { point = Vector3, untilT = number }
 State.Speed = 0 -- local body speed (MovementController), for camera and HUD effects
 State.Boosting = false
+State.Gravity = nil :: Vector3? -- "up" of the artificial gravity acting on us, nil in zero-g
+State.Grounded = false
 
 State.InventoryChanged = signal()
 State.ProfileChanged = signal()

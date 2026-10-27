@@ -22,6 +22,7 @@ local Items = require(Shared.ItemDefinitions)
 local Cosmetics = require(Shared.Cosmetics)
 local Loadouts = require(Shared.Loadouts)
 local Motion = require(Shared.ZeroGMotion)
+local Gravity = require(Shared.Gravity)
 local Remotes = require(Shared.Remotes)
 local Kit = require(script.Parent.Parent:WaitForChild("Builders"):WaitForChild("Kit"))
 local Roster = require(script.Parent.Roster)
@@ -37,6 +38,9 @@ local Nav = require(script.Parent.NavGraph)
 local Bots = {}
 local B = Config.Bots
 local MV = Config.Movement
+local GV = Config.Gravity
+local floorParams = RaycastParams.new()
+floorParams.FilterType = Enum.RaycastFilterType.Exclude
 local bots: { any } = {}
 local cfgFolder: Folder
 local charFolder: Folder
@@ -558,8 +562,15 @@ local function fireStep(bot, root: BasePart)
 	local aimDir = (part.Position - origin).Unit
 	local perp = brain.errDir - aimDir * brain.errDir:Dot(aimDir)
 	if perp.Magnitude > 1e-3 then aimDir = (aimDir + perp.Unit * math.tan(math.rad(brain.errDeg))).Unit end
-	-- face the shot (the server checks the body faces where it fires)
-	root.CFrame = CFrame.lookAt(root.Position, root.Position + aimDir)
+	-- face the shot (the server checks the body faces where it fires); under gravity the body stays
+	-- upright and only turns to the shot's heading
+	local up = Gravity.UpAt(root.Position)
+	local flat = if up then aimDir - up * aimDir:Dot(up) else aimDir
+	if up and flat.Magnitude > 0.05 then
+		root.CFrame = CFrame.lookAt(root.Position, root.Position + flat, up)
+	elseif not up then
+		root.CFrame = CFrame.lookAt(root.Position, root.Position + aimDir)
+	end
 	brain.face = CFrame.lookAt(Vector3.zero, aimDir)
 	local steady = root.AssemblyLinearVelocity.Magnitude < 15 and dist > 50
 	local spread = steady and def.adsSpread or def.spread
@@ -816,12 +827,38 @@ local function step(dt: number)
 			local thrust = brain.moveDir
 			if thrust.Magnitude > 1 then thrust = thrust.Unit end
 			local boostMax = MV.BoostMax * (bot:GetAttribute("BoostMaxMult") or 1)
-			local energy, boosting, lastUse = Motion.Boost(brain.energy, brain.boost and thrust.Magnitude > 0.1, brain.lastBoostUse, now, boostMax,
-				bot:GetAttribute("BoostRegenMult") or 1, dt)
-			brain.energy, brain.lastBoostUse = energy, lastUse
-			root.AssemblyLinearVelocity = Motion.Step(root.AssemblyLinearVelocity, thrust, boosting, brain.brake, bot:GetAttribute("SpeedMult") or 1, dt)
+			local regen, speedMult = bot:GetAttribute("BoostRegenMult") or 1, bot:GetAttribute("SpeedMult") or 1
 			local align = root:FindFirstChild("ZG_Align") :: AlignOrientation?
-			if align then align.CFrame = brain.face end
+			local char = bot.Character
+			local up = Gravity.UpAt(root.Position)
+			if up then
+				-- artificial gravity: walk the floor plane, jump / jetpack when the route climbs
+				local vertical = thrust:Dot(up)
+				local flat = thrust - up * vertical
+				if flat.Magnitude > 1 then flat = flat.Unit end
+				floorParams.FilterDescendantsInstances = { char }
+				local floorDist = Gravity.FloorDistance(root.Position, up, GV.FloorProbe, floorParams)
+				local v = root.AssemblyLinearVelocity
+				local vin = if vertical > 0.45 then 1 elseif vertical < -0.45 then -1 else 0
+				local energy, jetOn, lastUse = Motion.Boost(brain.energy, Motion.WantsJet(v, up, Motion.IsGrounded(v, up, floorDist), vin),
+					brain.lastBoostUse, now, boostMax, regen, dt)
+				brain.energy, brain.lastBoostUse = energy, lastUse
+				root.AssemblyLinearVelocity = Motion.GroundStep(v, flat, up, floorDist, vin, brain.boost, jetOn, speedMult, dt)
+				-- upright, facing the aim's heading; the aim's pitch goes to the animators
+				local look = brain.face.LookVector
+				local fwd = look - up * look:Dot(up)
+				if fwd.Magnitude < 0.05 then fwd = root.CFrame.LookVector - up * root.CFrame.LookVector:Dot(up) end
+				if align and fwd.Magnitude > 1e-3 then align.CFrame = CFrame.lookAt(Vector3.zero, fwd.Unit, up) end
+				local pitch = math.floor(math.deg(math.asin(math.clamp(look:Dot(up), -1, 1))) / 3 + 0.5) * 3
+				if char:GetAttribute("AimPitch") ~= pitch then char:SetAttribute("AimPitch", pitch) end
+			else
+				local energy, boosting, lastUse = Motion.Boost(brain.energy, brain.boost and thrust.Magnitude > 0.1, brain.lastBoostUse, now, boostMax,
+					regen, dt)
+				brain.energy, brain.lastBoostUse = energy, lastUse
+				root.AssemblyLinearVelocity = Motion.Step(root.AssemblyLinearVelocity, thrust, boosting, brain.brake, speedMult, dt)
+				if align then align.CFrame = brain.face end
+				if char:GetAttribute("AimPitch") then char:SetAttribute("AimPitch", nil) end
+			end
 			if brain.wantFire then
 				local ok, err = pcall(fireStep, bot, root)
 				if not ok then warn("[ZG] bot " .. bot.Name .. " fire error: " .. tostring(err)) end

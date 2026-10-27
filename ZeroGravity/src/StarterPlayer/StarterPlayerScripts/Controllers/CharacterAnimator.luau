@@ -19,16 +19,26 @@
 --   moves - reload (gun canted, support hand pulls and seats the magazine), weapon swap (the new gun
 --           swings up from low), melee (a forward jab with the gun, or a straight punch when unarmed); driven by
 --           the ReloadEnd / ReloadTime / MeleeAt attributes and by the HeldWeapon model changing
---   death - limp spread-eagle tumble
+--   death - limp spread-eagle tumble (a slumped kneel under gravity)
+--   gravity - on level decks (Shared.Gravity) the body stays upright: a walk cycle timed to ground
+--           speed, a relaxed stance standing still, knees drawn up in the air, swinging arms when
+--           unarmed, a side-dodge lean instead of the barrel roll, and the gun, head and chest
+--           tilting to the aim's pitch (the AimPitch attribute for other characters)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
+local Gravity = require(Shared.Gravity)
 local State = require(script.Parent.ClientState)
 
 local Anim = {}
 local player = Players.LocalPlayer
 local MV = Config.Movement
+local GV = Config.Gravity
+local STRIDE = 7 -- studs per full walk cycle (two steps)
+local AIM_PIVOT = Vector3.new(0.3, 0.75, 0) -- the gun pitches about the chest (root space)
+local floorParams = RaycastParams.new()
+floorParams.FilterType = Enum.RaycastFilterType.Exclude
 local rigs: { [Model]: any } = {}
 local lastScan = -math.huge
 
@@ -109,7 +119,8 @@ local function newRig(char: Model)
 		rootJ = J.LowerTorso, waist = J.UpperTorso, neck = J.Head,
 		legs = {}, arms = {},
 		phase = math.random() * 20, acc = 0,
-		s = { fwd = 0, side = 0, up = 0, boost = 0, aim = 0, armed = 0, dead = 0 },
+		s = { fwd = 0, side = 0, up = 0, boost = 0, aim = 0, armed = 0, dead = 0, grav = 0, ground = 0, walk = 0 },
+		stride = 0,
 		kick = 0, lastShot = -math.huge, rollStart = -math.huge, rollDir = 1, localRollUntil = -math.huge,
 		rollAt = char:GetAttribute("RollAt"), diedAt = nil :: number?,
 		held = nil :: Instance?, equipStart = -math.huge, meleeAt = char:GetAttribute("MeleeAt"), meleeStart = -math.huge, magLocal = nil :: Vector3?,
@@ -173,6 +184,14 @@ local function floatArms(r, t: number, life: number, punch: number?)
 			local flex = lerp(0.25 + bob - 0.7 * s.boost, 0.2, s.dead)
 			local out = sign * lerp(0.35 - 0.23 * s.boost, 1.1, s.dead)
 			local bend = lerp(0.55 + 0.12 * math.sin(t * 1.1 + sign) - 0.35 * s.boost, 0.35, s.dead)
+			if s.grav > 0.01 then -- under gravity: arms swing with the stride, or spread for balance in the air
+				local ph = r.stride * math.pi * 2 + (if sign > 0 then math.pi else 0)
+				local flexG = lerp(0.3, 0.05 + 0.55 * s.walk * math.sin(ph), s.ground)
+				local outG = sign * lerp(0.6, 0.1, s.ground)
+				local bendG = lerp(0.4, 0.25 + 0.25 * s.walk, s.ground)
+				local k = s.grav * (1 - s.dead)
+				flex, out, bend = lerp(flex, flexG, k), lerp(out, outG, k), lerp(bend, bendG, k)
+			end
 			if punch and sign > 0 then -- unarmed melee: a straight right jab
 				flex, out, bend = lerp(flex, 1.55, punch), lerp(out, 0.05, punch), lerp(bend, 0.05, punch)
 			end
@@ -197,9 +216,21 @@ local function poseLegs(r, t: number, life: number, speed: number)
 			hip = lerp(math.clamp(hip, -1.1, 1.7), 0.45, s.dead)
 			knee = lerp(math.clamp(knee, 0.05, 2.0), 0.7, s.dead)
 			spread = lerp(spread, sign * 0.45, s.dead)
+			local ankle = -0.3 - 0.35 * s.boost - 0.2 * fwdOn -- toes pointed
+			if s.grav > 0.01 then
+				-- under gravity: stride on the floor (nearly straight legs standing still), knees up in the
+				-- air, a slumped kneel when dead
+				local ph = r.stride * math.pi * 2 + (if sign > 0 then 0 else math.pi)
+				local hipG = lerp(0.35, 0.04 + 0.6 * s.walk * math.sin(ph), s.ground)
+				local kneeG = lerp(0.65, 0.1 + 0.95 * s.walk * math.max(0, math.cos(ph)), s.ground)
+				local ankleG = lerp(-0.25, 0.05 - 0.3 * s.walk * math.max(0, -math.sin(ph)), s.ground)
+				hipG, kneeG = lerp(hipG, 1.0, s.dead), lerp(kneeG, 1.6, s.dead)
+				hip, knee = lerp(hip, hipG, s.grav), lerp(knee, kneeG, s.grav)
+				spread, ankle = lerp(spread, sign * 0.04, s.grav * (1 - s.dead)), lerp(ankle, ankleG, s.grav)
+			end
 			L.hip.Transform = CFrame.fromEulerAnglesYXZ(hip, 0, spread)
 			L.knee.Transform = CFrame.Angles(-knee, 0, 0) -- knees bend backward
-			if L.ankle then L.ankle.Transform = CFrame.Angles(-0.3 - 0.35 * s.boost - 0.2 * fwdOn, 0, 0) end -- toes pointed
+			if L.ankle then L.ankle.Transform = CFrame.Angles(ankle, 0, 0) end
 		end
 	end
 end
@@ -220,6 +251,20 @@ local function update(r, dt: number, now: number)
 	s.side += (math.clamp(lv.X, -1.5, 1.5) - s.side) * f6
 	s.up += (math.clamp(lv.Y, -1.5, 1.5) - s.up) * f6
 	s.boost += ((if vel.Magnitude > MV.MaxSpeed * 1.08 then 1 else 0) - s.boost) * (1 - math.exp(-dt * 5))
+	-- artificial gravity: upright, walking / standing / airborne
+	local gup = Gravity.UpAt(root.Position)
+	local onFloor, flatSpeed = false, 0
+	if gup then
+		floorParams.FilterDescendantsInstances = { char }
+		local fd = Gravity.FloorDistance(root.Position, gup, GV.FloorProbe, floorParams)
+		onFloor = fd ~= nil and fd <= GV.HipHeight + 0.6
+		flatSpeed = (vel - gup * vel:Dot(gup)).Magnitude
+	end
+	local f8 = 1 - math.exp(-dt * 8)
+	s.grav += ((if gup then 1 else 0) - s.grav) * f8
+	s.ground += ((if onFloor then 1 else 0) - s.ground) * (1 - math.exp(-dt * 12))
+	s.walk += ((if onFloor then math.clamp(flatSpeed / GV.WalkSpeed, 0, 1.4) else 0) - s.walk) * f8
+	r.stride = (r.stride + flatSpeed * dt / STRIDE) % 1
 	s.dead += ((if alive then 0 else 1) - s.dead) * (1 - math.exp(-dt * 3))
 
 	-- weapon state
@@ -262,23 +307,39 @@ local function update(r, dt: number, now: number)
 	-- body: bank, roll, sway (rotation about the root's centre, applied to the torso and the gun)
 	local t = now + r.phase
 	local life = 1 - s.dead
-	local roll = 0
+	local roll, lean = 0, 0
 	local rp = (now - r.rollStart) / MV.RollTime
-	if rp >= 0 and rp < 1 then roll = -r.rollDir * (rp * rp * (3 - 2 * rp)) * math.pi * 2 end
+	if rp >= 0 and rp < 1 then
+		roll = -r.rollDir * (rp * rp * (3 - 2 * rp)) * math.pi * 2 -- zero-g barrel roll
+		lean = -r.rollDir * 0.55 * math.sin(rp * math.pi) -- under gravity: a dodging side lean
+	end
 	local bank = -0.45 * math.clamp(s.side, -1, 1)
-	local B = CFrame.new(0, 0.07 * math.sin(t * 1.3) * life, 0) * CFrame.Angles(0, 0, (roll + bank + 0.05 * math.sin(t * 0.9)) * life)
+	local angle = lerp((roll + bank + 0.05 * math.sin(t * 0.9)) * life, lean * life, s.grav)
+	local bob = lerp(0.07 * math.sin(t * 1.3) * life, 0.07 * math.abs(math.sin(r.stride * math.pi * 2)) * s.walk * life, s.grav)
+	local B = CFrame.new(0, bob, 0) * CFrame.Angles(0, 0, angle)
 	if r.diedAt then
-		local k = (now - r.diedAt) * s.dead
-		B *= CFrame.Angles(k * 0.5, k * 0.2, k * 0.3) -- slow tumble
+		local k = (now - r.diedAt) * s.dead * (1 - s.grav)
+		B *= CFrame.Angles(k * 0.5, k * 0.2, k * 0.3) -- slow tumble (zero-g)
+	end
+	-- the aim's pitch while upright under gravity (in zero-g the whole body pitches with the aim)
+	local pitch = 0
+	if gup and s.grav > 0.01 then
+		local deg = (char:GetAttribute("AimPitch") :: number?) or 0
+		if isLocal then
+			local cam = workspace.CurrentCamera
+			if cam then deg = math.deg(math.asin(math.clamp(cam.CFrame.LookVector:Dot(gup), -1, 1))) end
+		end
+		pitch = math.rad(math.clamp(deg, -85, 85)) * s.grav * (1 - s.dead)
 	end
 	if melee > 0 then B *= CFrame.new(0, 0, -0.35 * melee) end -- lunge into the strike
 
-	local waistT = CFrame.fromEulerAnglesYXZ(-0.3 * s.boost * (1 - s.armed) + 0.25 * s.dead, -BLADE * s.armed, 0)
+	local waistT = CFrame.fromEulerAnglesYXZ(-0.3 * s.boost * (1 - s.armed) * (1 - s.grav) + 0.25 * s.dead + 0.3 * pitch + 0.35 * s.dead * s.grav,
+		-BLADE * s.armed, 0)
 	if r.r15 then
 		r.rootJ.Transform = r.rootJ.C0:Inverse() * B * r.rootJ.C0
 		r.waist.Transform = waistT
 		if r.neck then
-			r.neck.Transform = CFrame.fromEulerAnglesYXZ(-0.16 * s.aim + 0.04 * math.sin(t * 0.7) * life - 0.4 * s.dead, BLADE * s.armed,
+			r.neck.Transform = CFrame.fromEulerAnglesYXZ(-0.16 * s.aim + 0.04 * math.sin(t * 0.7) * life - 0.4 * s.dead + 0.5 * pitch, BLADE * s.armed,
 				-0.15 * s.aim)
 		end
 		poseLegs(r, t, life, vel.Magnitude / MV.MaxSpeed)
@@ -289,6 +350,7 @@ local function update(r, dt: number, now: number)
 		local aimCF = mount.C0
 		local kick = r.kick
 		local pose = (aimCF * READY):Lerp(aimCF, s.aim) * CFrame.new(0, 0.03 * kick, 0.22 * kick) * CFrame.Angles(0.15 * kick, 0, 0)
+		if pitch ~= 0 then pose = CFrame.new(AIM_PIVOT) * CFrame.Angles(pitch, 0, 0) * CFrame.new(-AIM_PIVOT) * pose end
 		local e = (now - r.equipStart) / SWAP_TIME
 		if e >= 0 and e < 1 then -- new weapon swings up from pointing down
 			local low = 1 - e * e * (3 - 2 * e)

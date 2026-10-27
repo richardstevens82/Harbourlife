@@ -9,6 +9,7 @@ local Weapons = require(Shared.WeaponDefinitions)
 local LootTables = require(Shared.LootTables)
 local WeaponModels = require(Shared.WeaponModels)
 local Remotes = require(Shared.Remotes)
+local Gravity = require(Shared.Gravity)
 local Roster = require(script.Parent.Roster)
 local Inventory = require(script.Parent.InventoryService)
 
@@ -236,6 +237,27 @@ function Loot.PickupsNear(pos: Vector3, radius: number): { BasePart }
 	return out
 end
 
+-- In a room with artificial gravity a container rests on whatever is below its spot (floor, table,
+-- crate) instead of floating; elsewhere it stays where the spot is.
+local function settle(cf: CFrame, kind: string): CFrame
+	local up = Gravity.UpAt(cf.Position)
+	if not up then return cf end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local exclude: { Instance } = { folder }
+	for _, name in { "BotCharacters", "Events" } do
+		local f = workspace:FindFirstChild(name)
+		if f then table.insert(exclude, f) end
+	end
+	params.FilterDescendantsInstances = exclude
+	local hit = workspace:Raycast(cf.Position, -up * 120, params)
+	if not hit then return cf end
+	local look = KIND_LOOK[kind] or KIND_LOOK.crate
+	local fwd = cf.LookVector - up * cf.LookVector:Dot(up)
+	if fwd.Magnitude < 0.05 then fwd = cf.UpVector - up * cf.UpVector:Dot(up) end
+	return CFrame.lookAt(hit.Position + up * (look.size.Y / 2 + 0.05), hit.Position + up * (look.size.Y / 2 + 0.05) + fwd.Unit, up)
+end
+
 -- A supply-drop container: rare-to-legendary loot, more of it than a normal container.
 function Loot.SpawnDrop(cf: CFrame): BasePart
 	local E = Config.Events
@@ -245,7 +267,7 @@ end
 -- Drop everything an eliminated player carried in a suit locker at their position.
 function Loot.SpawnDeathBox(pos: Vector3, entries, ownerName: string)
 	if #entries == 0 then return end
-	local box = container(CFrame.new(pos), "suit", "mid", entries, ownerName .. "'s Suit Locker")
+	local box = container(settle(CFrame.new(pos), "suit"), "suit", "mid", entries, ownerName .. "'s Suit Locker")
 	task.delay(Config.Inventory.DropOnDeathLifetime * 3, function()
 		if box.Parent then box:Destroy() end
 	end)
@@ -268,7 +290,8 @@ function Loot.Seed()
 	local n = 0
 	for _, marker in CollectionService:GetTagged("LootSpot") do
 		if marker:IsA("BasePart") and marker:IsDescendantOf(workspace) and rng:NextNumber() < 0.8 then
-			container(marker.CFrame, marker:GetAttribute("Kind") or "crate", marker:GetAttribute("Tier") or "low")
+			local kind = marker:GetAttribute("Kind") or "crate"
+			container(settle(marker.CFrame, kind), kind, marker:GetAttribute("Tier") or "low")
 			n += 1
 		end
 	end

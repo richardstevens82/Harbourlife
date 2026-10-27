@@ -31,6 +31,55 @@ function Motion.Step(v: Vector3, thrust: Vector3, boosting: boolean, braking: bo
 	return v
 end
 
+-- Standing on a floor under artificial gravity? (floorDist = distance from the root down to the floor)
+function Motion.IsGrounded(v: Vector3, up: Vector3, floorDist: number?): boolean
+	return floorDist ~= nil and floorDist <= Config.Gravity.HipHeight + 0.5 and v:Dot(up) <= 1
+end
+
+-- One step of walking under artificial gravity (Config.Gravity). move: desired direction on the
+-- floor plane (length 0..1); vertical: +1 Space (jump, then jetpack while held), -1 Ctrl (fast-fall),
+-- 0 none; jet: whether the jetpack may fire this frame (energy available, decided by the caller).
+-- Returns (velocity, grounded, jetting).
+--   * on the floor the legs hold standing height with a spring (no sinking, no bouncing)
+--   * walk/sprint speed is reached quickly on the floor; in the air you only steer gently, so
+--     momentum carried in from zero-g flight is kept until you land
+function Motion.GroundStep(v: Vector3, move: Vector3, up: Vector3, floorDist: number?, vertical: number, sprint: boolean, jet: boolean,
+	speedMult: number, dt: number): (Vector3, boolean, boolean)
+	local G = Config.Gravity
+	local grounded = Motion.IsGrounded(v, up, floorDist)
+	local vUp = v:Dot(up)
+	local flat = v - up * vUp
+	local want = move * (sprint and G.SprintSpeed or G.WalkSpeed) * speedMult
+	local diff = want - flat
+	local stepMax = (grounded and G.GroundAccel or G.AirAccel) * dt
+	if diff.Magnitude > stepMax then diff = diff.Unit * stepMax end
+	flat += diff
+	local jetting = false
+	if grounded then
+		if vertical > 0.5 then
+			vUp = G.JumpVelocity
+		else
+			vUp = (G.HipHeight - (floorDist :: number)) * G.Stiffness
+		end
+	else
+		vUp -= G.Strength * dt
+		if vertical > 0.5 and jet then
+			jetting = true
+			vUp = math.min(vUp + G.JetAccel * dt, G.JetMaxRise)
+		elseif vertical < -0.5 then
+			vUp -= G.Strength * dt
+		end
+		vUp = math.max(vUp, -G.MaxFall)
+	end
+	return flat + up * vUp, grounded, jetting
+end
+
+-- Whether a held Space should fire the jetpack: airborne, and past the top of a jump (so a tap is a
+-- plain hop and holding it keeps climbing).
+function Motion.WantsJet(v: Vector3, up: Vector3, grounded: boolean, vertical: number): boolean
+	return not grounded and vertical > 0.5 and v:Dot(up) < Config.Gravity.JumpVelocity * 0.3
+end
+
 -- Boost energy bookkeeping. Returns (energy, boostingThisFrame, lastUse).
 function Motion.Boost(energy: number, wantBoost: boolean, lastUse: number, now: number, maxEnergy: number, regenMult: number, dt: number)
 	local boosting = wantBoost and energy > 1

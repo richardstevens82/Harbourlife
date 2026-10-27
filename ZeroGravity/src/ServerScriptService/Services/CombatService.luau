@@ -12,6 +12,7 @@ local Roster = require(script.Parent.Roster)
 local Security = require(script.Parent.SecurityService)
 local Inventory = require(script.Parent.InventoryService)
 local LagComp = require(script.Parent.LagCompensation)
+local Gravity = require(Shared.Gravity)
 
 local Combat = {}
 local state: { [Player]: any } = {} -- per-player fire/reload timing
@@ -179,8 +180,17 @@ local function onFire(player: Player, req)
 		mean += d.Unit
 	end
 	if mean.Magnitude < 0.1 then return end
-	-- Aim must be roughly where the body faces, and pellets inside the weapon's spread cone
-	if angleBetween(mean, root.CFrame.LookVector) > 80 then return end
+	-- Aim must be roughly where the body faces, and pellets inside the weapon's spread cone. Walking
+	-- under artificial gravity the body stays upright while the aim pitches, so there only the aim's
+	-- heading has to match (aiming almost straight up or down is always allowed).
+	local look = root.CFrame.LookVector
+	if angleBetween(mean, look) > 80 then
+		local up = Gravity.UpAt(root.Position)
+		if not up then return end -- zero-g: the body itself turns to the aim
+		local heading = mean - up * mean:Dot(up)
+		local facing = look - up * look:Dot(up)
+		if heading.Magnitude > 0.25 * mean.Magnitude and (facing.Magnitude < 0.05 or angleBetween(heading, facing) > 80) then return end
+	end
 	for _, d in dirs do
 		if angleBetween(d, mean) > def.spread * 2 + 4 then return end
 	end
@@ -404,6 +414,11 @@ function Combat.Start()
 			onFire(player, req)
 		elseif req.action == "aim" then
 			if type(req.value) == "boolean" and Security.RateLimit(player, "aim", 8, 6) then Combat.Aim(player, req.value) end
+		elseif req.action == "pitch" then
+			-- aim pitch while walking upright under gravity (other clients tilt the gun and head to it)
+			if type(req.value) == "number" and req.value == req.value and Security.RateLimit(player, "pitch", 12, 8) and player.Character then
+				player.Character:SetAttribute("AimPitch", math.clamp(math.floor(req.value + 0.5), -89, 89))
+			end
 		elseif req.action == "roll" then
 			if Security.RateLimit(player, "roll", 2, 2) then Combat.Roll(player, req.dir) end
 		elseif not Security.RateLimit(player, "combat", 10, 6) then

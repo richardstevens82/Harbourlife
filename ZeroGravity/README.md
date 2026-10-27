@@ -55,6 +55,21 @@ progress isn't saving.
 | Inventory, tactical map, menu | Tab, N, M | Select, -, Start |
 | Spectate next / previous, leave spectate | E / Q, Backspace | |
 
+**Inside the station, ship and wrecks there is artificial gravity** on the level decks, so you walk
+there. The controls change as follows:
+
+| Under gravity | Keyboard / mouse |
+|---|---|
+| Walk (relative to where you look) | W A S D |
+| Sprint | Left Shift |
+| Jump; hold to fire the jetpack (uses boost energy) | Space |
+| Fast-fall | Left Ctrl |
+
+You can still aim freely up and down. Shafts, the habitat ring, the hangar and open space stay
+zero-g. Above and below every floor or ceiling hatch in a gravity room is a zero-g **lift column**
+marked by glowing rings: step in to float through the hatch. A breached compartment loses its
+gravity. The suit line on the HUD shows `0.36G` or `ZERO-G`.
+
 Keyboard bindings can be changed in **Menu → Settings**. The change lasts for the current session
 only.
 
@@ -74,7 +89,8 @@ emulator.
 ```
 src/
   ReplicatedStorage/Shared/       Config, weapon/item/loot/cosmetic/loadout definitions,
-                                  ZoneMath (pure), WeaponModels, Remotes (5 RemoteEvents)
+                                  ZoneMath (pure), ZeroGMotion (flight + walking model),
+                                  Gravity (artificial-gravity zones), WeaponModels, Remotes
   ServerScriptService/
     Main.server.luau              bootstrap: builds the world, starts every service (isolated)
     Builders/                     procedural environment: Kit (construction kit), Station, Ship,
@@ -100,7 +116,7 @@ docs/blockout/                    rendered plan/elevation views of the generated
 
 The whole map is built at runtime from code. There are no free models and no third-party scripts.
 Gameplay systems find what they need through CollectionService tags placed by the builders:
-`LootSpot`, `DeployPoint`, `FinalZone`, `OxygenStation`, `Pressurized`, `Airlock`,
+`LootSpot`, `DeployPoint`, `FinalZone`, `OxygenStation`, `Pressurized`, `GravityZone`, `LiftZone`, `Airlock`,
 `ElectricHazard`, `ReactorHazard`, `ExplosiveBarrel`, `Breachable` and `SmokeVolume`. To add
 content, call the Kit functions and drop markers.
 

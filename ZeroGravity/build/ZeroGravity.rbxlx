@@ -1,4 +1,4 @@
-<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4"><Item class="Workspace" referent="RBX1"><Properties><string name="Name">Workspace</string><float name="Gravity">0</float><bool name="StreamingEnabled">false</bool></Properties></Item><Item class="Lighting" referent="RBX2"><Properties><string name="Name">Lighting</string><token name="Technology">4</token></Properties></Item><Item class="Players" referent="RBX3"><Properties><string name="Name">Players</string><bool name="CharacterAutoLoads">false</bool></Properties></Item><Item class="ReplicatedStorage" referent="RBX15"><Properties><string name="Name">ReplicatedStorage</string></Properties><Item class="Folder" referent="RBX14"><Properties><string name="Name">Shared</string></Properties><Item class="ModuleScript" referent="RBX4"><Properties><string name="Name">Config</string><ProtectedString name="Source"><![CDATA[-- Central tuning values. Everything gameplay-relevant that a designer might tweak lives here.
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4"><Item class="Workspace" referent="RBX1"><Properties><string name="Name">Workspace</string><float name="Gravity">0</float><bool name="StreamingEnabled">false</bool></Properties></Item><Item class="Lighting" referent="RBX2"><Properties><string name="Name">Lighting</string><token name="Technology">4</token></Properties></Item><Item class="Players" referent="RBX3"><Properties><string name="Name">Players</string><bool name="CharacterAutoLoads">false</bool></Properties></Item><Item class="ReplicatedStorage" referent="RBX16"><Properties><string name="Name">ReplicatedStorage</string></Properties><Item class="Folder" referent="RBX15"><Properties><string name="Name">Shared</string></Properties><Item class="ModuleScript" referent="RBX4"><Properties><string name="Name">Config</string><ProtectedString name="Source"><![CDATA[-- Central tuning values. Everything gameplay-relevant that a designer might tweak lives here.
 local Config = {}
 
 Config.GameName = "ZERO GRAVITY: LAST ORBIT"
@@ -141,6 +141,23 @@ Config.Melee = {
 	Cooldown = 0.8,
 }
 
+-- Artificial gravity on level pressurised decks (Shared.Gravity): walk, jump, and a jetpack on held
+-- Space. Lift columns through floor and ceiling hatches, shafts, the ring and open space are zero-g.
+Config.Gravity = {
+	Strength = 70, -- studs/s^2 (about a third of Roblox's 196: light station-deck jumps)
+	HipHeight = 3.0, -- root height above the floor when standing (R15 feet sit 3 studs below the root)
+	FloorProbe = 4.2, -- a floor within this distance below the root counts as underfoot
+	Stiffness = 14, -- how firmly the legs hold standing height
+	WalkSpeed = 18,
+	SprintSpeed = 28, -- Shift
+	GroundAccel = 110,
+	AirAccel = 25, -- steering while airborne; momentum from zero-g carries over
+	JumpVelocity = 27, -- about a 5-stud jump
+	JetAccel = 95, -- holding Space after the jump apex: jetpack (beats gravity by 25 studs/s^2), uses boost energy
+	JetMaxRise = 22,
+	MaxFall = 85,
+}
+
 -- Character presentation: weapon size in the hands and where the gun sits when shouldered.
 Config.Character = {
 	HeldWeaponScale = 0.45, -- weapon models are built at display size; this scales them to the body
@@ -253,7 +270,49 @@ function Cosmetics.IsUnlocked(entry, profile): boolean
 end
 
 return Cosmetics
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX6"><Properties><string name="Name">ItemDefinitions</string><ProtectedString name="Source"><![CDATA[-- Non-weapon items. kind: "ammo" | "consumable" | "armor" | "utility" | "upgrade" | "weapon".
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX6"><Properties><string name="Name">Gravity</string><ProtectedString name="Source"><![CDATA[-- Artificial gravity. Pressurised decks that sit level (station modules, the ship, the lobby) pull
+-- toward their floor; lift columns through floor and ceiling hatches, vertical shafts, the habitat
+-- ring, tilted wrecks, hangars, airlocks and open space are zero-g. The zones are parts tagged
+-- "GravityZone" (pull toward the part's local -Y) and "LiftZone" (zero-g override), placed by
+-- Kit.room. Shared by clients (own movement, animation) and the server (bots, loot placement).
+local CollectionService = game:GetService("CollectionService")
+
+local Gravity = {}
+local lifts: { Instance } = {}
+local zones: { Instance } = {}
+local cachedAt = -math.huge
+
+local function inside(part: BasePart, pos: Vector3): boolean
+	local lp = part.CFrame:PointToObjectSpace(pos)
+	local h = part.Size / 2
+	return math.abs(lp.X) <= h.X and math.abs(lp.Y) <= h.Y and math.abs(lp.Z) <= h.Z
+end
+
+-- The "up" direction of the gravity acting at pos, or nil where there is none (zero-g).
+function Gravity.UpAt(pos: Vector3): Vector3?
+	local now = os.clock()
+	if now - cachedAt > 2 then -- zones only appear when the world is built; refresh now and then
+		cachedAt = now
+		lifts, zones = CollectionService:GetTagged("LiftZone"), CollectionService:GetTagged("GravityZone")
+	end
+	for _, z in lifts do
+		if z:IsA("BasePart") and z.Parent and inside(z, pos) then return nil end
+	end
+	for _, z in zones do
+		-- a breached deck loses its gravity along with its air
+		if z:IsA("BasePart") and z.Parent and not z:GetAttribute("Breached") and inside(z, pos) then return z.CFrame.UpVector end
+	end
+	return nil
+end
+
+-- Distance from `from` down (against `up`) to the first solid surface within `range`, or nil.
+function Gravity.FloorDistance(from: Vector3, up: Vector3, range: number, params: RaycastParams): number?
+	local hit = workspace:Raycast(from, -up * range, params)
+	return hit and (hit.Position - from).Magnitude or nil
+end
+
+return Gravity
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX7"><Properties><string name="Name">ItemDefinitions</string><ProtectedString name="Source"><![CDATA[-- Non-weapon items. kind: "ammo" | "consumable" | "armor" | "utility" | "upgrade" | "weapon".
 -- Weapons are items too ("weapon:<id>"), with stats in WeaponDefinitions.
 local Items = {}
 
@@ -306,7 +365,7 @@ function Items.Get(id: string)
 end
 
 return Items
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX7"><Properties><string name="Name">Loadouts</string><ProtectedString name="Source"><![CDATA[-- Starting kits chosen in the lobby. Deliberately side-grades: everyone deploys with a common
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX8"><Properties><string name="Name">Loadouts</string><ProtectedString name="Source"><![CDATA[-- Starting kits chosen in the lobby. Deliberately side-grades: everyone deploys with a common
 -- pistol; the kit only changes a small piece of utility.
 local Loadouts = {}
 
@@ -328,7 +387,7 @@ function Loadouts.Get(id: string)
 end
 
 return Loadouts
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX8"><Properties><string name="Name">LootTables</string><ProtectedString name="Source"><![CDATA[-- Loot rolling. Pure logic (no instances) so it can be unit-tested outside Roblox.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX9"><Properties><string name="Name">LootTables</string><ProtectedString name="Source"><![CDATA[-- Loot rolling. Pure logic (no instances) so it can be unit-tested outside Roblox.
 -- rng is a Roblox `Random` (or anything with :NextNumber() and :NextInteger(a, b)).
 local Shared = script.Parent
 local Weapons = require(Shared.WeaponDefinitions)
@@ -432,7 +491,7 @@ function Loot.RollContainer(rng, tier: string, minItems: number, maxItems: numbe
 end
 
 return Loot
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX9"><Properties><string name="Name">Remotes</string><ProtectedString name="Source"><![CDATA[-- Creates (server) or waits for (client) the game's few RemoteEvents.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX10"><Properties><string name="Name">Remotes</string><ProtectedString name="Source"><![CDATA[-- Creates (server) or waits for (client) the game's few RemoteEvents.
 -- Client -> server requests always carry an `action` string and are validated by the owning service.
 --   Combat:    fire / reload / equip / melee            (CombatService)
 --   Inventory: use / drop                               (InventoryService)  server -> client: inventory sync
@@ -496,7 +555,7 @@ for _, name in NAMES do
 	end
 end
 return Remotes
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX10"><Properties><string name="Name">WeaponDefinitions</string><ProtectedString name="Source"><![CDATA[-- Weapon stats. Damage is per pellet; `pellets` > 1 means a spread shot.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX11"><Properties><string name="Name">WeaponDefinitions</string><ProtectedString name="Source"><![CDATA[-- Weapon stats. Damage is per pellet; `pellets` > 1 means a spread shot.
 -- range: full damage up to `range`, linear falloff to `minDamageScale` at `maxRange`.
 -- mobility multiplies MaxSpeed while the weapon is equipped (weight trade-off).
 -- spread / adsSpread are cone half-angles in degrees. recoil is camera kick in degrees per shot.
@@ -588,7 +647,7 @@ function Weapons.DamageAt(id: string, rarity: string, distance: number): number
 end
 
 return Weapons
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX11"><Properties><string name="Name">WeaponModels</string><ProtectedString name="Source"><![CDATA[-- Procedural weapon models (shared: the server mounts them on characters, the lobby shows them on
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX12"><Properties><string name="Name">WeaponModels</string><ProtectedString name="Source"><![CDATA[-- Procedural weapon models (shared: the server mounts them on characters, the lobby shows them on
 -- display pedestals). Each model has a PrimaryPart "Handle" with two Attachments for the hands -
 -- "Grip" (right hand, on the pistol grip) and "Support" (left hand, on the handguard) - and an
 -- Attachment "Muzzle" on the barrel.
@@ -698,7 +757,7 @@ function Models.Build(id: string, rarity: string?, scale: number?): Model
 end
 
 return Models
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX12"><Properties><string name="Name">ZeroGMotion</string><ProtectedString name="Source"><![CDATA[-- Zero-gravity translation model shared by player characters (MovementController, client) and
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX13"><Properties><string name="Name">ZeroGMotion</string><ProtectedString name="Source"><![CDATA[-- Zero-gravity translation model shared by player characters (MovementController, client) and
 -- bots (BotService, server), so both obey exactly the same acceleration, caps and braking.
 local Config = require(script.Parent.Config)
 
@@ -731,6 +790,55 @@ function Motion.Step(v: Vector3, thrust: Vector3, boosting: boolean, braking: bo
 	return v
 end
 
+-- Standing on a floor under artificial gravity? (floorDist = distance from the root down to the floor)
+function Motion.IsGrounded(v: Vector3, up: Vector3, floorDist: number?): boolean
+	return floorDist ~= nil and floorDist <= Config.Gravity.HipHeight + 0.5 and v:Dot(up) <= 1
+end
+
+-- One step of walking under artificial gravity (Config.Gravity). move: desired direction on the
+-- floor plane (length 0..1); vertical: +1 Space (jump, then jetpack while held), -1 Ctrl (fast-fall),
+-- 0 none; jet: whether the jetpack may fire this frame (energy available, decided by the caller).
+-- Returns (velocity, grounded, jetting).
+--   * on the floor the legs hold standing height with a spring (no sinking, no bouncing)
+--   * walk/sprint speed is reached quickly on the floor; in the air you only steer gently, so
+--     momentum carried in from zero-g flight is kept until you land
+function Motion.GroundStep(v: Vector3, move: Vector3, up: Vector3, floorDist: number?, vertical: number, sprint: boolean, jet: boolean,
+	speedMult: number, dt: number): (Vector3, boolean, boolean)
+	local G = Config.Gravity
+	local grounded = Motion.IsGrounded(v, up, floorDist)
+	local vUp = v:Dot(up)
+	local flat = v - up * vUp
+	local want = move * (sprint and G.SprintSpeed or G.WalkSpeed) * speedMult
+	local diff = want - flat
+	local stepMax = (grounded and G.GroundAccel or G.AirAccel) * dt
+	if diff.Magnitude > stepMax then diff = diff.Unit * stepMax end
+	flat += diff
+	local jetting = false
+	if grounded then
+		if vertical > 0.5 then
+			vUp = G.JumpVelocity
+		else
+			vUp = (G.HipHeight - (floorDist :: number)) * G.Stiffness
+		end
+	else
+		vUp -= G.Strength * dt
+		if vertical > 0.5 and jet then
+			jetting = true
+			vUp = math.min(vUp + G.JetAccel * dt, G.JetMaxRise)
+		elseif vertical < -0.5 then
+			vUp -= G.Strength * dt
+		end
+		vUp = math.max(vUp, -G.MaxFall)
+	end
+	return flat + up * vUp, grounded, jetting
+end
+
+-- Whether a held Space should fire the jetpack: airborne, and past the top of a jump (so a tap is a
+-- plain hop and holding it keeps climbing).
+function Motion.WantsJet(v: Vector3, up: Vector3, grounded: boolean, vertical: number): boolean
+	return not grounded and vertical > 0.5 and v:Dot(up) < Config.Gravity.JumpVelocity * 0.3
+end
+
 -- Boost energy bookkeeping. Returns (energy, boostingThisFrame, lastUse).
 function Motion.Boost(energy: number, wantBoost: boolean, lastUse: number, now: number, maxEnergy: number, regenMult: number, dt: number)
 	local boosting = wantBoost and energy > 1
@@ -743,7 +851,7 @@ function Motion.Boost(energy: number, wantBoost: boolean, lastUse: number, now: 
 end
 
 return Motion
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX13"><Properties><string name="Name">ZoneMath</string><ProtectedString name="Source"><![CDATA[-- Safe-zone geometry. Pure functions (Vector3 maths only) so they can be unit-tested.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX14"><Properties><string name="Name">ZoneMath</string><ProtectedString name="Source"><![CDATA[-- Safe-zone geometry. Pure functions (Vector3 maths only) so they can be unit-tested.
 local Zone = {}
 
 -- Next stage centre: move toward `target` but keep the new sphere entirely inside the old one,
@@ -805,7 +913,7 @@ function Zone.Evaluate(schedule, now: number, startCenter: Vector3, startRadius:
 end
 
 return Zone
-]]></ProtectedString></Properties></Item></Item></Item><Item class="ServerScriptService" referent="RBX44"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Folder" referent="RBX34"><Properties><string name="Name">Services</string></Properties><Item class="ModuleScript" referent="RBX16"><Properties><string name="Name">BotService</string><ProtectedString name="Source"><![CDATA[-- Bots: server-simulated combatants that keep every lobby and match at Config.Bots.FillTo (20).
+]]></ProtectedString></Properties></Item></Item></Item><Item class="ServerScriptService" referent="RBX45"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Folder" referent="RBX35"><Properties><string name="Name">Services</string></Properties><Item class="ModuleScript" referent="RBX17"><Properties><string name="Name">BotService</string><ProtectedString name="Source"><![CDATA[-- Bots: server-simulated combatants that keep every lobby and match at Config.Bots.FillTo (20).
 --
 -- Fair by construction: bots act ONLY through the same server entry points players use
 -- (Combat.Fire / Reload / Equip / Melee, Loot.Search / Take, Inventory.Use, Equipment.ThrowGrenade,
@@ -829,6 +937,7 @@ local Items = require(Shared.ItemDefinitions)
 local Cosmetics = require(Shared.Cosmetics)
 local Loadouts = require(Shared.Loadouts)
 local Motion = require(Shared.ZeroGMotion)
+local Gravity = require(Shared.Gravity)
 local Remotes = require(Shared.Remotes)
 local Kit = require(script.Parent.Parent:WaitForChild("Builders"):WaitForChild("Kit"))
 local Roster = require(script.Parent.Roster)
@@ -844,6 +953,9 @@ local Nav = require(script.Parent.NavGraph)
 local Bots = {}
 local B = Config.Bots
 local MV = Config.Movement
+local GV = Config.Gravity
+local floorParams = RaycastParams.new()
+floorParams.FilterType = Enum.RaycastFilterType.Exclude
 local bots: { any } = {}
 local cfgFolder: Folder
 local charFolder: Folder
@@ -1365,8 +1477,15 @@ local function fireStep(bot, root: BasePart)
 	local aimDir = (part.Position - origin).Unit
 	local perp = brain.errDir - aimDir * brain.errDir:Dot(aimDir)
 	if perp.Magnitude > 1e-3 then aimDir = (aimDir + perp.Unit * math.tan(math.rad(brain.errDeg))).Unit end
-	-- face the shot (the server checks the body faces where it fires)
-	root.CFrame = CFrame.lookAt(root.Position, root.Position + aimDir)
+	-- face the shot (the server checks the body faces where it fires); under gravity the body stays
+	-- upright and only turns to the shot's heading
+	local up = Gravity.UpAt(root.Position)
+	local flat = if up then aimDir - up * aimDir:Dot(up) else aimDir
+	if up and flat.Magnitude > 0.05 then
+		root.CFrame = CFrame.lookAt(root.Position, root.Position + flat, up)
+	elseif not up then
+		root.CFrame = CFrame.lookAt(root.Position, root.Position + aimDir)
+	end
 	brain.face = CFrame.lookAt(Vector3.zero, aimDir)
 	local steady = root.AssemblyLinearVelocity.Magnitude < 15 and dist > 50
 	local spread = steady and def.adsSpread or def.spread
@@ -1623,12 +1742,38 @@ local function step(dt: number)
 			local thrust = brain.moveDir
 			if thrust.Magnitude > 1 then thrust = thrust.Unit end
 			local boostMax = MV.BoostMax * (bot:GetAttribute("BoostMaxMult") or 1)
-			local energy, boosting, lastUse = Motion.Boost(brain.energy, brain.boost and thrust.Magnitude > 0.1, brain.lastBoostUse, now, boostMax,
-				bot:GetAttribute("BoostRegenMult") or 1, dt)
-			brain.energy, brain.lastBoostUse = energy, lastUse
-			root.AssemblyLinearVelocity = Motion.Step(root.AssemblyLinearVelocity, thrust, boosting, brain.brake, bot:GetAttribute("SpeedMult") or 1, dt)
+			local regen, speedMult = bot:GetAttribute("BoostRegenMult") or 1, bot:GetAttribute("SpeedMult") or 1
 			local align = root:FindFirstChild("ZG_Align") :: AlignOrientation?
-			if align then align.CFrame = brain.face end
+			local char = bot.Character
+			local up = Gravity.UpAt(root.Position)
+			if up then
+				-- artificial gravity: walk the floor plane, jump / jetpack when the route climbs
+				local vertical = thrust:Dot(up)
+				local flat = thrust - up * vertical
+				if flat.Magnitude > 1 then flat = flat.Unit end
+				floorParams.FilterDescendantsInstances = { char }
+				local floorDist = Gravity.FloorDistance(root.Position, up, GV.FloorProbe, floorParams)
+				local v = root.AssemblyLinearVelocity
+				local vin = if vertical > 0.45 then 1 elseif vertical < -0.45 then -1 else 0
+				local energy, jetOn, lastUse = Motion.Boost(brain.energy, Motion.WantsJet(v, up, Motion.IsGrounded(v, up, floorDist), vin),
+					brain.lastBoostUse, now, boostMax, regen, dt)
+				brain.energy, brain.lastBoostUse = energy, lastUse
+				root.AssemblyLinearVelocity = Motion.GroundStep(v, flat, up, floorDist, vin, brain.boost, jetOn, speedMult, dt)
+				-- upright, facing the aim's heading; the aim's pitch goes to the animators
+				local look = brain.face.LookVector
+				local fwd = look - up * look:Dot(up)
+				if fwd.Magnitude < 0.05 then fwd = root.CFrame.LookVector - up * root.CFrame.LookVector:Dot(up) end
+				if align and fwd.Magnitude > 1e-3 then align.CFrame = CFrame.lookAt(Vector3.zero, fwd.Unit, up) end
+				local pitch = math.floor(math.deg(math.asin(math.clamp(look:Dot(up), -1, 1))) / 3 + 0.5) * 3
+				if char:GetAttribute("AimPitch") ~= pitch then char:SetAttribute("AimPitch", pitch) end
+			else
+				local energy, boosting, lastUse = Motion.Boost(brain.energy, brain.boost and thrust.Magnitude > 0.1, brain.lastBoostUse, now, boostMax,
+					regen, dt)
+				brain.energy, brain.lastBoostUse = energy, lastUse
+				root.AssemblyLinearVelocity = Motion.Step(root.AssemblyLinearVelocity, thrust, boosting, brain.brake, speedMult, dt)
+				if align then align.CFrame = brain.face end
+				if char:GetAttribute("AimPitch") then char:SetAttribute("AimPitch", nil) end
+			end
 			if brain.wantFire then
 				local ok, err = pcall(fireStep, bot, root)
 				if not ok then warn("[ZG] bot " .. bot.Name .. " fire error: " .. tostring(err)) end
@@ -1711,7 +1856,7 @@ function Bots.Start()
 end
 
 return Bots
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX17"><Properties><string name="Name">CharacterService</string><ProtectedString name="Source"><![CDATA[-- Character spawning (characters never auto-load; MatchService decides where everyone goes),
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX18"><Properties><string name="Name">CharacterService</string><ProtectedString name="Source"><![CDATA[-- Character spawning (characters never auto-load; MatchService decides where everyone goes),
 -- space-suit visuals (helmet, life-support pack, suit colours) and the held-weapon visual.
 local Players = game:GetService("Players")
 local StarterPlayer = game:GetService("StarterPlayer")
@@ -2028,7 +2173,7 @@ function CharacterService.Start()
 end
 
 return CharacterService
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX18"><Properties><string name="Name">CombatService</string><ProtectedString name="Source"><![CDATA[-- Server-authoritative combat. Clients send aim rays; the server checks fire rate, ammunition,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX19"><Properties><string name="Name">CombatService</string><ProtectedString name="Source"><![CDATA[-- Server-authoritative combat. Clients send aim rays; the server checks fire rate, ammunition,
 -- reload state, origin position and aim plausibility, then performs its own raycasts and applies
 -- damage. All damage in the game (weapons, explosions, zone, oxygen, hazards) goes through
 -- Combat.ApplyDamage so shields, spawn protection and kill attribution behave consistently.
@@ -2042,6 +2187,7 @@ local Roster = require(script.Parent.Roster)
 local Security = require(script.Parent.SecurityService)
 local Inventory = require(script.Parent.InventoryService)
 local LagComp = require(script.Parent.LagCompensation)
+local Gravity = require(Shared.Gravity)
 
 local Combat = {}
 local state: { [Player]: any } = {} -- per-player fire/reload timing
@@ -2209,8 +2355,17 @@ local function onFire(player: Player, req)
 		mean += d.Unit
 	end
 	if mean.Magnitude < 0.1 then return end
-	-- Aim must be roughly where the body faces, and pellets inside the weapon's spread cone
-	if angleBetween(mean, root.CFrame.LookVector) > 80 then return end
+	-- Aim must be roughly where the body faces, and pellets inside the weapon's spread cone. Walking
+	-- under artificial gravity the body stays upright while the aim pitches, so there only the aim's
+	-- heading has to match (aiming almost straight up or down is always allowed).
+	local look = root.CFrame.LookVector
+	if angleBetween(mean, look) > 80 then
+		local up = Gravity.UpAt(root.Position)
+		if not up then return end -- zero-g: the body itself turns to the aim
+		local heading = mean - up * mean:Dot(up)
+		local facing = look - up * look:Dot(up)
+		if heading.Magnitude > 0.25 * mean.Magnitude and (facing.Magnitude < 0.05 or angleBetween(heading, facing) > 80) then return end
+	end
 	for _, d in dirs do
 		if angleBetween(d, mean) > def.spread * 2 + 4 then return end
 	end
@@ -2434,6 +2589,11 @@ function Combat.Start()
 			onFire(player, req)
 		elseif req.action == "aim" then
 			if type(req.value) == "boolean" and Security.RateLimit(player, "aim", 8, 6) then Combat.Aim(player, req.value) end
+		elseif req.action == "pitch" then
+			-- aim pitch while walking upright under gravity (other clients tilt the gun and head to it)
+			if type(req.value) == "number" and req.value == req.value and Security.RateLimit(player, "pitch", 12, 8) and player.Character then
+				player.Character:SetAttribute("AimPitch", math.clamp(math.floor(req.value + 0.5), -89, 89))
+			end
 		elseif req.action == "roll" then
 			if Security.RateLimit(player, "roll", 2, 2) then Combat.Roll(player, req.dir) end
 		elseif not Security.RateLimit(player, "combat", 10, 6) then
@@ -2469,7 +2629,7 @@ function Combat.Start()
 end
 
 return Combat
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX19"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[-- Persistent progression (XP, level, credits, lifetime stats, cosmetic choice, loadout choice).
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX20"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[-- Persistent progression (XP, level, credits, lifetime stats, cosmetic choice, loadout choice).
 -- Match state is never saved here. UpdateAsync with retries; temporary data in Studio when
 -- DataStores are unavailable; never overwrites real data after a failed load.
 local DataStoreService = game:GetService("DataStoreService")
@@ -2657,7 +2817,7 @@ function DataService.Start()
 end
 
 return DataService
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX20"><Properties><string name="Name">EquipmentService</string><ProtectedString name="Source"><![CDATA[-- Equipment: tether (grapple to an approved surface, then the client reels itself in) and the
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX21"><Properties><string name="Name">EquipmentService</string><ProtectedString name="Source"><![CDATA[-- Equipment: tether (grapple to an approved surface, then the client reels itself in) and the
 -- thrown pulse charge. Boost energy is simulated on the client for responsiveness; the server's
 -- speed ceiling in SecurityService bounds it.
 local Players = game:GetService("Players")
@@ -2804,7 +2964,7 @@ function Equipment.Start()
 end
 
 return Equipment
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX21"><Properties><string name="Name">EventService</string><ProtectedString name="Source"><![CDATA[-- Dynamic match events.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX22"><Properties><string name="Name">EventService</string><ProtectedString name="Source"><![CDATA[-- Dynamic match events.
 --
 -- Supply drops: at Config.Events.SupplyDropTimes after deployment a drop pod falls into the NEXT safe
 -- zone (so it is worth heading for) and lands as a "drop"-tier container: rare to legendary loot.
@@ -2948,7 +3108,7 @@ function Events.Start()
 end
 
 return Events
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX22"><Properties><string name="Name">HazardService</string><ProtectedString name="Source"><![CDATA[-- Environmental systems: interlocked airlocks, telegraphed electrical faults, reactor radiation,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX23"><Properties><string name="Name">HazardService</string><ProtectedString name="Source"><![CDATA[-- Environmental systems: interlocked airlocks, telegraphed electrical faults, reactor radiation,
 -- explosive cargo barrels, breachable weak hull plates and smoke in damaged compartments.
 -- Reset() restores barrels and hull plates between matches.
 local CollectionService = game:GetService("CollectionService")
@@ -3237,7 +3397,7 @@ function Hazards.Start()
 end
 
 return Hazards
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX23"><Properties><string name="Name">InventoryService</string><ProtectedString name="Source"><![CDATA[-- Server-authoritative inventory: three weapon slots, ammo reserves, consumables (with backpack
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">InventoryService</string><ProtectedString name="Source"><![CDATA[-- Server-authoritative inventory: three weapon slots, ammo reserves, consumables (with backpack
 -- stack limits), utility (pulse charges, tether charges), armour tier and suit upgrades.
 -- Clients only ever see a synced copy and send "use"/"drop" requests, all validated here.
 local Players = game:GetService("Players")
@@ -3520,7 +3680,7 @@ function Inventory.Start()
 end
 
 return Inventory
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">LagCompensation</string><ProtectedString name="Source"><![CDATA[-- Lag compensation for hitscan weapons ("favour the shooter", bounded).
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX25"><Properties><string name="Name">LagCompensation</string><ProtectedString name="Source"><![CDATA[-- Lag compensation for hitscan weapons ("favour the shooter", bounded).
 -- A client aims at where its screen shows a target. For a server-simulated bot (or another player
 -- relayed through the server) that is where the server had the target about one round trip plus
 -- Roblox's interpolation delay ago, so against a strafing target a perfectly aimed shot misses the
@@ -3660,7 +3820,7 @@ function LagComp.Start()
 end
 
 return LagComp
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX25"><Properties><string name="Name">LootService</string><ProtectedString name="Source"><![CDATA[-- Loot containers and world pickups. Every match re-seeds containers on LootSpot markers
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX26"><Properties><string name="Name">LootService</string><ProtectedString name="Source"><![CDATA[-- Loot containers and world pickups. Every match re-seeds containers on LootSpot markers
 -- (not every spot is filled, so routes vary). Searching and picking up use ProximityPrompts that
 -- the server validates (active combatant, distance, container state, inventory capacity).
 local CollectionService = game:GetService("CollectionService")
@@ -3671,6 +3831,7 @@ local Weapons = require(Shared.WeaponDefinitions)
 local LootTables = require(Shared.LootTables)
 local WeaponModels = require(Shared.WeaponModels)
 local Remotes = require(Shared.Remotes)
+local Gravity = require(Shared.Gravity)
 local Roster = require(script.Parent.Roster)
 local Inventory = require(script.Parent.InventoryService)
 
@@ -3898,6 +4059,27 @@ function Loot.PickupsNear(pos: Vector3, radius: number): { BasePart }
 	return out
 end
 
+-- In a room with artificial gravity a container rests on whatever is below its spot (floor, table,
+-- crate) instead of floating; elsewhere it stays where the spot is.
+local function settle(cf: CFrame, kind: string): CFrame
+	local up = Gravity.UpAt(cf.Position)
+	if not up then return cf end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local exclude: { Instance } = { folder }
+	for _, name in { "BotCharacters", "Events" } do
+		local f = workspace:FindFirstChild(name)
+		if f then table.insert(exclude, f) end
+	end
+	params.FilterDescendantsInstances = exclude
+	local hit = workspace:Raycast(cf.Position, -up * 120, params)
+	if not hit then return cf end
+	local look = KIND_LOOK[kind] or KIND_LOOK.crate
+	local fwd = cf.LookVector - up * cf.LookVector:Dot(up)
+	if fwd.Magnitude < 0.05 then fwd = cf.UpVector - up * cf.UpVector:Dot(up) end
+	return CFrame.lookAt(hit.Position + up * (look.size.Y / 2 + 0.05), hit.Position + up * (look.size.Y / 2 + 0.05) + fwd.Unit, up)
+end
+
 -- A supply-drop container: rare-to-legendary loot, more of it than a normal container.
 function Loot.SpawnDrop(cf: CFrame): BasePart
 	local E = Config.Events
@@ -3907,7 +4089,7 @@ end
 -- Drop everything an eliminated player carried in a suit locker at their position.
 function Loot.SpawnDeathBox(pos: Vector3, entries, ownerName: string)
 	if #entries == 0 then return end
-	local box = container(CFrame.new(pos), "suit", "mid", entries, ownerName .. "'s Suit Locker")
+	local box = container(settle(CFrame.new(pos), "suit"), "suit", "mid", entries, ownerName .. "'s Suit Locker")
 	task.delay(Config.Inventory.DropOnDeathLifetime * 3, function()
 		if box.Parent then box:Destroy() end
 	end)
@@ -3930,7 +4112,8 @@ function Loot.Seed()
 	local n = 0
 	for _, marker in CollectionService:GetTagged("LootSpot") do
 		if marker:IsA("BasePart") and marker:IsDescendantOf(workspace) and rng:NextNumber() < 0.8 then
-			container(marker.CFrame, marker:GetAttribute("Kind") or "crate", marker:GetAttribute("Tier") or "low")
+			local kind = marker:GetAttribute("Kind") or "crate"
+			container(settle(marker.CFrame, kind), kind, marker:GetAttribute("Tier") or "low")
 			n += 1
 		end
 	end
@@ -3958,7 +4141,7 @@ function Loot.Start()
 end
 
 return Loot
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX26"><Properties><string name="Name">MatchService</string><ProtectedString name="Source"><![CDATA[-- Match lifecycle:
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX27"><Properties><string name="Name">MatchService</string><ProtectedString name="Source"><![CDATA[-- Match lifecycle:
 --   Waiting -> Countdown -> Preparing -> Deploying -> Active -> Final -> Ending -> Results -> Waiting
 -- Solo battle royale today; players carry a team id so duos/squads only need team assignment and
 -- the "teams alive" check below to change.
@@ -4490,7 +4673,7 @@ function Match.Start()
 end
 
 return Match
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX27"><Properties><string name="Name">NavGraph</string><ProtectedString name="Source"><![CDATA[-- Bot navigation graph, generated from the construction kit's registry of hollow spaces
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX28"><Properties><string name="Name">NavGraph</string><ProtectedString name="Source"><![CDATA[-- Bot navigation graph, generated from the construction kit's registry of hollow spaces
 -- (Kit.NavSpaces: rooms, corridors, tubes, airlock chambers).
 --   * every passable opening becomes a door node (doors of adjoining spaces merge)
 --   * each space links its centre and doors; airlock chambers mark their edges with the door
@@ -4716,7 +4899,7 @@ end
 Nav.Exits = function() return exits end
 Nav.Nodes = function() return nodes end
 return Nav
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX28"><Properties><string name="Name">OxygenService</string><ProtectedString name="Source"><![CDATA[-- Suit oxygen. Drains outside pressurised volumes, refills inside them, refill stations top up
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX29"><Properties><string name="Name">OxygenService</string><ProtectedString name="Source"><![CDATA[-- Suit oxygen. Drains outside pressurised volumes, refills inside them, refill stations top up
 -- instantly (with per-player cooldown). At zero the suit warns for GraceSeconds before hypoxia
 -- damage begins, so oxygen is a pressure to act, not a random death.
 local CollectionService = game:GetService("CollectionService")
@@ -4866,7 +5049,7 @@ function Oxygen.Start()
 end
 
 return Oxygen
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX29"><Properties><string name="Name">Roster</string><ProtectedString name="Source"><![CDATA[-- Per-combatant match state (never persisted). The single source of truth for "is this combatant
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX30"><Properties><string name="Name">Roster</string><ProtectedString name="Source"><![CDATA[-- Per-combatant match state (never persisted). The single source of truth for "is this combatant
 -- active right now". A combatant is a Player or a bot (BotService): bots are tables that expose the
 -- same surface the services use (Name, UserId, Parent, Character, GetAttribute, SetAttribute).
 -- Mirrors the fields clients need onto attributes.
@@ -4984,7 +5167,7 @@ function Roster.Start()
 end
 
 return Roster
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX30"><Properties><string name="Name">SafeZoneService</string><ProtectedString name="Source"><![CDATA[-- The orbital radiation storm: a shrinking SPHERE of safe space. Its schedule is computed once
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX31"><Properties><string name="Name">SafeZoneService</string><ProtectedString name="Source"><![CDATA[-- The orbital radiation storm: a shrinking SPHERE of safe space. Its schedule is computed once
 -- per match (ZoneMath), state is published as attributes on ReplicatedStorage.ZoneState for the
 -- client visual, countdown and tactical map. Damage outside escalates each stage.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -5105,7 +5288,7 @@ function SafeZone.Start()
 end
 
 return SafeZone
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX31"><Properties><string name="Name">SecurityService</string><ProtectedString name="Source"><![CDATA[-- Request validation helpers and the server's movement sanity checks.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX32"><Properties><string name="Name">SecurityService</string><ProtectedString name="Source"><![CDATA[-- Request validation helpers and the server's movement sanity checks.
 --   * RateLimit: token buckets per player per channel (drops floods of remote requests)
 --   * Arg checks for remote payloads
 --   * Movement: speed ceiling and arena hard boundary. Characters are client-owned physics (needed
@@ -5206,7 +5389,7 @@ function Security.Teleported(player: Player)
 end
 
 return Security
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX32"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- Builds the whole battlefield once at server start: lighting, lobby, station, exploration ship,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX33"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- Builds the whole battlefield once at server start: lighting, lobby, station, exploration ship,
 -- asteroid field, derelicts and debris. Gameplay systems discover what they need through
 -- CollectionService tags on markers (LootSpot, DeployPoint, FinalZone, OxygenStation,
 -- Pressurized, Airlock, ElectricHazard, ReactorHazard, ExplosiveBarrel, Breachable, ...).
@@ -5268,7 +5451,7 @@ function WorldBuilder.Start()
 end
 
 return WorldBuilder
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX33"><Properties><string name="Name">WorldQuery</string><ProtectedString name="Source"><![CDATA[-- Small spatial queries shared by services that place things in the world (deployment, drops).
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX34"><Properties><string name="Name">WorldQuery</string><ProtectedString name="Source"><![CDATA[-- Small spatial queries shared by services that place things in the world (deployment, drops).
 local WorldQuery = {}
 
 -- Free of solid geometry and terrain within about radius studs?
@@ -5291,7 +5474,7 @@ function WorldQuery.IsClear(pos: Vector3, radius: number?): boolean
 end
 
 return WorldQuery
-]]></ProtectedString></Properties></Item></Item><Item class="Folder" referent="RBX42"><Properties><string name="Name">Builders</string></Properties><Item class="ModuleScript" referent="RBX35"><Properties><string name="Name">AsteroidField</string><ProtectedString name="Source"><![CDATA[-- Asteroid mining & salvage field plus scattered asteroids across the arena.
+]]></ProtectedString></Properties></Item></Item><Item class="Folder" referent="RBX43"><Properties><string name="Name">Builders</string></Properties><Item class="ModuleScript" referent="RBX36"><Properties><string name="Name">AsteroidField</string><ProtectedString name="Source"><![CDATA[-- Asteroid mining & salvage field plus scattered asteroids across the arena.
 -- Asteroids are Terrain (lumpy multi-ball rock with craters and mineral veins) so they cost no parts
 -- and collide cheaply. "The Anvil", the largest rock, has a mining tunnel bored through it.
 local Kit = require(script.Parent.Kit)
@@ -5497,7 +5680,7 @@ function Field.Build(arena: Instance, markers: Instance, terrain: Terrain, exclu
 end
 
 return Field
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX36"><Properties><string name="Name">Backdrop</string><ProtectedString name="Source"><![CDATA[-- Server-side lighting and sky. The planet itself is rendered client-side (BackdropController)
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX37"><Properties><string name="Name">Backdrop</string><ProtectedString name="Source"><![CDATA[-- Server-side lighting and sky. The planet itself is rendered client-side (BackdropController)
 -- relative to the camera, so it always reads as an enormous, distant body that players can
 -- never fly into, regardless of render distance.
 local Lighting = game:GetService("Lighting")
@@ -5542,7 +5725,7 @@ function Backdrop.Apply()
 end
 
 return Backdrop
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX37"><Properties><string name="Name">Debris</string><ProtectedString name="Source"><![CDATA[-- Derelict spacecraft and orbital debris: two explorable wrecks, satellites, damaged cargo
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX38"><Properties><string name="Name">Debris</string><ProtectedString name="Source"><![CDATA[-- Derelict spacecraft and orbital debris: two explorable wrecks, satellites, damaged cargo
 -- modules, broken solar panels, escape pods, industrial equipment, cargo platforms and a
 -- communications array. Each small location carries loot so space between landmarks is never dead.
 local Kit = require(script.Parent.Kit)
@@ -5806,7 +5989,7 @@ function Debris.Build(arena: Instance, markers: Instance, exclusion)
 end
 
 return Debris
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX38"><Properties><string name="Name">Kit</string><ProtectedString name="Source"><![CDATA[-- Procedural construction kit: reusable functions for rooms, corridors, octagonal habitat tubes,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX39"><Properties><string name="Name">Kit</string><ProtectedString name="Source"><![CDATA[-- Procedural construction kit: reusable functions for rooms, corridors, octagonal habitat tubes,
 -- airlocks, solar arrays, crates, lights, signs and gameplay markers. All builders use this so the
 -- station, ship and wrecks share one consistent visual language and one scale.
 --
@@ -6008,7 +6191,16 @@ function Kit.room(parent: Instance, cf: CFrame, size: Vector3, opts)
 		Kit.light(lp, opts.lightColor, math.clamp(math.max(size.X, size.Z) * 0.9, 24, 60), 1.1)
 	end
 	if opts.pressurized then
-		Kit.zone(m, cf, size, opts.pressurized)
+		-- Artificial gravity on level decks: pressurised rooms and corridors with a floor that sit
+		-- level. Vertical shafts, tilted wrecks and rooms without a deck stay zero-g; floor and
+		-- ceiling hatches get a zero-g lift column so you can float between decks.
+		local gravity = opts.deck == true and opts.gravity ~= false and math.abs(cf.UpVector.Y) > 0.95
+		Kit.zone(m, cf, size, opts.pressurized, gravity)
+		if gravity then
+			for _, face in { "+Y", "-Y" } do
+				if openings[face] then Kit.liftColumn(m, cf, size, t, face, openings[face]) end
+			end
+		end
 	end
 	table.insert(Kit.NavSpaces, { cf = cf, size = size, openings = openings, wall = t, model = m })
 	return m
@@ -6181,12 +6373,45 @@ function Kit.marker(parent: Instance, tag: string, cf: CFrame, attrs)
 end
 
 -- Pressurised volume: OxygenService refills oxygen inside any part tagged "Pressurized".
-function Kit.zone(parent: Instance, cf: CFrame, size: Vector3, id: string)
+function Kit.zone(parent: Instance, cf: CFrame, size: Vector3, id: string, gravity: boolean?)
 	local p = Kit.part(parent, { Name = "PressurizedZone", CFrame = cf, Size = size, Transparency = 1, CanCollide = false,
 		CanQuery = false, CanTouch = false, CastShadow = false })
 	p:SetAttribute("ZoneId", id)
 	CollectionService:AddTag(p, "Pressurized")
+	if gravity then
+		-- Shared.Gravity pulls toward the zone's local -Y (its floor)
+		p:SetAttribute("Gravity", true)
+		CollectionService:AddTag(p, "GravityZone")
+	end
 	return p
+end
+
+-- Zero-g lift column through a floor or ceiling hatch of a room with artificial gravity: inside it
+-- gravity is off, so you float up or down through the hatch (Space / Ctrl). A shimmering field and
+-- glowing frames at the floor and ceiling mark it.
+function Kit.liftColumn(parent: Instance, cf: CFrame, size: Vector3, t: number, face: string, hole)
+	local w, d, x, z
+	if hole == true then
+		w, d, x, z = size.X, size.Z, 0, 0
+	else
+		-- face-local hole offsets: +Y wall's local Y runs along the room's -Z, -Y wall's along +Z
+		w, d, x = hole.w, hole.h, hole.x or 0
+		z = if face == "+Y" then -(hole.y or 0) else (hole.y or 0)
+	end
+	local ccf = cf * CFrame.new(x, 0, z)
+	local zone = Kit.part(parent, { Name = "LiftZone", CFrame = ccf, Size = Vector3.new(w, size.Y + 2 * t + 4, d), Transparency = 1,
+		CanCollide = false, CanQuery = false, CanTouch = false, CastShadow = false })
+	CollectionService:AddTag(zone, "LiftZone")
+	Kit.part(parent, { Name = "LiftField", CFrame = ccf, Size = Vector3.new(math.max(w - 0.8, 1), size.Y - 0.6, math.max(d - 0.8, 1)),
+		Material = Enum.Material.ForceField, Color = P.BlueGlow, Transparency = 0.2, CanCollide = false, CanQuery = false, CanTouch = false,
+		CastShadow = false })
+	for _, y in { -size.Y / 2 + 0.2, size.Y / 2 - 0.2 } do
+		for _, e in { { 0, d / 2, w, 0.3 }, { 0, -d / 2, w, 0.3 }, { w / 2, 0, 0.3, d }, { -w / 2, 0, 0.3, d } } do
+			Kit.part(parent, { Name = "LiftRing", CFrame = ccf * CFrame.new(e[1], y, e[2]), Size = Vector3.new(e[3], 0.25, e[4]),
+				Material = Enum.Material.Neon, Color = P.BlueGlow, CanCollide = false, CanQuery = false, CastShadow = false })
+		end
+	end
+	return zone
 end
 
 -- Airlock: a 14-long chamber between an inner and an outer sliding door. Door logic lives in
@@ -6300,7 +6525,7 @@ function Kit.brokenLight(parent: Instance, cf: CFrame)
 end
 
 return Kit
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX39"><Properties><string name="Name">Lobby</string><ProtectedString name="Source"><![CDATA[-- Staging lobby: a sealed observation hall outside the arena, with a panoramic window toward the
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX40"><Properties><string name="Name">Lobby</string><ProtectedString name="Source"><![CDATA[-- Staging lobby: a sealed observation hall outside the arena, with a panoramic window toward the
 -- station, weapon display pedestals (equipment previews), a practice range with moving drone
 -- targets, a match status board and a controls board. Players float here between matches.
 local CollectionService = game:GetService("CollectionService")
@@ -6390,7 +6615,7 @@ function Lobby.SetStatus(text: string)
 end
 
 return Lobby
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX40"><Properties><string name="Name">Ship</string><ProtectedString name="Source"><![CDATA[-- Exploration vessel "ESV Long Horizon": a 550-stud ship parked near the station.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX41"><Properties><string name="Name">Ship</string><ProtectedString name="Source"><![CDATA[-- Exploration vessel "ESV Long Horizon": a 550-stud ship parked near the station.
 -- Interior chain along the ship's local X axis (bow at -X):
 --   Bridge -> Crew Quarters -> Medical/Research -> Cargo Hold -> Engineering -> Engine Room
 -- All linked by pressurised corridors. Exterior: dorsal spine (creates a covered hull-traversal
@@ -6637,7 +6862,7 @@ function Ship.Build(arena: Instance, markers: Instance, shipCf: CFrame)
 end
 
 return Ship
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX41"><Properties><string name="Name">Station</string><ProtectedString name="Source"><![CDATA[-- Orbital station "Meridian". Layout (station centred on the origin):
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX42"><Properties><string name="Name">Station</string><ProtectedString name="Source"><![CDATA[-- Orbital station "Meridian". Layout (station centred on the origin):
 --   Hub (central command & docking junction) with six branches:
 --     +Y Command Module (observation windows, top airlock)
 --     -Y Docking Bay (open hangar to space, reached through an airlock)
@@ -7079,7 +7304,7 @@ function Station.Build(arena: Instance, markers: Instance)
 end
 
 return Station
-]]></ProtectedString></Properties></Item></Item><Item class="Script" referent="RBX43"><Properties><string name="Name">Main</string><ProtectedString name="Source"><![CDATA[-- ZERO GRAVITY: LAST ORBIT - server bootstrap.
+]]></ProtectedString></Properties></Item></Item><Item class="Script" referent="RBX44"><Properties><string name="Name">Main</string><ProtectedString name="Source"><![CDATA[-- ZERO GRAVITY: LAST ORBIT - server bootstrap.
 -- Builds the world, then starts each service on its own so one failure is reported in Output
 -- without stopping the rest.
 local Services = script.Parent:WaitForChild("Services")
@@ -7111,7 +7336,7 @@ start("HazardService")
 start("BotService")
 start("MatchService")
 print("[ZG] server started")
-]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX62"><Properties><string name="Name">StarterPlayer</string><bool name="EnableMouseLockOption">false</bool><token name="GameSettingsAvatar">1</token><token name="AvatarJointUpgrade_SerializedRollout">1</token></Properties><Item class="StarterPlayerScripts" referent="RBX58"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX45"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ZERO GRAVITY: LAST ORBIT - client bootstrap. Starts the controllers and routes server
+]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX63"><Properties><string name="Name">StarterPlayer</string><bool name="EnableMouseLockOption">false</bool><token name="GameSettingsAvatar">1</token><token name="AvatarJointUpgrade_SerializedRollout">1</token></Properties><Item class="StarterPlayerScripts" referent="RBX59"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX46"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ZERO GRAVITY: LAST ORBIT - client bootstrap. Starts the controllers and routes server
 -- messages (FX / Match / Inventory remotes) into ClientState signals and effects.
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
@@ -7242,7 +7467,7 @@ game:GetService("RunService").Heartbeat:Connect(function()
 		Effects.TetherBeam(player, State.Tether and State.Tether.point or nil)
 	end
 end)
-]]></ProtectedString></Properties></Item><Item class="Folder" referent="RBX57"><Properties><string name="Name">Controllers</string></Properties><Item class="ModuleScript" referent="RBX46"><Properties><string name="Name">CameraController</string><ProtectedString name="Source"><![CDATA[-- Over-the-shoulder camera with a yaw/pitch model (pitch clamped short of vertical) so the view
+]]></ProtectedString></Properties></Item><Item class="Folder" referent="RBX58"><Properties><string name="Name">Controllers</string></Properties><Item class="ModuleScript" referent="RBX47"><Properties><string name="Name">CameraController</string><ProtectedString name="Source"><![CDATA[-- Over-the-shoulder camera with a yaw/pitch model (pitch clamped short of vertical) so the view
 -- can never flip or roll unpredictably. Collision-aware, aim zoom, recoil, and spectate mode.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -7358,7 +7583,7 @@ function CameraController.Start()
 end
 
 return CameraController
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX47"><Properties><string name="Name">CharacterAnimator</string><ProtectedString name="Source"><![CDATA[-- Procedural zero-gravity character animation, run on every client for every character it can see
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX48"><Properties><string name="Name">CharacterAnimator</string><ProtectedString name="Source"><![CDATA[-- Procedural zero-gravity character animation, run on every client for every character it can see
 -- (players and bots). Roblox's default walk/jump/fall animations make no sense without gravity, so
 -- the default Animate script is replaced (StarterCharacterScripts/Animate) and each R15 joint is
 -- posed here from what every client already knows:
@@ -7379,16 +7604,26 @@ return CameraController
 --   moves - reload (gun canted, support hand pulls and seats the magazine), weapon swap (the new gun
 --           swings up from low), melee (a forward jab with the gun, or a straight punch when unarmed); driven by
 --           the ReloadEnd / ReloadTime / MeleeAt attributes and by the HeldWeapon model changing
---   death - limp spread-eagle tumble
+--   death - limp spread-eagle tumble (a slumped kneel under gravity)
+--   gravity - on level decks (Shared.Gravity) the body stays upright: a walk cycle timed to ground
+--           speed, a relaxed stance standing still, knees drawn up in the air, swinging arms when
+--           unarmed, a side-dodge lean instead of the barrel roll, and the gun, head and chest
+--           tilting to the aim's pitch (the AimPitch attribute for other characters)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
+local Gravity = require(Shared.Gravity)
 local State = require(script.Parent.ClientState)
 
 local Anim = {}
 local player = Players.LocalPlayer
 local MV = Config.Movement
+local GV = Config.Gravity
+local STRIDE = 7 -- studs per full walk cycle (two steps)
+local AIM_PIVOT = Vector3.new(0.3, 0.75, 0) -- the gun pitches about the chest (root space)
+local floorParams = RaycastParams.new()
+floorParams.FilterType = Enum.RaycastFilterType.Exclude
 local rigs: { [Model]: any } = {}
 local lastScan = -math.huge
 
@@ -7469,7 +7704,8 @@ local function newRig(char: Model)
 		rootJ = J.LowerTorso, waist = J.UpperTorso, neck = J.Head,
 		legs = {}, arms = {},
 		phase = math.random() * 20, acc = 0,
-		s = { fwd = 0, side = 0, up = 0, boost = 0, aim = 0, armed = 0, dead = 0 },
+		s = { fwd = 0, side = 0, up = 0, boost = 0, aim = 0, armed = 0, dead = 0, grav = 0, ground = 0, walk = 0 },
+		stride = 0,
 		kick = 0, lastShot = -math.huge, rollStart = -math.huge, rollDir = 1, localRollUntil = -math.huge,
 		rollAt = char:GetAttribute("RollAt"), diedAt = nil :: number?,
 		held = nil :: Instance?, equipStart = -math.huge, meleeAt = char:GetAttribute("MeleeAt"), meleeStart = -math.huge, magLocal = nil :: Vector3?,
@@ -7533,6 +7769,14 @@ local function floatArms(r, t: number, life: number, punch: number?)
 			local flex = lerp(0.25 + bob - 0.7 * s.boost, 0.2, s.dead)
 			local out = sign * lerp(0.35 - 0.23 * s.boost, 1.1, s.dead)
 			local bend = lerp(0.55 + 0.12 * math.sin(t * 1.1 + sign) - 0.35 * s.boost, 0.35, s.dead)
+			if s.grav > 0.01 then -- under gravity: arms swing with the stride, or spread for balance in the air
+				local ph = r.stride * math.pi * 2 + (if sign > 0 then math.pi else 0)
+				local flexG = lerp(0.3, 0.05 + 0.55 * s.walk * math.sin(ph), s.ground)
+				local outG = sign * lerp(0.6, 0.1, s.ground)
+				local bendG = lerp(0.4, 0.25 + 0.25 * s.walk, s.ground)
+				local k = s.grav * (1 - s.dead)
+				flex, out, bend = lerp(flex, flexG, k), lerp(out, outG, k), lerp(bend, bendG, k)
+			end
 			if punch and sign > 0 then -- unarmed melee: a straight right jab
 				flex, out, bend = lerp(flex, 1.55, punch), lerp(out, 0.05, punch), lerp(bend, 0.05, punch)
 			end
@@ -7557,9 +7801,21 @@ local function poseLegs(r, t: number, life: number, speed: number)
 			hip = lerp(math.clamp(hip, -1.1, 1.7), 0.45, s.dead)
 			knee = lerp(math.clamp(knee, 0.05, 2.0), 0.7, s.dead)
 			spread = lerp(spread, sign * 0.45, s.dead)
+			local ankle = -0.3 - 0.35 * s.boost - 0.2 * fwdOn -- toes pointed
+			if s.grav > 0.01 then
+				-- under gravity: stride on the floor (nearly straight legs standing still), knees up in the
+				-- air, a slumped kneel when dead
+				local ph = r.stride * math.pi * 2 + (if sign > 0 then 0 else math.pi)
+				local hipG = lerp(0.35, 0.04 + 0.6 * s.walk * math.sin(ph), s.ground)
+				local kneeG = lerp(0.65, 0.1 + 0.95 * s.walk * math.max(0, math.cos(ph)), s.ground)
+				local ankleG = lerp(-0.25, 0.05 - 0.3 * s.walk * math.max(0, -math.sin(ph)), s.ground)
+				hipG, kneeG = lerp(hipG, 1.0, s.dead), lerp(kneeG, 1.6, s.dead)
+				hip, knee = lerp(hip, hipG, s.grav), lerp(knee, kneeG, s.grav)
+				spread, ankle = lerp(spread, sign * 0.04, s.grav * (1 - s.dead)), lerp(ankle, ankleG, s.grav)
+			end
 			L.hip.Transform = CFrame.fromEulerAnglesYXZ(hip, 0, spread)
 			L.knee.Transform = CFrame.Angles(-knee, 0, 0) -- knees bend backward
-			if L.ankle then L.ankle.Transform = CFrame.Angles(-0.3 - 0.35 * s.boost - 0.2 * fwdOn, 0, 0) end -- toes pointed
+			if L.ankle then L.ankle.Transform = CFrame.Angles(ankle, 0, 0) end
 		end
 	end
 end
@@ -7580,6 +7836,20 @@ local function update(r, dt: number, now: number)
 	s.side += (math.clamp(lv.X, -1.5, 1.5) - s.side) * f6
 	s.up += (math.clamp(lv.Y, -1.5, 1.5) - s.up) * f6
 	s.boost += ((if vel.Magnitude > MV.MaxSpeed * 1.08 then 1 else 0) - s.boost) * (1 - math.exp(-dt * 5))
+	-- artificial gravity: upright, walking / standing / airborne
+	local gup = Gravity.UpAt(root.Position)
+	local onFloor, flatSpeed = false, 0
+	if gup then
+		floorParams.FilterDescendantsInstances = { char }
+		local fd = Gravity.FloorDistance(root.Position, gup, GV.FloorProbe, floorParams)
+		onFloor = fd ~= nil and fd <= GV.HipHeight + 0.6
+		flatSpeed = (vel - gup * vel:Dot(gup)).Magnitude
+	end
+	local f8 = 1 - math.exp(-dt * 8)
+	s.grav += ((if gup then 1 else 0) - s.grav) * f8
+	s.ground += ((if onFloor then 1 else 0) - s.ground) * (1 - math.exp(-dt * 12))
+	s.walk += ((if onFloor then math.clamp(flatSpeed / GV.WalkSpeed, 0, 1.4) else 0) - s.walk) * f8
+	r.stride = (r.stride + flatSpeed * dt / STRIDE) % 1
 	s.dead += ((if alive then 0 else 1) - s.dead) * (1 - math.exp(-dt * 3))
 
 	-- weapon state
@@ -7622,23 +7892,39 @@ local function update(r, dt: number, now: number)
 	-- body: bank, roll, sway (rotation about the root's centre, applied to the torso and the gun)
 	local t = now + r.phase
 	local life = 1 - s.dead
-	local roll = 0
+	local roll, lean = 0, 0
 	local rp = (now - r.rollStart) / MV.RollTime
-	if rp >= 0 and rp < 1 then roll = -r.rollDir * (rp * rp * (3 - 2 * rp)) * math.pi * 2 end
+	if rp >= 0 and rp < 1 then
+		roll = -r.rollDir * (rp * rp * (3 - 2 * rp)) * math.pi * 2 -- zero-g barrel roll
+		lean = -r.rollDir * 0.55 * math.sin(rp * math.pi) -- under gravity: a dodging side lean
+	end
 	local bank = -0.45 * math.clamp(s.side, -1, 1)
-	local B = CFrame.new(0, 0.07 * math.sin(t * 1.3) * life, 0) * CFrame.Angles(0, 0, (roll + bank + 0.05 * math.sin(t * 0.9)) * life)
+	local angle = lerp((roll + bank + 0.05 * math.sin(t * 0.9)) * life, lean * life, s.grav)
+	local bob = lerp(0.07 * math.sin(t * 1.3) * life, 0.07 * math.abs(math.sin(r.stride * math.pi * 2)) * s.walk * life, s.grav)
+	local B = CFrame.new(0, bob, 0) * CFrame.Angles(0, 0, angle)
 	if r.diedAt then
-		local k = (now - r.diedAt) * s.dead
-		B *= CFrame.Angles(k * 0.5, k * 0.2, k * 0.3) -- slow tumble
+		local k = (now - r.diedAt) * s.dead * (1 - s.grav)
+		B *= CFrame.Angles(k * 0.5, k * 0.2, k * 0.3) -- slow tumble (zero-g)
+	end
+	-- the aim's pitch while upright under gravity (in zero-g the whole body pitches with the aim)
+	local pitch = 0
+	if gup and s.grav > 0.01 then
+		local deg = (char:GetAttribute("AimPitch") :: number?) or 0
+		if isLocal then
+			local cam = workspace.CurrentCamera
+			if cam then deg = math.deg(math.asin(math.clamp(cam.CFrame.LookVector:Dot(gup), -1, 1))) end
+		end
+		pitch = math.rad(math.clamp(deg, -85, 85)) * s.grav * (1 - s.dead)
 	end
 	if melee > 0 then B *= CFrame.new(0, 0, -0.35 * melee) end -- lunge into the strike
 
-	local waistT = CFrame.fromEulerAnglesYXZ(-0.3 * s.boost * (1 - s.armed) + 0.25 * s.dead, -BLADE * s.armed, 0)
+	local waistT = CFrame.fromEulerAnglesYXZ(-0.3 * s.boost * (1 - s.armed) * (1 - s.grav) + 0.25 * s.dead + 0.3 * pitch + 0.35 * s.dead * s.grav,
+		-BLADE * s.armed, 0)
 	if r.r15 then
 		r.rootJ.Transform = r.rootJ.C0:Inverse() * B * r.rootJ.C0
 		r.waist.Transform = waistT
 		if r.neck then
-			r.neck.Transform = CFrame.fromEulerAnglesYXZ(-0.16 * s.aim + 0.04 * math.sin(t * 0.7) * life - 0.4 * s.dead, BLADE * s.armed,
+			r.neck.Transform = CFrame.fromEulerAnglesYXZ(-0.16 * s.aim + 0.04 * math.sin(t * 0.7) * life - 0.4 * s.dead + 0.5 * pitch, BLADE * s.armed,
 				-0.15 * s.aim)
 		end
 		poseLegs(r, t, life, vel.Magnitude / MV.MaxSpeed)
@@ -7649,6 +7935,7 @@ local function update(r, dt: number, now: number)
 		local aimCF = mount.C0
 		local kick = r.kick
 		local pose = (aimCF * READY):Lerp(aimCF, s.aim) * CFrame.new(0, 0.03 * kick, 0.22 * kick) * CFrame.Angles(0.15 * kick, 0, 0)
+		if pitch ~= 0 then pose = CFrame.new(AIM_PIVOT) * CFrame.Angles(pitch, 0, 0) * CFrame.new(-AIM_PIVOT) * pose end
 		local e = (now - r.equipStart) / SWAP_TIME
 		if e >= 0 and e < 1 then -- new weapon swings up from pointing down
 			local low = 1 - e * e * (3 - 2 * e)
@@ -7793,7 +8080,7 @@ function Anim.Start()
 end
 
 return Anim
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX48"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- Client-side shared state and tiny signal helper, used by every controller.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- Client-side shared state and tiny signal helper, used by every controller.
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
 
@@ -7855,6 +8142,8 @@ State.BoostMax = Config.Movement.BoostMax
 State.Tether = nil -- { point = Vector3, untilT = number }
 State.Speed = 0 -- local body speed (MovementController), for camera and HUD effects
 State.Boosting = false
+State.Gravity = nil :: Vector3? -- "up" of the artificial gravity acting on us, nil in zero-g
+State.Grounded = false
 
 State.InventoryChanged = signal()
 State.ProfileChanged = signal()
@@ -7882,7 +8171,7 @@ function State.IsModalOpen(name: string): boolean
 end
 
 return State
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">CombatController</string><ProtectedString name="Source"><![CDATA[-- Client combat input and prediction. Sends aim rays to the server (which validates and decides
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX50"><Properties><string name="Name">CombatController</string><ProtectedString name="Source"><![CDATA[-- Client combat input and prediction. Sends aim rays to the server (which validates and decides
 -- hits); draws the local tracer/muzzle flash immediately so firing feels responsive.
 -- Also handles weapon switching, reload, melee, utilities and consumable hotkeys.
 local Players = game:GetService("Players")
@@ -8154,11 +8443,23 @@ function Combat.Start()
 	-- Other players see us shoulder the gun: the server mirrors our aim state onto the character
 	-- (throttled; the latest state is always sent).
 	local sentAim, lastAimSend = false, 0
+	local sentPitch, lastPitchSend = 0, 0
 	RunService.RenderStepped:Connect(function()
 		local aimingNow = State.Aiming == true
 		if aimingNow ~= sentAim and os.clock() - lastAimSend > 0.15 then
 			sentAim, lastAimSend = aimingNow, os.clock()
 			Remotes.Combat:FireServer({ action = "aim", value = aimingNow })
+		end
+		-- walking upright under gravity the body doesn't pitch, so others tilt our gun and head to this
+		local pitch = 0
+		local up = State.Gravity
+		if up then
+			local look = workspace.CurrentCamera.CFrame.LookVector
+			pitch = math.floor(math.deg(math.asin(math.clamp(look:Dot(up), -1, 1))) / 3 + 0.5) * 3
+		end
+		if pitch ~= sentPitch and os.clock() - lastPitchSend > 0.1 then
+			sentPitch, lastPitchSend = pitch, os.clock()
+			Remotes.Combat:FireServer({ action = "pitch", value = pitch })
 		end
 		if triggerHeld then
 			local w = activeWeapon()
@@ -8179,7 +8480,7 @@ function Combat.Start()
 end
 
 return Combat
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX50"><Properties><string name="Name">EffectsController</string><ProtectedString name="Source"><![CDATA[-- Visual and audio presentation: tracers, muzzle flashes, impacts, explosions, tether beams,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">EffectsController</string><ProtectedString name="Source"><![CDATA[-- Visual and audio presentation: tracers, muzzle flashes, impacts, explosions, tether beams,
 -- the radiation-storm sphere, the planet backdrop, flickering damaged lights, electrical crackle
 -- and suit audio. Purely cosmetic; never affects gameplay state.
 --
@@ -8597,7 +8898,7 @@ function Effects.Start()
 end
 
 return Effects
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">HUDController</string><ProtectedString name="Source"><![CDATA[-- In-match HUD, inventory screen, results screen and spectating.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX52"><Properties><string name="Name">HUDController</string><ProtectedString name="Source"><![CDATA[-- In-match HUD, inventory screen, results screen and spectating.
 --   Vitals (health, shield, oxygen, boost, tether, suit status) bottom-left
 --   Weapon, ammo, slots, utility bottom-right
 --   Phase / timer / survivors top-centre; kill feed top-right; tactical map top-left
@@ -8665,7 +8966,8 @@ local function buildVitals()
 	refs.setShield = row("SHIELD", C.Shield)
 	refs.setO2 = row("OXYGEN", C.Oxygen)
 	refs.setBoost = row("BOOST", C.Boost)
-	refs.suit = UI.label(f, "", { TextSize = 13, Font = UI.Fonts.Bold })
+	refs.suit = UI.label(f, "", { TextSize = 13, Font = UI.Fonts.Bold, TextScaled = true })
+	UI.new("UITextSizeConstraint", { MaxTextSize = 13 }, refs.suit)
 	refs.equip = UI.label(f, "", { TextSize = 13, TextColor3 = C.Dim })
 	refs.vitals = f
 end
@@ -9245,7 +9547,8 @@ local function update()
 		elseif player:GetAttribute("InStorm") then status, refs.suit.TextColor3 = "RADIATION EXPOSURE", C.Storm
 		elseif pressurized then status, refs.suit.TextColor3 = "PRESSURISED - O2 RECHARGING", C.Green
 		else status, refs.suit.TextColor3 = "VACUUM - SUIT ON RESERVE O2", C.Text end
-		refs.suit.Text = status
+		-- artificial gravity or zero-g (gravity: SPACE jumps, hold it for the jetpack)
+		refs.suit.Text = status .. (if State.Gravity then string.format("  ·  %.2fG", Config.Gravity.Strength / 196.2) else "  ·  ZERO-G")
 		local util = State.SelectedUtility == "tether" and "TETHER" or "PULSE CHARGE"
 		refs.equip.Text = string.format("TETHER x%d   PULSE x%d   [Z] %s", player:GetAttribute("TetherCharges") or 0, inv and inv.items.grenade or 0, util)
 		local low = o2 < Config.Oxygen.WarnAt or hum.Health < 30
@@ -9371,7 +9674,7 @@ function HUD.Start()
 end
 
 return HUD
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX52"><Properties><string name="Name">InputController</string><ProtectedString name="Source"><![CDATA[-- Turns keyboard / gamepad state into abstract movement and look input, so the movement and camera
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX53"><Properties><string name="Name">InputController</string><ProtectedString name="Source"><![CDATA[-- Turns keyboard / gamepad state into abstract movement and look input, so the movement and camera
 -- code never reads devices directly (keeps mobile/controller support a matter of mapping here).
 local UserInputService = game:GetService("UserInputService")
 local State = require(script.Parent.ClientState)
@@ -9445,7 +9748,7 @@ function Input.Start()
 end
 
 return Input
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX53"><Properties><string name="Name">MenuController</string><ProtectedString name="Source"><![CDATA[-- Main menu (opens on join and with M): Deploy, Practice, Loadout, Locker, Settings, Statistics,
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX54"><Properties><string name="Name">MenuController</string><ProtectedString name="Source"><![CDATA[-- Main menu (opens on join and with M): Deploy, Practice, Loadout, Locker, Settings, Statistics,
 -- Tutorial, Credits. Every option shown is implemented. During a match only Resume, Settings and
 -- Tutorial are offered.
 --
@@ -9858,7 +10161,8 @@ function Menu.Start()
 end
 
 return Menu
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX54"><Properties><string name="Name">MovementController</string><ProtectedString name="Source"><![CDATA[-- Six-degree-of-freedom zero-gravity movement for the local character.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX55"><Properties><string name="Name">MovementController</string><ProtectedString name="Source"><![CDATA[-- Movement for the local character: six-degree-of-freedom zero-gravity flight, and walking under
+-- the artificial gravity of level pressurised decks (Shared.Gravity; see the gravity branch of step).
 --
 -- Model: the Humanoid is held in the Physics state (no walking/falling logic), the body is turned
 -- toward the camera by an AlignOrientation, and translation is a momentum model integrated here:
@@ -9876,6 +10180,7 @@ local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Remotes = require(Shared.Remotes)
 local Motion = require(Shared.ZeroGMotion)
+local Gravity = require(Shared.Gravity)
 local State = require(script.Parent.ClientState)
 local Input = require(script.Parent.InputController)
 local CameraController = require(script.Parent.CameraController)
@@ -9992,41 +10297,75 @@ function Movement.ReleaseTether()
 	end
 end
 
+-- Tether pull (overrides thrust and gravity while active). Returns the new velocity.
+local function tetherPull(v: Vector3, dt: number): Vector3
+	local tether = State.Tether
+	if not (tether and root) then return v end
+	local to = tether.point - root.Position
+	if os.clock() > tether.untilT or to.Magnitude < Config.Tether.ReleaseDistance or Input.Braking() then
+		Movement.ReleaseTether()
+		return v
+	end
+	return v:Lerp(to.Unit * Config.Tether.PullSpeed, math.min(1, dt * 6))
+end
+
+local floorParams = RaycastParams.new()
+floorParams.FilterType = Enum.RaycastFilterType.Exclude
+
 local function step(dt: number)
 	if not (root and hum and align and root.Parent) or hum.Health <= 0 then return end
 	dt = math.min(dt, 0.1)
 	if hum:GetState() ~= Enum.HumanoidStateType.Physics then hum:ChangeState(Enum.HumanoidStateType.Physics) end
 	local rot = CameraController.Rotation()
-	align.CFrame = rot
-
 	local speedMult = player:GetAttribute("SpeedMult") or 1
 	local boostMax = M.BoostMax * (player:GetAttribute("BoostMaxMult") or 1)
+	local regenMult = player:GetAttribute("BoostRegenMult") or 1
 	State.BoostMax = boostMax
 	local v = root.AssemblyLinearVelocity
 	local move = Input.MoveVector()
-	local thrust = rot:VectorToWorldSpace(Vector3.new(move.X, move.Y, -move.Z))
+	local up = Gravity.UpAt(root.Position)
+	local grounded = false
 
-	-- Boost energy
-	local energy, isBoosting, lastUse = Motion.Boost(State.Boost, Input.Boosting() and thrust.Magnitude > 0.1, lastBoostUse, os.clock(), boostMax,
-		player:GetAttribute("BoostRegenMult") or 1, dt)
-	State.Boost, boosting, lastBoostUse = energy, isBoosting, lastUse
-	if thruster then thruster.Rate = boosting and 120 or (thrust.Magnitude > 0.1 and 15 or 0) end
-
-	local tether = State.Tether
-	if tether then
-		local to = tether.point - root.Position
-		if os.clock() > tether.untilT or to.Magnitude < Config.Tether.ReleaseDistance or Input.Braking() then
-			Movement.ReleaseTether()
+	if up then
+		-- ARTIFICIAL GRAVITY: walk on the deck, body upright and facing the camera's heading.
+		-- W/S/A/D walk, Shift sprints, Space jumps (hold it past the top of the jump for the jetpack),
+		-- Ctrl drops faster.
+		local look = rot.LookVector
+		local fwd = look - up * look:Dot(up)
+		if fwd.Magnitude < 0.05 then fwd = rot.UpVector - up * rot.UpVector:Dot(up) end -- looking straight up or down
+		fwd = fwd.Unit
+		local dir = fwd:Cross(up) * move.X + fwd * move.Z
+		if dir.Magnitude > 1 then dir = dir.Unit end
+		floorParams.FilterDescendantsInstances = { root.Parent :: Instance }
+		local floorDist = Gravity.FloorDistance(root.Position, up, Config.Gravity.FloorProbe, floorParams)
+		grounded = Motion.IsGrounded(v, up, floorDist)
+		local energy, jetOn, lastUse = Motion.Boost(State.Boost, Motion.WantsJet(v, up, grounded, move.Y), lastBoostUse, os.clock(), boostMax,
+			regenMult, dt)
+		State.Boost, boosting, lastBoostUse = energy, false, lastUse
+		if thruster then thruster.Rate = jetOn and 120 or 0 end
+		align.CFrame = CFrame.lookAt(Vector3.zero, fwd, up)
+		if State.Tether then
+			v = tetherPull(v, dt)
 		else
-			local want = to.Unit * Config.Tether.PullSpeed
-			v = v:Lerp(want, math.min(1, dt * 6))
+			v, grounded = Motion.GroundStep(v, dir, up, floorDist, move.Y, Input.Boosting(), jetOn, speedMult, dt)
+		end
+	else
+		-- ZERO-G: six-direction thrust relative to the camera; the body turns with the view.
+		align.CFrame = rot
+		local thrust = rot:VectorToWorldSpace(Vector3.new(move.X, move.Y, -move.Z))
+		local energy, isBoosting, lastUse = Motion.Boost(State.Boost, Input.Boosting() and thrust.Magnitude > 0.1, lastBoostUse, os.clock(),
+			boostMax, regenMult, dt)
+		State.Boost, boosting, lastBoostUse = energy, isBoosting, lastUse
+		if thruster then thruster.Rate = boosting and 120 or (thrust.Magnitude > 0.1 and 15 or 0) end
+		if State.Tether then
+			v = tetherPull(v, dt)
+		end
+		if not State.Tether then
+			v = Motion.Step(v, thrust, boosting, Input.Braking(), speedMult, dt)
 		end
 	end
-	if not State.Tether then
-		v = Motion.Step(v, thrust, boosting, Input.Braking(), speedMult, dt)
-	end
 	root.AssemblyLinearVelocity = v
-	State.Speed, State.Boosting = v.Magnitude, boosting
+	State.Speed, State.Boosting, State.Gravity, State.Grounded = v.Magnitude, boosting, up, grounded
 end
 
 function Movement.Start()
@@ -10052,7 +10391,7 @@ function Movement.Start()
 end
 
 return Movement
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX55"><Properties><string name="Name">TouchController</string><ProtectedString name="Source"><![CDATA[-- Touch controls for phones and tablets. Built only on a touchscreen without a keyboard (Studio's
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX56"><Properties><string name="Name">TouchController</string><ProtectedString name="Source"><![CDATA[-- Touch controls for phones and tablets. Built only on a touchscreen without a keyboard (Studio's
 -- device emulator counts), so desktop and console players never see them.
 --   Left half of the screen: a floating thumbstick that appears where the thumb lands (thrust).
 --   Right half: drag to look.
@@ -10213,7 +10552,7 @@ function Touch.Start()
 end
 
 return Touch
-]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX56"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- UI construction kit: one "orbital HUD" look shared by every screen.
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX57"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- UI construction kit: one "orbital HUD" look shared by every screen.
 --   * deep-space glass panels (navy with a soft vertical sheen) edged by a light-catching cyan stroke
 --   * HUD corner brackets on major panels
 --   * Michroma display type, Titillium body, Sarpanch for numbers and short readouts
@@ -10401,9 +10740,9 @@ function UIKit.formatTime(seconds: number): string
 end
 
 return UIKit
-]]></ProtectedString></Properties></Item></Item></Item><Item class="StarterCharacterScripts" referent="RBX61"><Properties><string name="Name">StarterCharacterScripts</string></Properties><Item class="LocalScript" referent="RBX59"><Properties><string name="Name">Animate</string><ProtectedString name="Source"><![CDATA[-- Intentionally empty: replaces Roblox's default "Animate" script. Walking, jumping and falling
+]]></ProtectedString></Properties></Item></Item></Item><Item class="StarterCharacterScripts" referent="RBX62"><Properties><string name="Name">StarterCharacterScripts</string></Properties><Item class="LocalScript" referent="RBX60"><Properties><string name="Name">Animate</string><ProtectedString name="Source"><![CDATA[-- Intentionally empty: replaces Roblox's default "Animate" script. Walking, jumping and falling
 -- animations make no sense in zero gravity; every character (players and bots) is posed
 -- procedurally by Controllers/CharacterAnimator on each client instead.
-]]></ProtectedString></Properties></Item><Item class="Script" referent="RBX60"><Properties><string name="Name">Health</string><ProtectedString name="Source"><![CDATA[-- Intentionally empty: replaces Roblox's default "Health" regeneration script.
+]]></ProtectedString></Properties></Item><Item class="Script" referent="RBX61"><Properties><string name="Name">Health</string><ProtectedString name="Source"><![CDATA[-- Intentionally empty: replaces Roblox's default "Health" regeneration script.
 -- Health regeneration rules (delay, rate, cap) live in CombatService.
 ]]></ProtectedString></Properties></Item></Item></Item></roblox>

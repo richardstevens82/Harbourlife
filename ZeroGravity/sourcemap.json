@@ -25,6 +25,13 @@
        ]
       },
       {
+       "name": "Gravity",
+       "className": "ModuleScript",
+       "filePaths": [
+        "src/ReplicatedStorage/Shared/Gravity.luau"
+       ]
+      },
+      {
        "name": "ItemDefinitions",
        "className": "ModuleScript",
        "filePaths": [

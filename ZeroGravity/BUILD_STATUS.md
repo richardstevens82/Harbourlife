@@ -84,6 +84,40 @@ from actual displacement, rolls back teleports, and enforces the arena boundary.
 costs 22 boost energy and has a 0.9 s cooldown. The extra speed bleeds back to cruise like any other
 overspeed.
 
+**Artificial gravity inside structures** (`Shared/Gravity`, `Config.Gravity`). Open space stays
+zero-g, but level decks have gravity, so fights inside the station, ship and wrecks are on foot.
+- **Where:** every level room and corridor on the station and ship decks is a `GravityZone` volume
+  that pulls toward its own floor (30 decks). These areas stay **zero-g**:
+  - the vertical shafts and the command module
+  - the habitat ring, whose segments are tilted
+  - the hangar, tilted wreck sections and asteroid tunnels
+  - open space
+  - any compartment whose hull has been breached (its gravity fails with the pressure)
+- **Lift columns:** wherever a gravity room has a floor or ceiling hatch, a zero-g column marked by
+  glowing rings runs through it (14 columns). Float up or down through the hatch as before; step out
+  of the column and gravity takes you.
+- **On foot** (`ZeroGMotion.GroundStep`, shared by players and bots):
+  - **Movement:** walk at 18 studs/s, and sprint at 28 with Shift.
+  - **Standing:** a spring holds standing height, so you never sink or bounce.
+  - **Jumping:** Space jumps, about 5 studs. Hold Space after the top of the jump to fire the
+    **jetpack**, which climbs up to about 22 studs/s and uses boost energy.
+  - **Falling:** Ctrl fast-falls.
+  - **Carried momentum:** speed you bring in from zero-g flight is kept until you land, with gentle
+    air steering.
+- **Body and aim:** the body stays upright and turns to your heading. You still aim freely up and
+  down: the waist, neck and gun pitch with the camera.
+  - Other players see your pitch through the `AimPitch` character attribute (3° steps, throttled to
+    10 Hz).
+  - The server's aim check accepts a steep shot under gravity when its heading matches the body.
+- **Animation:** under gravity the zero-g bank, sway and leg trail blend into an upright walk cycle
+  driven by ground speed, with a stride, a counter-swing of the arms and a slight lean. In the air
+  the legs tuck and the free arm goes out for balance. Eliminated pilots kneel and slump instead of
+  tumbling.
+- **Bots** walk, jump and jetpack with the same model and pitch their aim the same way.
+- **Loot** in rooms with gravity sits on the floor or the furniture below it instead of floating.
+  The same goes for the death lockers of pilots eliminated there.
+- **HUD:** the suit status line shows `0.36G` under gravity and `ZERO-G` outside.
+
 **Character animation** (`CharacterAnimator`, every client, players and bots alike). Roblox's
 walk/jump/fall animations are replaced by an empty `Animate` script, and every R15 joint is posed
 procedurally each frame (`Motor6D.Transform`, in PreSimulation):
@@ -233,7 +267,7 @@ in Studio, with a warning shown. Cosmetics only: no paid items and no random rew
 
 ## Tests performed
 
-**Automated: `python3 tests/run.py` → 70 passed, 0 failed** (about 3 minutes, most of it the simulated bot match).
+**Automated: `python3 tests/run.py` → 75 passed, 0 failed** (about 3.5 minutes, most of it the simulated bot match).
 Every run checks member access against Roblox's real API tables, so an invalid property name or a
 write to a read-only property fails the test that reaches it.
 - *Pure logic:* the CFrame mock; all 8 weapons complete; damage falloff is monotonic; time-to-kill is
@@ -273,6 +307,20 @@ write to a read-only property fails the test that reaches it.
   - Touch controls: the thumbstick thrusts, dragging turns the view, and the FIRE, BOOST and ROLL
     buttons send the same requests as the keyboard.
   - The mock now fires attribute-changed signals and has `Vector2.Unit`.
+- *Artificial gravity:*
+  - There are 30 gravity decks and 14 lift columns. Probes confirm gravity on station and ship decks,
+    and zero-g in the lift columns, vertical shafts, the ring, the hangar and open space. A breached
+    zone loses gravity.
+  - A pilot dropped above a deck lands and stands at exactly 3.0 studs.
+  - Ground speeds are checked: 18 studs/s walking and 28 sprinting.
+  - A tap of Space hops about 5 studs, and holding it jetpacks about 22 studs up while draining boost.
+  - A pilot in a lift column floats with zero-g controls.
+  - At least 12 lobby bots stand on the deck at standing height.
+  - Under gravity the body stays upright while the camera pitches. The server accepts a steep shot
+    along the body's heading and rejects one 120° off it.
+  - Loot containers in rooms with gravity rest on a surface.
+  - The animator stands the body upright with no zero-g bank, swings the legs while walking, and
+    pitches the gun to `AimPitch`.
 - *Character animation* (the mock now builds full R15 rigs with Motor6D joints, and a joint solver
   places every part from C0 · Transform · C1⁻¹):
   - Guns are mounted at the aim grip and scaled to the body. The server copy points along the aim.
@@ -376,8 +424,10 @@ hands, characters have no animation at all".**
 - **Bots are untested in real Roblox physics.** In the headless simulation bodies don't collide, so
   avoidance, unsticking and airlock cycling against real collisions need a Studio check. Watch for
   bots snagging on furniture or hovering at closed doors.
-- **Bot tracer traffic.** Every bot shot sends a tracer to every client. Batching (roadmap #47) is
-  advisable before running many servers.
+- **Gravity is untested against real collisions.** The headless physics doesn't collide, so stairs,
+  furniture and doorway lips under gravity need a Studio check. The legs don't collide and the root
+  part rides about 2 studs above the floor, so the standing spring should lift the pilot onto ledges
+  lower than that. Tune `Config.Gravity` for feel.
 
 - **Lag compensation is tuned by estimate.** Shots that miss a target's current body are re-tested
   against where the shooter saw it: ping plus an assumed 0.12 s of Roblox interpolation, ±0.1 s,
@@ -403,8 +453,6 @@ hands, characters have no animation at all".**
   - Both need checking in Studio. If the sky looks wrong, add a Sky with dark skybox textures.
 - **Other players don't see your boost plume.** It's local-only.
 - **Key rebinding isn't saved** between sessions. Sensitivity, FOV and invert Y are saved.
-- **No touch controls.** Input is abstracted in `InputController`, but mobile thumbsticks and buttons
-  aren't built yet. Gamepad is mapped.
 - **Squads and duos aren't exposed.** The data model and damage rules already support teams.
 - **Titles are listed but can't be equipped.**
 - **StreamingEnabled is off.** The map is about 2,800 parts, which is fine without it. Turning it on
